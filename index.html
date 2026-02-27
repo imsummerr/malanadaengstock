@@ -1,2 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>My Web App</title>
+</head>
+<body>
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwjba0P3JCtfpRA6AOkfvNgXKLTNfwoOFIkgDRj_-g0xapaxVLl6lpt3sKrYNgNVvZaJg/exec";
+  <h2>ระบบบันทึกข้อมูล</h2>
+  <button onclick="sendData()">ส่งข้อมูล</button>
+
+  <script>
+    function sendData() {
+      fetch("https://script.google.com/macros/s/AKfycbwTGfuAee7twvKwdTQxVpB2k8xcGd5Tg_skmdJqekB_KNx-dmGQBbvTNRNz1nLGgFqKPw/exec", {
+        method: "POST",
+        body: JSON.stringify({
+          datetime: new Date().toLocaleString(),
+          type: "test",
+          checker_name: "ทดลอง",
+          branch: "สาขา1",
+          data: {example:"hello"}
+        })
+      })
+      .then(res => res.text())
+      .then(data => {
+        alert("ส่งข้อมูลแล้ว!");
+      });
+    }
+  </script>
+
+</body>
+</html>
