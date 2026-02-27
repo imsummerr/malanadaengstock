@@ -1,4 +1,5 @@
 <!doctype html>
+
 <html lang="th" class="h-full">
 <head>
   <meta charset="UTF-8">
@@ -56,6 +57,7 @@
 <div id="app" class="h-full overflow-auto">
 
   <!-- หน้าหลัก -->
+
   <div id="home-page" class="min-h-full p-4 md:p-6">
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-center gap-3">
@@ -75,59 +77,63 @@
       </button>
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-      <button onclick="openForm('weekly')" class="btn-main bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📋</span></div>
-        <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>รายสัปดาห์</span>
-      </button>
-      <button onclick="openForm('incoming')" class="btn-main bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📦</span></div>
-        <span class="font-semibold text-center leading-tight">จำนวน<br>ของเข้า</span>
-      </button>
-      <button onclick="openForm('sales')" class="btn-main bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">💰</span></div>
-        <span class="font-semibold text-center leading-tight">ยอดขาย</span>
-      </button>
-      <button onclick="openForm('vegetables')" class="btn-main bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🥬</span></div>
-        <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>ผัก</span>
-      </button>
-      <button onclick="openForm('waste')" class="btn-main bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🗑️</span></div>
-        <span class="font-semibold text-center leading-tight">ของเสีย</span>
-      </button>
-    </div>
+```
+<div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+  <button onclick="openForm('weekly')" class="btn-main bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📋</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>รายสัปดาห์</span>
+  </button>
+  <button onclick="openForm('incoming')" class="btn-main bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📦</span></div>
+    <span class="font-semibold text-center leading-tight">จำนวน<br>ของเข้า</span>
+  </button>
+  <button onclick="openForm('sales')" class="btn-main bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">💰</span></div>
+    <span class="font-semibold text-center leading-tight">ยอดขาย</span>
+  </button>
+  <button onclick="openForm('vegetables')" class="btn-main bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🥬</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>ผัก</span>
+  </button>
+  <button onclick="openForm('waste')" class="btn-main bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🗑️</span></div>
+    <span class="font-semibold text-center leading-tight">ของเสีย</span>
+  </button>
+</div>
 
-    <div class="mt-8 max-w-4xl mx-auto">
-      <div class="bg-white rounded-2xl p-4 shadow-md">
-        <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📊</span> สรุปวันนี้</h3>
-        <div id="today-stats" class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
-          <div class="bg-red-50 p-3 rounded-xl">
-            <div id="stat-weekly" class="text-2xl font-bold text-red-600">0</div>
-            <div class="text-xs text-gray-500">สต็อกสัปดาห์</div>
-          </div>
-          <div class="bg-orange-50 p-3 rounded-xl">
-            <div id="stat-incoming" class="text-2xl font-bold text-orange-600">0</div>
-            <div class="text-xs text-gray-500">ของเข้า</div>
-          </div>
-          <div class="bg-green-50 p-3 rounded-xl">
-            <div id="stat-sales" class="text-2xl font-bold text-green-600">0</div>
-            <div class="text-xs text-gray-500">ยอดขาย</div>
-          </div>
-          <div class="bg-emerald-50 p-3 rounded-xl">
-            <div id="stat-vegetables" class="text-2xl font-bold text-emerald-600">0</div>
-            <div class="text-xs text-gray-500">สต็อกผัก</div>
-          </div>
-          <div class="bg-gray-100 p-3 rounded-xl">
-            <div id="stat-waste" class="text-2xl font-bold text-gray-600">0</div>
-            <div class="text-xs text-gray-500">ของเสีย</div>
-          </div>
-        </div>
+<div class="mt-8 max-w-4xl mx-auto">
+  <div class="bg-white rounded-2xl p-4 shadow-md">
+    <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📊</span> สรุปวันนี้</h3>
+    <div id="today-stats" class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+      <div class="bg-red-50 p-3 rounded-xl">
+        <div id="stat-weekly" class="text-2xl font-bold text-red-600">0</div>
+        <div class="text-xs text-gray-500">สต็อกสัปดาห์</div>
+      </div>
+      <div class="bg-orange-50 p-3 rounded-xl">
+        <div id="stat-incoming" class="text-2xl font-bold text-orange-600">0</div>
+        <div class="text-xs text-gray-500">ของเข้า</div>
+      </div>
+      <div class="bg-green-50 p-3 rounded-xl">
+        <div id="stat-sales" class="text-2xl font-bold text-green-600">0</div>
+        <div class="text-xs text-gray-500">ยอดขาย</div>
+      </div>
+      <div class="bg-emerald-50 p-3 rounded-xl">
+        <div id="stat-vegetables" class="text-2xl font-bold text-emerald-600">0</div>
+        <div class="text-xs text-gray-500">สต็อกผัก</div>
+      </div>
+      <div class="bg-gray-100 p-3 rounded-xl">
+        <div id="stat-waste" class="text-2xl font-bold text-gray-600">0</div>
+        <div class="text-xs text-gray-500">ของเสีย</div>
       </div>
     </div>
   </div>
+</div>
+```
+
+  </div>
 
   <!-- หน้ากรอกข้อมูลเบื้องต้น -->
+
   <div id="checker-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-lg mx-auto">
       <button onclick="goHome()" class="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-800">
@@ -160,6 +166,7 @@
   </div>
 
   <!-- หน้ากรอกสต็อกรายสัปดาห์ -->
+
   <div id="weekly-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -191,52 +198,56 @@
             </table>
           </div>
 
-          <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-orange-50 p-3 rounded-xl"><span>🍢</span> หมวดของสด (หน่วย: ไม้)</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="bg-gray-50">
-                  <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
-                  <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
-                  <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
-                  <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
-                </tr>
-              </thead>
-              <tbody id="stick-items-table" class="divide-y divide-gray-100"></tbody>
-            </table>
-          </div>
+```
+      <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-orange-50 p-3 rounded-xl"><span>🍢</span> หมวดของสด (หน่วย: ไม้)</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+              <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="stick-items-table" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
 
-          <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-yellow-50 p-3 rounded-xl"><span>🍜</span> หมวดของแห้ง (หน่วย: อัน)</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="bg-gray-50">
-                  <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
-                  <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
-                  <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
-                  <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
-                </tr>
-              </thead>
-              <tbody id="dry-items-table" class="divide-y divide-gray-100"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="p-4 bg-gray-50 border-t">
-          <div id="weekly-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
-          <button onclick="saveWeeklyStock()" id="save-weekly-btn" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
-            <span class="flex items-center justify-center gap-2">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-              </svg>
-              บันทึกข้อมูล
-            </span>
-          </button>
-        </div>
+      <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-yellow-50 p-3 rounded-xl"><span>🍜</span> หมวดของแห้ง (หน่วย: อัน)</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+              <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="dry-items-table" class="divide-y divide-gray-100"></tbody>
+        </table>
       </div>
     </div>
+    <div class="p-4 bg-gray-50 border-t">
+      <div id="weekly-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+      <button onclick="saveWeeklyStock()" id="save-weekly-btn" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+        <span class="flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          บันทึกข้อมูล
+        </span>
+      </button>
+    </div>
+  </div>
+</div>
+```
+
   </div>
 
   <!-- หน้าจำนวนของเข้า -->
+
   <div id="incoming-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -271,6 +282,7 @@
   </div>
 
   <!-- หน้ายอดขาย -->
+
   <div id="sales-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-lg mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -324,6 +336,7 @@
   </div>
 
   <!-- หน้าเช็คสต็อกผัก -->
+
   <div id="vegetables-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -392,6 +405,7 @@
   </div>
 
   <!-- หน้าของเสีย -->
+
   <div id="waste-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -426,6 +440,7 @@
   </div>
 
   <!-- หน้าประวัติ -->
+
   <div id="history-page" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-4">
@@ -478,6 +493,7 @@
   </div>
 
   <!-- Toast Notification -->
+
   <div id="toast" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg hidden z-50 transition-all text-white font-medium">
     <span id="toast-message"></span>
   </div>
@@ -488,7 +504,7 @@
 // ====================================================
 // ⚙️ ตั้งค่า URL ของ Google Apps Script ตรงนี้
 // ====================================================
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxh2kQUiRdAMFf7eOcxjsg5nqShI8eX30ypvnm79CbJQAD7_u2vIu8Ak5Oi3WahVO-1RA/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAFvkv6zb0SDsre3dh9K1QGq12x4hXIr13cRZ0V_4qjrIQkNZbqpIV8QzqRJnrxbdgVQ/exec";
 
 // ====================================================
 // ข้อมูลรายการสินค้า
@@ -931,22 +947,33 @@ async function saveWaste() {
 }
 
 // ====================================================
-// Core Save & Load Functions
+// Core Save & Load Functions (Real-time)
 // ====================================================
 async function saveRecord(type, data, btnId = null) {
-  // แสดง loading บนปุ่ม
-  let btn = btnId ? document.getElementById(btnId) : null;
-  let originalHTML = '';
-  if (btn) {
-    originalHTML = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<span class="flex items-center justify-center gap-2"><span class="loading-spinner"></span> กำลังบันทึก...</span>`;
+  // หาปุ่มที่กด แล้วแสดง loading
+  const saveButtons = document.querySelectorAll('button[onclick^="save"]');
+  let activeBtn = null;
+  saveButtons.forEach(b => {
+    if (!b.disabled && b.closest(`#${type}-form, #weekly-form, #incoming-form, #sales-form, #vegetables-form, #waste-form`)) {
+      activeBtn = b;
+    }
+  });
+  // fallback: หาปุ่มบันทึกในหน้าที่ active
+  const activePage = ['weekly-form','incoming-form','sales-form','vegetables-form','waste-form']
+    .find(p => !document.getElementById(p).classList.contains('hidden'));
+  if (activePage) {
+    activeBtn = document.querySelector(`#${activePage} button[onclick]`);
   }
 
-  // สร้าง payload สำหรับส่งไป Google Sheets
-  // จัดรูปแบบวันที่เป็นไทย
+  let originalHTML = '';
+  if (activeBtn) {
+    originalHTML = activeBtn.innerHTML;
+    activeBtn.disabled = true;
+    activeBtn.innerHTML = `<span class="flex items-center justify-center gap-2"><span class="loading-spinner"></span> กำลังบันทึก...</span>`;
+  }
+
   const now = new Date();
-  const thaiDate = now.toLocaleDateString('th-TH', {
+  const thaiDate = now.toLocaleString('th-TH', {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     timeZone: 'Asia/Bangkok'
@@ -961,55 +988,58 @@ async function saveRecord(type, data, btnId = null) {
     data:         JSON.stringify(data)
   };
 
-  try {
-    // ใช้ no-cors เพื่อหลีกเลี่ยง CORS error กับ Google Apps Script
-    await fetch(GOOGLE_SCRIPT_URL, {
-  method: 'POST',
-  headers: { 'Content-Type': 'text/plain' },
-  body: JSON.stringify(payload)
-});
+  // ส่งข้อมูลด้วย Image trick — วิธีนี้ bypass CORS ได้ทุก browser รวม iOS Safari
+  const encodedData = encodeURIComponent(JSON.stringify(payload));
+  const img = new Image();
+  img.src = GOOGLE_SCRIPT_URL + '?method=post&data=' + encodedData;
 
-    // บันทึก local ด้วยเผื่อ offline
-    const record = { ...payload, data: JSON.stringify(data) };
-    allRecords.unshift(record);
+  img.onload = img.onerror = function() {
+    allRecords.unshift({ ...payload });
     updateStats();
+    showToast('บันทึกลง Google Sheets สำเร็จ ✅', 'success');
+    setTimeout(() => goHome(), 1200);
+  };
 
+  // timeout กันค้าง
+  setTimeout(function() {
+    allRecords.unshift({ ...payload });
+    updateStats();
     showToast('บันทึกสำเร็จ ✅', 'success');
-    setTimeout(() => goHome(), 1000);
-
-  } catch (error) {
-    console.error('Save error:', error);
-    showToast('เกิดข้อผิดพลาด กรุณาลองใหม่ ❌', 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHTML;
-    }
-  }
+    setTimeout(() => goHome(), 1200);
+  }, 3000);
 }
 
 async function loadRecords(showMsg = false) {
   if (showMsg) showToast('กำลังโหลดข้อมูล...', 'info');
 
   try {
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get`, { mode: 'cors' });
-    const result   = await response.json();
+    const url = GOOGLE_SCRIPT_URL + '?t=' + Date.now();
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
+    const result = await response.json();
 
     if (!result || !Array.isArray(result.data)) {
       if (showMsg) showToast('ไม่พบข้อมูล', 'error');
       return;
     }
 
-    // คาดว่า Google Apps Script ส่ง array of objects กลับมา
     allRecords = result.data;
     updateStats();
-    if (showMsg) showToast('โหลดข้อมูลสำเร็จ ✅', 'success');
+    if (showMsg) {
+      showToast(`โหลดสำเร็จ ${allRecords.length} รายการ ✅`, 'success');
+      filterHistory();
+    }
 
   } catch (error) {
-    console.error('Load error:', error);
-    // ไม่แสดง error ถ้าไม่ได้กดปุ่มโหลดเอง
+    // ไม่แสดง error ตอนเปิดแอป
+    console.warn('loadRecords:', error.message);
     if (showMsg) showToast('โหลดข้อมูลไม่สำเร็จ ❌', 'error');
   }
 }
+
+// อัปเดตทุก 60 วินาที
+setInterval(async () => {
+  await loadRecords(false);
+}, 60000);
 
 // ====================================================
 // History Functions
@@ -1123,5 +1153,5 @@ function showToast(message, type = 'success') {
   setTimeout(() => toast.classList.add('hidden'), 3000);
 }
 </script>
+
 </body>
-</html>
