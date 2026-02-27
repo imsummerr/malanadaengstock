@@ -488,7 +488,7 @@
 // ====================================================
 // ⚙️ ตั้งค่า URL ของ Google Apps Script ตรงนี้
 // ====================================================
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz-QMw6SEtr1O7z9qjoFEoBuPCnQ_h1PJIsw6N1ZuGf/dev";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZuBJOpT1WgpO8F0K3TV1HqNy6iSf9t460yNzIFuKD36-q0sZ1-V-YnPCiXdlE2bbKMA/exec";
 
 // ====================================================
 // ข้อมูลรายการสินค้า
@@ -964,11 +964,10 @@ async function saveRecord(type, data, btnId = null) {
   try {
     // ใช้ no-cors เพื่อหลีกเลี่ยง CORS error กับ Google Apps Script
     await fetch(GOOGLE_SCRIPT_URL, {
-      method:  'POST',
-      mode:    'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload)
-    });
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain' },
+  body: JSON.stringify(payload)
+});
 
     // บันทึก local ด้วยเผื่อ offline
     const record = { ...payload, data: JSON.stringify(data) };
