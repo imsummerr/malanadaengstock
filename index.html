@@ -1,0 +1,1158 @@
+<!doctype html>
+
+<html lang="th" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบเช็คสต็อค หม่าล่าหน้าแดง</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    .btn-main {
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .btn-main:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+    .btn-main:active {
+      transform: translateY(0);
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      opacity: 1;
+      height: 32px;
+    }
+    .fade-in {
+      animation: fadeIn 0.3s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .input-field:focus {
+      outline: none;
+      border-color: #ef4444;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    }
+    .loading-spinner {
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="h-full bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50">
+<div id="app" class="h-full overflow-auto">
+
+  <!-- หน้าหลัก -->
+
+  <div id="home-page" class="min-h-full p-4 md:p-6">
+    <div class="flex justify-between items-center mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
+          <span class="text-2xl">🍜</span>
+        </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold text-gray-800">หม่าล่าหน้าแดง</h1>
+          <p class="text-sm text-gray-500">ระบบเช็คสต็อค</p>
+        </div>
+      </div>
+      <button onclick="showHistory()" class="bg-white p-3 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-gray-700">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span class="hidden md:inline font-medium">ประวัติ</span>
+      </button>
+    </div>
+
+```
+<div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+  <button onclick="openForm('weekly')" class="btn-main bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📋</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>รายสัปดาห์</span>
+  </button>
+  <button onclick="openForm('incoming')" class="btn-main bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📦</span></div>
+    <span class="font-semibold text-center leading-tight">จำนวน<br>ของเข้า</span>
+  </button>
+  <button onclick="openForm('sales')" class="btn-main bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">💰</span></div>
+    <span class="font-semibold text-center leading-tight">ยอดขาย</span>
+  </button>
+  <button onclick="openForm('vegetables')" class="btn-main bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🥬</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>ผัก</span>
+  </button>
+  <button onclick="openForm('waste')" class="btn-main bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🗑️</span></div>
+    <span class="font-semibold text-center leading-tight">ของเสีย</span>
+  </button>
+</div>
+
+<div class="mt-8 max-w-4xl mx-auto">
+  <div class="bg-white rounded-2xl p-4 shadow-md">
+    <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📊</span> สรุปวันนี้</h3>
+    <div id="today-stats" class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+      <div class="bg-red-50 p-3 rounded-xl">
+        <div id="stat-weekly" class="text-2xl font-bold text-red-600">0</div>
+        <div class="text-xs text-gray-500">สต็อกสัปดาห์</div>
+      </div>
+      <div class="bg-orange-50 p-3 rounded-xl">
+        <div id="stat-incoming" class="text-2xl font-bold text-orange-600">0</div>
+        <div class="text-xs text-gray-500">ของเข้า</div>
+      </div>
+      <div class="bg-green-50 p-3 rounded-xl">
+        <div id="stat-sales" class="text-2xl font-bold text-green-600">0</div>
+        <div class="text-xs text-gray-500">ยอดขาย</div>
+      </div>
+      <div class="bg-emerald-50 p-3 rounded-xl">
+        <div id="stat-vegetables" class="text-2xl font-bold text-emerald-600">0</div>
+        <div class="text-xs text-gray-500">สต็อกผัก</div>
+      </div>
+      <div class="bg-gray-100 p-3 rounded-xl">
+        <div id="stat-waste" class="text-2xl font-bold text-gray-600">0</div>
+        <div class="text-xs text-gray-500">ของเสีย</div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- หน้ากรอกข้อมูลเบื้องต้น -->
+
+  <div id="checker-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-lg mx-auto">
+      <button onclick="goHome()" class="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        กลับหน้าหลัก
+      </button>
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div id="form-icon" class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center text-3xl"></div>
+        <h2 id="form-title" class="text-xl font-bold text-center text-gray-800 mb-6"></h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">ชื่อผู้ตรวจ <span class="text-red-500">*</span></label>
+            <input type="text" id="checker-name" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="กรอกชื่อผู้ตรวจ">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">สาขา <span class="text-red-500">*</span></label>
+            <select id="branch-select" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg bg-white">
+              <option value="">เลือกสาขา</option>
+              <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
+            </select>
+          </div>
+          <button onclick="proceedToForm()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            ดำเนินการต่อ →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- หน้ากรอกสต็อกรายสัปดาห์ -->
+
+  <div id="weekly-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับ
+        </button>
+        <div id="weekly-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-red-500 to-red-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>📋</span> เช็คสต็อกรายสัปดาห์</h2>
+        </div>
+        <div class="p-4">
+          <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2 bg-red-50 p-3 rounded-xl"><span>🥩</span> หมวดของสด (หน่วย: ถุง)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-gray-50">
+                  <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+                  <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="fresh-items-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+
+```
+      <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-orange-50 p-3 rounded-xl"><span>🍢</span> หมวดของสด (หน่วย: ไม้)</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+              <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="stick-items-table" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+
+      <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-yellow-50 p-3 rounded-xl"><span>🍜</span> หมวดของแห้ง (หน่วย: อัน)</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+              <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+              <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="dry-items-table" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="p-4 bg-gray-50 border-t">
+      <div id="weekly-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+      <button onclick="saveWeeklyStock()" id="save-weekly-btn" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+        <span class="flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          บันทึกข้อมูล
+        </span>
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- หน้าจำนวนของเข้า -->
+
+  <div id="incoming-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับ
+        </button>
+        <div id="incoming-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>📦</span> จำนวนของเข้า</h2>
+        </div>
+        <div class="p-4">
+          <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
+          <div id="incoming-items-list" class="space-y-2"></div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <button onclick="saveIncoming()" class="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- หน้ายอดขาย -->
+
+  <div id="sales-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-lg mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับ
+        </button>
+        <div id="sales-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>💰</span> ยอดขาย</h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">ยอดขายรวม (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="total-sales" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">จำนวนเงินโอน (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="transfer-amount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">จำนวนเงินสด (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="cash-amount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">ค่าใช้จ่าย (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="expenses" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
+            <textarea id="sales-note" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" rows="2" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
+          </div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <div id="sales-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+          <button onclick="saveSales()" class="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- หน้าเช็คสต็อกผัก -->
+
+  <div id="vegetables-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับ
+        </button>
+        <div id="veg-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>🥬</span> เช็คสต็อกผัก</h2>
+        </div>
+        <div class="p-4 border-b bg-gray-50">
+          <div class="flex gap-2">
+            <button onclick="setVegTab('before')" id="veg-tab-before" class="flex-1 py-3 px-4 rounded-xl font-semibold transition-all bg-emerald-500 text-white">ก่อนขาย</button>
+            <button onclick="setVegTab('after')" id="veg-tab-after" class="flex-1 py-3 px-4 rounded-xl font-semibold transition-all bg-gray-200 text-gray-600">หลังขาย</button>
+          </div>
+        </div>
+        <div id="veg-before-section" class="p-4">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-emerald-50">
+                  <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-20">ของเดิม</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-20">เสีย</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-20">ชั่งเพิ่ม</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-16">ชั่ง</th>
+                  <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="veg-before-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="veg-after-section" class="hidden p-4">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-emerald-50">
+                  <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                  <th class="p-2 text-center font-medium text-gray-600 w-24">เหลือ</th>
+                  <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="veg-after-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <div id="veg-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+          <button onclick="saveVegetables()" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- หน้าของเสีย -->
+
+  <div id="waste-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับ
+        </button>
+        <div id="waste-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-gray-600 to-gray-700 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>🗑️</span> ของเสีย</h2>
+        </div>
+        <div class="p-4">
+          <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
+          <div id="waste-items-list" class="space-y-2"></div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <button onclick="saveWaste()" class="w-full bg-gradient-to-r from-gray-600 to-gray-700 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- หน้าประวัติ -->
+
+  <div id="history-page" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="goHome()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          กลับหน้าหลัก
+        </button>
+        <button onclick="loadRecords(true)" class="bg-white p-2 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-gray-700 text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          โหลดใหม่
+        </button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            ประวัติการเช็คสต็อค
+          </h2>
+        </div>
+        <div class="p-4">
+          <div class="flex flex-wrap gap-3 mb-4">
+            <div class="flex-1 min-w-[150px]">
+              <label class="block text-sm font-medium text-gray-700 mb-1">เลือกวันที่</label>
+              <input type="date" id="history-date" class="input-field w-full p-2 border-2 border-gray-200 rounded-xl" onchange="filterHistory()">
+            </div>
+            <div class="flex-1 min-w-[150px]">
+              <label class="block text-sm font-medium text-gray-700 mb-1">ประเภท</label>
+              <select id="history-type" class="input-field w-full p-2 border-2 border-gray-200 rounded-xl bg-white" onchange="filterHistory()">
+                <option value="">ทั้งหมด</option>
+                <option value="weekly">เช็คสต็อกรายสัปดาห์</option>
+                <option value="incoming">จำนวนของเข้า</option>
+                <option value="sales">ยอดขาย</option>
+                <option value="vegetables">เช็คสต็อกผัก</option>
+                <option value="waste">ของเสีย</option>
+              </select>
+            </div>
+          </div>
+          <div id="history-list" class="space-y-3 max-h-[60vh] overflow-y-auto">
+            <p class="text-center text-gray-500 py-8">ยังไม่มีประวัติ</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+
+  <div id="toast" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg hidden z-50 transition-all text-white font-medium">
+    <span id="toast-message"></span>
+  </div>
+
+</div>
+
+<script>
+// ====================================================
+// ⚙️ ตั้งค่า URL ของ Google Apps Script ตรงนี้
+// ====================================================
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyla8C3oWLF1V9cYjCKLXZXKDPQ9vC71vUZwDKmfpm5EG7bErpKr0EWVN0jHWvTahcNdA/exec";
+
+// ====================================================
+// ข้อมูลรายการสินค้า
+// ====================================================
+const freshItems = [
+  { name: 'สันคอสไลด์', unit: 'ถุง' },
+  { name: 'สามชั้นสไลด์', unit: 'ถุง' },
+  { name: 'หมูนุ่ม', unit: 'ถุง' },
+  { name: 'หมึก', unit: 'ถุง' },
+  { name: 'ปลาดอลลี่', unit: 'ถุง' },
+  { name: 'ปลาหมึกกรอบ', unit: 'ถุง' },
+  { name: 'แมงกะพรุน', unit: 'ถุง' },
+  { name: 'กุ้ง', unit: 'ถุง' },
+  { name: 'รากบัว', unit: 'ถุง' },
+  { name: 'ปูอัด', unit: 'ถุง' },
+  { name: 'ต็อก', unit: 'ถุง' }
+];
+
+const stickItems = [
+  { name: 'เต้าหู้ชีส', unit: 'ไม้' },
+  { name: 'ชีสหลายสี', unit: 'ไม้' },
+  { name: 'กุ้งพันสาหร่าย', unit: 'ไม้' },
+  { name: 'ลูกชิ้นกลม', unit: 'ไม้' },
+  { name: 'ไส้กรอกชีส', unit: 'ไม้' },
+  { name: 'ฟองเต้าหู้สามเหลี่ยม', unit: 'ไม้' },
+  { name: 'รวม (ถ้ามี)', unit: 'ไม้' }
+];
+
+const dryItems = [
+  { name: 'เส้นมันเทศ', unit: 'อัน' },
+  { name: 'เส้นอุด้ง', unit: 'อัน' },
+  { name: 'วุ้นเส้นหม่าล่า', unit: 'อัน' },
+  { name: 'บะหมี่', unit: 'อัน' },
+  { name: 'สาหร่าย', unit: 'อัน' },
+  { name: 'ฟองเต้าหู้', unit: 'อัน' },
+  { name: 'น้ำจิ้มสุกี้', unit: 'อัน' },
+  { name: 'น้ำจิ้มงา', unit: 'อัน' },
+  { name: 'น้ำจิ้มหน้าแดง', unit: 'อัน' }
+];
+
+const vegetables = [
+  { name: 'ผักกาดขาว', weight: 50 },
+  { name: 'เห็ดเข็มทอง', weight: 50 },
+  { name: 'กวางตุ้ง', weight: 50 },
+  { name: 'ผักบุ้ง', weight: 100 },
+  { name: 'ข้าวโพด', weight: 3 },
+  { name: 'กะหล่ำ', weight: 50 }
+];
+
+const allItems = [...freshItems, ...stickItems, ...dryItems];
+
+// ====================================================
+// State
+// ====================================================
+let currentForm = '';
+let checkerName = '';
+let branch = '';
+let allRecords = [];
+let vegTab = 'before';
+
+// ====================================================
+// เริ่มต้นระบบ
+// ====================================================
+document.addEventListener("DOMContentLoaded", async function () {
+  renderWeeklyTables();
+  renderIncomingItems();
+  renderVegetableTables();
+  renderWasteItems();
+  await loadRecords();
+});
+
+// ====================================================
+// UI Functions
+// ====================================================
+function showPage(pageId) {
+  const pages = [
+    'home-page', 'checker-form', 'weekly-form', 'incoming-form',
+    'sales-form', 'vegetables-form', 'waste-form', 'history-page'
+  ];
+  pages.forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById(pageId).classList.remove('hidden');
+}
+
+function goHome() {
+  showPage('home-page');
+  currentForm = '';
+}
+
+function openForm(type) {
+  currentForm = type;
+  const formConfig = {
+    weekly:     { icon: 'bg-gradient-to-br from-red-500 to-red-600',     emoji: '📋', title: 'เช็คสต็อกรายสัปดาห์' },
+    incoming:   { icon: 'bg-gradient-to-br from-orange-500 to-orange-600', emoji: '📦', title: 'จำนวนของเข้า' },
+    sales:      { icon: 'bg-gradient-to-br from-green-500 to-green-600',  emoji: '💰', title: 'ยอดขาย' },
+    vegetables: { icon: 'bg-gradient-to-br from-emerald-500 to-emerald-600', emoji: '🥬', title: 'เช็คสต็อกผัก' },
+    waste:      { icon: 'bg-gradient-to-br from-gray-600 to-gray-700',    emoji: '🗑️', title: 'ของเสีย' }
+  };
+  const config = formConfig[type];
+  const iconEl = document.getElementById('form-icon');
+  iconEl.className = `w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center text-3xl ${config.icon}`;
+  iconEl.textContent = config.emoji;
+  document.getElementById('form-title').textContent = config.title;
+  document.getElementById('checker-name').value = '';
+  document.getElementById('branch-select').value = '';
+  showPage('checker-form');
+}
+
+function backToChecker() {
+  showPage('checker-form');
+}
+
+function proceedToForm() {
+  checkerName = document.getElementById('checker-name').value.trim();
+  branch = document.getElementById('branch-select').value;
+
+  if (!checkerName || !branch) {
+    showToast('กรุณากรอกข้อมูลให้ครบ', 'error');
+    return;
+  }
+
+  const infoText = `ผู้ตรวจ: ${checkerName} | สาขา: ${branch}`;
+
+  switch (currentForm) {
+    case 'weekly':
+      document.getElementById('weekly-checker-info').textContent = infoText;
+      showPage('weekly-form');
+      break;
+    case 'incoming':
+      document.getElementById('incoming-checker-info').textContent = infoText;
+      // Reset checkboxes
+      allItems.forEach((_, i) => {
+        const cb = document.getElementById(`incoming-check-${i}`);
+        if (cb) { cb.checked = false; document.getElementById(`incoming-fields-${i}`).classList.add('hidden'); }
+      });
+      showPage('incoming-form');
+      break;
+    case 'sales':
+      document.getElementById('sales-checker-info').textContent = infoText;
+      document.getElementById('total-sales').value = '';
+      document.getElementById('transfer-amount').value = '';
+      document.getElementById('cash-amount').value = '';
+      document.getElementById('expenses').value = '';
+      document.getElementById('sales-note').value = '';
+      showPage('sales-form');
+      break;
+    case 'vegetables':
+      document.getElementById('veg-checker-info').textContent = infoText;
+      setVegTab('before');
+      showPage('vegetables-form');
+      break;
+    case 'waste':
+      document.getElementById('waste-checker-info').textContent = infoText;
+      // Reset checkboxes
+      allItems.forEach((_, i) => {
+        const cb = document.getElementById(`waste-check-${i}`);
+        if (cb) { cb.checked = false; document.getElementById(`waste-fields-${i}`).classList.add('hidden'); }
+      });
+      showPage('waste-form');
+      break;
+  }
+}
+
+// ====================================================
+// Render Functions
+// ====================================================
+function renderWeeklyTables() {
+  document.getElementById('fresh-items-table').innerHTML = freshItems.map((item, i) => `
+    <tr>
+      <td class="p-2 font-medium text-gray-700">${item.name}</td>
+      <td class="p-2"><input type="number" min="0" class="weekly-fresh-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2 text-center text-gray-500">${item.unit}</td>
+      <td class="p-2"><input type="text" class="weekly-fresh-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('stick-items-table').innerHTML = stickItems.map((item, i) => `
+    <tr>
+      <td class="p-2 font-medium text-gray-700">${item.name}</td>
+      <td class="p-2"><input type="number" min="0" class="weekly-stick-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2 text-center text-gray-500">${item.unit}</td>
+      <td class="p-2"><input type="text" class="weekly-stick-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('dry-items-table').innerHTML = dryItems.map((item, i) => `
+    <tr>
+      <td class="p-2 font-medium text-gray-700">${item.name}</td>
+      <td class="p-2"><input type="number" min="0" class="weekly-dry-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2 text-center text-gray-500">${item.unit}</td>
+      <td class="p-2"><input type="text" class="weekly-dry-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td>
+    </tr>
+  `).join('');
+}
+
+function renderIncomingItems() {
+  document.getElementById('incoming-items-list').innerHTML = allItems.map((item, i) => `
+    <div class="bg-gray-50 p-3 rounded-xl">
+      <div class="flex items-center gap-3">
+        <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
+        <label for="incoming-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
+      </div>
+      <div id="incoming-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
+        <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
+        <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
+        <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleIncomingItem(index) {
+  const fields = document.getElementById(`incoming-fields-${index}`);
+  const checkbox = document.getElementById(`incoming-check-${index}`);
+  checkbox.checked ? fields.classList.remove('hidden') : fields.classList.add('hidden');
+}
+
+function renderVegetableTables() {
+  document.getElementById('veg-before-table').innerHTML = vegetables.map((item, i) => `
+    <tr>
+      <td class="p-2 font-medium text-gray-700">${item.name}</td>
+      <td class="p-2"><input type="number" min="0" class="veg-original w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2"><input type="number" min="0" class="veg-spoiled w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2"><input type="number" min="0" class="veg-added w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2 text-center text-gray-500 font-medium">${item.weight}</td>
+      <td class="p-2"><input type="text" class="veg-before-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('veg-after-table').innerHTML = vegetables.map((item, i) => `
+    <tr>
+      <td class="p-2 font-medium text-gray-700">${item.name}</td>
+      <td class="p-2"><input type="number" min="0" class="veg-remaining w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+      <td class="p-2"><input type="text" class="veg-after-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td>
+    </tr>
+  `).join('');
+}
+
+function setVegTab(tab) {
+  vegTab = tab;
+  const activeClass = 'flex-1 py-3 px-4 rounded-xl font-semibold transition-all bg-emerald-500 text-white';
+  const inactiveClass = 'flex-1 py-3 px-4 rounded-xl font-semibold transition-all bg-gray-200 text-gray-600';
+
+  document.getElementById('veg-tab-before').className = tab === 'before' ? activeClass : inactiveClass;
+  document.getElementById('veg-tab-after').className  = tab === 'after'  ? activeClass : inactiveClass;
+  document.getElementById('veg-before-section').classList.toggle('hidden', tab !== 'before');
+  document.getElementById('veg-after-section').classList.toggle('hidden', tab !== 'after');
+}
+
+function renderWasteItems() {
+  document.getElementById('waste-items-list').innerHTML = allItems.map((item, i) => `
+    <div class="bg-gray-50 p-3 rounded-xl">
+      <div class="flex items-center gap-3">
+        <input type="checkbox" id="waste-check-${i}" class="w-5 h-5 text-gray-500 rounded" onchange="toggleWasteItem(${i})">
+        <label for="waste-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
+      </div>
+      <div id="waste-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
+        <input type="number" min="0" class="waste-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวนเสีย">
+        <div class="flex items-center justify-center text-gray-500 text-sm">ถุง</div>
+        <input type="text" class="waste-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleWasteItem(index) {
+  const fields = document.getElementById(`waste-fields-${index}`);
+  const checkbox = document.getElementById(`waste-check-${index}`);
+  checkbox.checked ? fields.classList.remove('hidden') : fields.classList.add('hidden');
+}
+
+// ====================================================
+// Save Functions
+// ====================================================
+async function saveWeeklyStock() {
+  const freshInputs = document.querySelectorAll('.weekly-fresh-input');
+  const stickInputs = document.querySelectorAll('.weekly-stick-input');
+  const dryInputs   = document.querySelectorAll('.weekly-dry-input');
+
+  let allFilled = true;
+  [...freshInputs, ...stickInputs, ...dryInputs].forEach(input => {
+    if (input.value === '' || isNaN(parseInt(input.value))) allFilled = false;
+  });
+
+  if (!allFilled) {
+    document.getElementById('weekly-validation-msg').classList.remove('hidden');
+    showToast('กรุณากรอกตัวเลขให้ครบทุกช่อง (สามารถกรอก 0 ได้)', 'error');
+    return;
+  }
+  document.getElementById('weekly-validation-msg').classList.add('hidden');
+
+  const freshNotes = document.querySelectorAll('.weekly-fresh-note');
+  const stickNotes = document.querySelectorAll('.weekly-stick-note');
+  const dryNotes   = document.querySelectorAll('.weekly-dry-note');
+
+  const data = {
+    fresh: [...freshInputs].map((input, i) => ({
+      name: freshItems[i].name, qty: parseInt(input.value) || 0,
+      unit: freshItems[i].unit, note: freshNotes[i].value
+    })),
+    stick: [...stickInputs].map((input, i) => ({
+      name: stickItems[i].name, qty: parseInt(input.value) || 0,
+      unit: stickItems[i].unit, note: stickNotes[i].value
+    })),
+    dry: [...dryInputs].map((input, i) => ({
+      name: dryItems[i].name, qty: parseInt(input.value) || 0,
+      unit: dryItems[i].unit, note: dryNotes[i].value
+    }))
+  };
+
+  await saveRecord('weekly', data, 'save-weekly-btn');
+}
+
+async function saveIncoming() {
+  const data = [];
+  allItems.forEach((item, i) => {
+    const checkbox = document.getElementById(`incoming-check-${i}`);
+    if (checkbox && checkbox.checked) {
+      const qtyEl  = document.querySelector(`.incoming-qty[data-index="${i}"]`);
+      const noteEl = document.querySelector(`.incoming-note[data-index="${i}"]`);
+      data.push({
+        name: item.name,
+        qty:  parseInt(qtyEl?.value) || 0,
+        unit: item.unit,
+        note: noteEl?.value || ''
+      });
+    }
+  });
+
+  if (data.length === 0) {
+    showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'error');
+    return;
+  }
+  await saveRecord('incoming', { items: data });
+}
+
+async function saveSales() {
+  const totalSales     = document.getElementById('total-sales').value;
+  const transferAmount = document.getElementById('transfer-amount').value;
+  const cashAmount     = document.getElementById('cash-amount').value;
+  const expenses       = document.getElementById('expenses').value;
+  const note           = document.getElementById('sales-note').value;
+
+  if (!totalSales || !transferAmount || !cashAmount || !expenses) {
+    document.getElementById('sales-validation-msg').classList.remove('hidden');
+    showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'error');
+    return;
+  }
+  document.getElementById('sales-validation-msg').classList.add('hidden');
+
+  const data = {
+    totalSales:     parseFloat(totalSales),
+    transferAmount: parseFloat(transferAmount),
+    cashAmount:     parseFloat(cashAmount),
+    expenses:       parseFloat(expenses),
+    note
+  };
+  await saveRecord('sales', data);
+}
+
+async function saveVegetables() {
+  let data;
+
+  if (vegTab === 'before') {
+    const originalInputs = document.querySelectorAll('.veg-original');
+    const spoiledInputs  = document.querySelectorAll('.veg-spoiled');
+    const addedInputs    = document.querySelectorAll('.veg-added');
+    const beforeNotes    = document.querySelectorAll('.veg-before-note');
+
+    let allFilled = true;
+    [...originalInputs, ...spoiledInputs, ...addedInputs].forEach(input => {
+      if (input.value === '') allFilled = false;
+    });
+
+    if (!allFilled) {
+      document.getElementById('veg-validation-msg').classList.remove('hidden');
+      showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'error');
+      return;
+    }
+    document.getElementById('veg-validation-msg').classList.add('hidden');
+
+    data = {
+      subType: 'before',
+      items: vegetables.map((item, i) => ({
+        name:     item.name,
+        original: parseInt(originalInputs[i].value) || 0,
+        spoiled:  parseInt(spoiledInputs[i].value)  || 0,
+        added:    parseInt(addedInputs[i].value)     || 0,
+        weight:   item.weight,
+        note:     beforeNotes[i].value
+      }))
+    };
+  } else {
+    const remainingInputs = document.querySelectorAll('.veg-remaining');
+    const afterNotes      = document.querySelectorAll('.veg-after-note');
+
+    let allFilled = true;
+    remainingInputs.forEach(input => { if (input.value === '') allFilled = false; });
+
+    if (!allFilled) {
+      document.getElementById('veg-validation-msg').classList.remove('hidden');
+      showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'error');
+      return;
+    }
+    document.getElementById('veg-validation-msg').classList.add('hidden');
+
+    data = {
+      subType: 'after',
+      items: vegetables.map((item, i) => ({
+        name:      item.name,
+        remaining: parseInt(remainingInputs[i].value) || 0,
+        note:      afterNotes[i].value
+      }))
+    };
+  }
+
+  await saveRecord('vegetables', data);
+}
+
+async function saveWaste() {
+  const data = [];
+  allItems.forEach((item, i) => {
+    const checkbox = document.getElementById(`waste-check-${i}`);
+    if (checkbox && checkbox.checked) {
+      const qtyEl  = document.querySelector(`.waste-qty[data-index="${i}"]`);
+      const noteEl = document.querySelector(`.waste-note[data-index="${i}"]`);
+      data.push({
+        name: item.name,
+        qty:  parseInt(qtyEl?.value) || 0,
+        unit: 'ถุง',
+        note: noteEl?.value || ''
+      });
+    }
+  });
+
+  if (data.length === 0) {
+    showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'error');
+    return;
+  }
+  await saveRecord('waste', { items: data });
+}
+
+// ====================================================
+// Core Save & Load Functions (Real-time)
+// ====================================================
+async function saveRecord(type, data, btnId = null) {
+  // หาปุ่มที่กด แล้วแสดง loading
+  const saveButtons = document.querySelectorAll('button[onclick^="save"]');
+  let activeBtn = null;
+  saveButtons.forEach(b => {
+    if (!b.disabled && b.closest(`#${type}-form, #weekly-form, #incoming-form, #sales-form, #vegetables-form, #waste-form`)) {
+      activeBtn = b;
+    }
+  });
+  // fallback: หาปุ่มบันทึกในหน้าที่ active
+  const activePage = ['weekly-form','incoming-form','sales-form','vegetables-form','waste-form']
+    .find(p => !document.getElementById(p).classList.contains('hidden'));
+  if (activePage) {
+    activeBtn = document.querySelector(`#${activePage} button[onclick]`);
+  }
+
+  let originalHTML = '';
+  if (activeBtn) {
+    originalHTML = activeBtn.innerHTML;
+    activeBtn.disabled = true;
+    activeBtn.innerHTML = `<span class="flex items-center justify-center gap-2"><span class="loading-spinner"></span> กำลังบันทึก...</span>`;
+  }
+
+  const now = new Date();
+  const thaiDate = now.toLocaleString('th-TH', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: 'Asia/Bangkok'
+  });
+
+  const payload = {
+    date:         now.toISOString(),
+    date_thai:    thaiDate,
+    type:         type,
+    checker_name: checkerName,
+    branch:       branch,
+    data:         JSON.stringify(data)
+  };
+
+  // ส่งข้อมูลด้วย Image trick — วิธีนี้ bypass CORS ได้ทุก browser รวม iOS Safari
+  const encodedData = encodeURIComponent(JSON.stringify(payload));
+  const img = new Image();
+  img.src = GOOGLE_SCRIPT_URL + '?method=post&data=' + encodedData;
+
+  img.onload = img.onerror = function() {
+    allRecords.unshift({ ...payload });
+    updateStats();
+    showToast('บันทึกลง Google Sheets สำเร็จ ✅', 'success');
+    setTimeout(() => goHome(), 1200);
+  };
+
+  // timeout กันค้าง
+  setTimeout(function() {
+    allRecords.unshift({ ...payload });
+    updateStats();
+    showToast('บันทึกสำเร็จ ✅', 'success');
+    setTimeout(() => goHome(), 1200);
+  }, 3000);
+}
+
+async function loadRecords(showMsg = false) {
+  if (showMsg) showToast('กำลังโหลดข้อมูล...', 'info');
+
+  try {
+    const url = GOOGLE_SCRIPT_URL + '?t=' + Date.now();
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
+    const result = await response.json();
+
+    if (!result || !Array.isArray(result.data)) {
+      if (showMsg) showToast('ไม่พบข้อมูล', 'error');
+      return;
+    }
+
+    allRecords = result.data;
+    updateStats();
+    if (showMsg) {
+      showToast(`โหลดสำเร็จ ${allRecords.length} รายการ ✅`, 'success');
+      filterHistory();
+    }
+
+  } catch (error) {
+    // ไม่แสดง error ตอนเปิดแอป
+    console.warn('loadRecords:', error.message);
+    if (showMsg) showToast('โหลดข้อมูลไม่สำเร็จ ❌', 'error');
+  }
+}
+
+// อัปเดตทุก 60 วินาที
+setInterval(async () => {
+  await loadRecords(false);
+}, 60000);
+
+// ====================================================
+// History Functions
+// ====================================================
+function showHistory() {
+  document.getElementById('history-date').value = new Date().toISOString().split('T')[0];
+  filterHistory();
+  showPage('history-page');
+}
+
+function filterHistory() {
+  const dateFilter = document.getElementById('history-date').value;
+  const typeFilter = document.getElementById('history-type').value;
+
+  let filtered = allRecords;
+  if (dateFilter) filtered = filtered.filter(r => r.date && r.date.startsWith(dateFilter));
+  if (typeFilter) filtered = filtered.filter(r => r.type === typeFilter);
+
+  renderHistoryList(filtered);
+}
+
+function renderHistoryList(records) {
+  const container = document.getElementById('history-list');
+
+  if (!records || records.length === 0) {
+    container.innerHTML = '<p class="text-center text-gray-500 py-8">ไม่พบข้อมูล</p>';
+    return;
+  }
+
+  const typeConfig = {
+    weekly:     { colorClass: 'bg-red-50 border-red-100',     textColor: 'text-red-600',     emoji: '📋', name: 'เช็คสต็อกรายสัปดาห์' },
+    incoming:   { colorClass: 'bg-orange-50 border-orange-100', textColor: 'text-orange-600', emoji: '📦', name: 'จำนวนของเข้า' },
+    sales:      { colorClass: 'bg-green-50 border-green-100',  textColor: 'text-green-600',   emoji: '💰', name: 'ยอดขาย' },
+    vegetables: { colorClass: 'bg-emerald-50 border-emerald-100', textColor: 'text-emerald-600', emoji: '🥬', name: 'เช็คสต็อกผัก' },
+    waste:      { colorClass: 'bg-gray-100 border-gray-200',   textColor: 'text-gray-600',    emoji: '🗑️', name: 'ของเสีย' }
+  };
+
+  container.innerHTML = records.map(record => {
+    const config = typeConfig[record.type] || typeConfig.weekly;
+    let dateStr = '', timeStr = '';
+    try {
+      const d = new Date(record.date);
+      dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+      timeStr = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    } catch(e) {
+      dateStr = record.date_thai || record.date || '-';
+    }
+
+    let summary = '';
+    try {
+      const d = typeof record.data === 'string' ? JSON.parse(record.data) : record.data;
+      if (record.type === 'sales') {
+        summary = `ยอดขาย: ${Number(d.totalSales).toLocaleString()} บาท`;
+      } else if (record.type === 'weekly') {
+        const total = (d.fresh?.length || 0) + (d.stick?.length || 0) + (d.dry?.length || 0);
+        summary = `${total} รายการ`;
+      } else if (d?.items) {
+        summary = `${d.items.length} รายการ`;
+      } else if (d?.subType) {
+        summary = d.subType === 'before' ? 'ก่อนขาย' : 'หลังขาย';
+      }
+    } catch(e) {}
+
+    return `
+      <div class="${config.colorClass} p-4 rounded-xl border">
+        <div class="flex items-start justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">${config.emoji}</span>
+            <div>
+              <div class="font-semibold text-gray-800">${config.name}</div>
+              <div class="text-sm text-gray-500">${dateStr} ${timeStr}</div>
+            </div>
+          </div>
+          ${summary ? `<span class="text-sm font-semibold ${config.textColor}">${summary}</span>` : ''}
+        </div>
+        <div class="mt-2 text-sm text-gray-600">
+          <div>ผู้ตรวจ: <span class="font-medium">${record.checker_name || '-'}</span></div>
+          <div>สาขา: <span class="font-medium">${record.branch || '-'}</span></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const todayRec = allRecords.filter(r => r.date && r.date.startsWith(today));
+
+  ['weekly','incoming','sales','vegetables','waste'].forEach(type => {
+    const el = document.getElementById(`stat-${type}`);
+    if (el) el.textContent = todayRec.filter(r => r.type === type).length;
+  });
+}
+
+// ====================================================
+// Toast Notification
+// ====================================================
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  const toastMsg = document.getElementById('toast-message');
+  const colors = {
+    success: 'bg-gray-800',
+    error:   'bg-red-500',
+    info:    'bg-blue-500'
+  };
+
+  toast.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg z-50 transition-all text-white font-medium ${colors[type] || colors.success}`;
+  toastMsg.textContent = message;
+  toast.classList.remove('hidden');
+
+  setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+</script>
+
+</body>
+</html>
