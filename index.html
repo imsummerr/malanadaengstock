@@ -495,7 +495,16 @@ const vegetables = [
   { name: 'กวางตุ้ง', weight: 50 }, { name: 'ผักบุ้ง', weight: 100 },
   { name: 'ข้าวโพด', weight: 3 }, { name: 'กะหล่ำ', weight: 50 }
 ];
+const vegIncomingItems = [
+  { name: 'ผักกาดขาว', unit: 'กรัม' },
+  { name: 'เห็ดเข็มทอง', unit: 'กรัม' },
+  { name: 'กวางตุ้ง',    unit: 'กรัม' },
+  { name: 'ผักบุ้ง',     unit: 'กรัม' },
+  { name: 'ข้าวโพด',    unit: 'กรัม' },
+  { name: 'กะหล่ำ',     unit: 'กรัม' }
+];
 const allItems = [...freshItems, ...stickItems, ...dryItems];
+const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
 
 // State
 let currentForm = '';
@@ -814,7 +823,7 @@ function renderWeeklyTables() {
 }
 
 function renderIncomingItems() {
-  document.getElementById('incoming-items-list').innerHTML = allItems.map((item,i) => `
+  document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item,i) => `
     <div class="bg-gray-50 p-3 rounded-xl">
       <div class="flex items-center gap-3">
         <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
@@ -921,7 +930,7 @@ async function saveWeeklyStock() {
 
 async function saveIncoming() {
   const items = [];
-  allItems.forEach((item,i) => {
+  incomingItems.forEach((item,i) => {
     if (document.getElementById(`incoming-check-${i}`).checked) {
       items.push({ name: item.name, qty: parseInt(document.querySelectorAll('.incoming-qty')[i].value)||0, unit: item.unit, note: document.querySelectorAll('.incoming-note')[i].value });
     }
