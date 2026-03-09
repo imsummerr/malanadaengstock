@@ -1,0 +1,1052 @@
+<!doctype html>
+
+<html lang="th" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบเช็คสต็อค หม่าล่าหน้าแดง</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    .btn-main { transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .btn-main:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    .btn-main:active { transform: translateY(0); }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { opacity: 1; height: 32px; }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .input-field:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.1); }
+    .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #ef4444; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    body { box-sizing: border-box; }
+  </style>
+</head>
+<body class="h-full bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50">
+
+<div id="app" class="min-h-full overflow-auto">
+
+  <!-- ===== หน้าหลัก ===== -->
+
+  <div id="home-page" class="min-h-full p-4 md:p-6">
+    <div class="flex justify-between items-center mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
+          <span class="text-2xl">🍜</span>
+        </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold text-gray-800">หม่าล่าหน้าแดง</h1>
+          <p class="text-sm text-gray-500">ระบบเช็คสต็อค</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="showSetup()" class="bg-white p-3 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-gray-700" title="ตั้งค่า">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="hidden md:inline font-medium">ตั้งค่า</span>
+        </button>
+        <button onclick="showHistory()" class="bg-white p-3 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-gray-700">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span class="hidden md:inline font-medium">ประวัติ</span>
+        </button>
+      </div>
+    </div>
+
+```
+<div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+  <button onclick="openForm('weekly')" class="btn-main bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📋</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>รายสัปดาห์</span>
+  </button>
+  <button onclick="openForm('incoming')" class="btn-main bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">📦</span></div>
+    <span class="font-semibold text-center leading-tight">จำนวน<br>ของเข้า</span>
+  </button>
+  <button onclick="openForm('sales')" class="btn-main bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">💰</span></div>
+    <span class="font-semibold text-center leading-tight">ยอดขาย</span>
+  </button>
+  <button onclick="openForm('vegetables')" class="btn-main bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🥬</span></div>
+    <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>ผัก</span>
+  </button>
+  <button onclick="openForm('waste')" class="btn-main bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
+    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🗑️</span></div>
+    <span class="font-semibold text-center leading-tight">ของเสีย</span>
+  </button>
+</div>
+
+<!-- สถิติวันนี้ -->
+<div class="mt-8 max-w-4xl mx-auto">
+  <div class="bg-white rounded-2xl p-4 shadow-md">
+    <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📊</span> สรุปวันนี้ <span id="stats-sync-status" class="text-xs text-gray-400 ml-auto"></span></h3>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+      <div class="bg-red-50 p-3 rounded-xl"><div id="stat-weekly" class="text-2xl font-bold text-red-600">0</div><div class="text-xs text-gray-500">สต็อกสัปดาห์</div></div>
+      <div class="bg-orange-50 p-3 rounded-xl"><div id="stat-incoming" class="text-2xl font-bold text-orange-600">0</div><div class="text-xs text-gray-500">ของเข้า</div></div>
+      <div class="bg-green-50 p-3 rounded-xl"><div id="stat-sales" class="text-2xl font-bold text-green-600">0</div><div class="text-xs text-gray-500">ยอดขาย</div></div>
+      <div class="bg-emerald-50 p-3 rounded-xl"><div id="stat-vegetables" class="text-2xl font-bold text-emerald-600">0</div><div class="text-xs text-gray-500">สต็อกผัก</div></div>
+      <div class="bg-gray-100 p-3 rounded-xl"><div id="stat-waste" class="text-2xl font-bold text-gray-600">0</div><div class="text-xs text-gray-500">ของเสีย</div></div>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- ===== หน้าตั้งค่า Google Sheets ===== -->
+
+  <div id="setup-page" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-lg mx-auto">
+      <button onclick="goHome()" class="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับหน้าหลัก
+      </button>
+      <div class="bg-white rounded-2xl p-6 shadow-lg space-y-5">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">⚙️ ตั้งค่า Google Sheets</h2>
+
+```
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-2">
+      <p class="font-semibold">📌 วิธีสร้าง Apps Script Web App URL:</p>
+      <ol class="list-decimal list-inside space-y-1">
+        <li>เปิด Google Sheets ของคุณ</li>
+        <li>เมนู <strong>Extensions → Apps Script</strong></li>
+        <li>ลบโค้ดเดิมออกทั้งหมด แล้ววางโค้ดด้านล่าง</li>
+        <li>กด <strong>Deploy → New deployment</strong></li>
+        <li>Type: <strong>Web app</strong> | Execute as: <strong>Me</strong> | Who has access: <strong>Anyone</strong></li>
+        <li>คัดลอก URL มาวางในช่องด้านล่าง</li>
+      </ol>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-4 text-xs text-green-300 overflow-auto max-h-64">
+      <p class="text-gray-400 mb-2">// วางโค้ดนี้ใน Apps Script:</p>
+      <pre id="apps-script-code" class="whitespace-pre-wrap text-xs"></pre>
+    </div>
+    <button onclick="copyAppsScript()" class="w-full border-2 border-gray-300 text-gray-700 py-2 rounded-xl hover:bg-gray-50 transition-all text-sm font-medium">
+      📋 คัดลอกโค้ด Apps Script
+    </button>
+
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-2">Apps Script Web App URL <span class="text-red-500">*</span></label>
+      <input type="url" id="sheets-url-input" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-sm" placeholder="https://script.google.com/macros/s/.../exec">
+      <p class="text-xs text-gray-400 mt-1">URL จะถูกบันทึกในเบราว์เซอร์ของคุณ</p>
+    </div>
+
+    <button onclick="saveSetup()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+      💾 บันทึกการตั้งค่า
+    </button>
+
+    <div id="setup-test-result" class="hidden text-sm p-3 rounded-xl"></div>
+    <button onclick="testConnection()" class="w-full border-2 border-blue-300 text-blue-600 py-3 rounded-xl font-medium hover:bg-blue-50 transition-all">
+      🔌 ทดสอบการเชื่อมต่อ
+    </button>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- ===== หน้ากรอกข้อมูลเบื้องต้น ===== -->
+
+  <div id="checker-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-lg mx-auto">
+      <button onclick="goHome()" class="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับหน้าหลัก
+      </button>
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div id="form-icon" class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center text-3xl"></div>
+        <h2 id="form-title" class="text-xl font-bold text-center text-gray-800 mb-6"></h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">ชื่อผู้ตรวจ <span class="text-red-500">*</span></label>
+            <input type="text" id="checker-name" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="กรอกชื่อผู้ตรวจ">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">สาขา <span class="text-red-500">*</span></label>
+            <select id="branch-select" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg bg-white">
+              <option value="">เลือกสาขา</option>
+              <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
+            </select>
+          </div>
+          <button onclick="proceedToForm()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            ดำเนินการต่อ →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้าเช็คสต็อกรายสัปดาห์ ===== -->
+
+  <div id="weekly-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
+        </button>
+        <div id="weekly-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-red-500 to-red-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>📋</span> เช็คสต็อกรายสัปดาห์</h2>
+        </div>
+        <div class="p-4">
+          <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2 bg-red-50 p-3 rounded-xl"><span>🥩</span> หมวดของสด (หน่วย: ถุง)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-gray-50">
+                <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+                <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+              </tr></thead>
+              <tbody id="fresh-items-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+          <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-orange-50 p-3 rounded-xl"><span>🍢</span> หมวดของสด (หน่วย: ไม้)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-gray-50">
+                <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+                <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+              </tr></thead>
+              <tbody id="stick-items-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+          <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-yellow-50 p-3 rounded-xl"><span>🍜</span> หมวดของแห้ง (หน่วย: อัน)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-gray-50">
+                <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+                <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+              </tr></thead>
+              <tbody id="dry-items-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+          <h3 class="font-bold text-gray-800 mb-3 mt-6 flex items-center gap-2 bg-green-50 p-3 rounded-xl"><span>🥬</span> หมวดผัก (หน่วย: กรัม)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-gray-50">
+                <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-24">จำนวน</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-16">หน่วย</th>
+                <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+              </tr></thead>
+              <tbody id="weekly-veg-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <div id="weekly-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+          <button onclick="saveWeeklyStock()" id="save-weekly-btn" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้าจำนวนของเข้า ===== -->
+
+  <div id="incoming-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
+        </button>
+        <div id="incoming-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>📦</span> จำนวนของเข้า</h2>
+        </div>
+        <div class="p-4">
+          <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
+          <div id="incoming-items-list" class="space-y-2"></div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <button onclick="saveIncoming()" class="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้ายอดขาย ===== -->
+
+  <div id="sales-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-lg mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
+        </button>
+        <div id="sales-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>💰</span> ยอดขาย</h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div><label class="block text-sm font-medium text-gray-700 mb-2">ยอดขายรวม (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="total-sales" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-2">จำนวนเงินโอน (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="transfer-amount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-2">จำนวนเงินสด (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="cash-amount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-2">ค่าใช้จ่าย (บาท) <span class="text-red-500">*</span></label>
+            <input type="number" id="expenses" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
+            <textarea id="sales-note" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" rows="2" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea></div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <div id="sales-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+          <button onclick="saveSales()" class="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้าเช็คสต็อกผัก ===== -->
+
+  <div id="vegetables-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
+        </button>
+        <div id="veg-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>🥬</span> เช็คสต็อกผัก</h2>
+        </div>
+        <div id="veg-before-section" class="p-4">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-emerald-50">
+                <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-20">ชั่งเพิ่ม</th>
+                <th class="p-2 text-center font-medium text-gray-600 w-16">ชั่ง (กรัม)</th>
+                <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
+              </tr></thead>
+              <tbody id="veg-before-table" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <div id="veg-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
+          <button onclick="saveVegetables()" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้าของเสีย ===== -->
+
+  <div id="waste-form" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
+        </button>
+        <div id="waste-checker-info" class="text-sm text-gray-500"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-gray-600 to-gray-700 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2"><span>🗑️</span> ของเสีย</h2>
+        </div>
+        <div class="p-4">
+          <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
+          <div id="waste-items-list" class="space-y-2"></div>
+        </div>
+        <div class="p-4 bg-gray-50 border-t">
+          <button onclick="saveWaste()" class="w-full bg-gradient-to-r from-gray-600 to-gray-700 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
+            <span class="flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              บันทึกข้อมูล
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== หน้าประวัติ ===== -->
+
+  <div id="history-page" class="hidden min-h-full p-4 md:p-6 fade-in">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-4">
+        <button onclick="goHome()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับหน้าหลัก
+        </button>
+        <button onclick="loadHistory()" class="bg-purple-100 text-purple-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-200 transition-all flex items-center gap-1">
+          🔄 รีเฟรช
+        </button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4">
+          <h2 class="text-xl font-bold flex items-center gap-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            ประวัติการเช็คสต็อค
+          </h2>
+        </div>
+        <div class="p-4">
+          <div class="flex flex-wrap gap-3 mb-4">
+            <div class="flex-1 min-w-[150px]">
+              <label class="block text-sm font-medium text-gray-700 mb-1">เลือกวันที่</label>
+              <input type="date" id="history-date" class="input-field w-full p-2 border-2 border-gray-200 rounded-xl" onchange="filterHistory()">
+            </div>
+            <div class="flex-1 min-w-[150px]">
+              <label class="block text-sm font-medium text-gray-700 mb-1">ประเภท</label>
+              <select id="history-type" class="input-field w-full p-2 border-2 border-gray-200 rounded-xl bg-white" onchange="filterHistory()">
+                <option value="">ทั้งหมด</option>
+                <option value="weekly">เช็คสต็อกรายสัปดาห์</option>
+                <option value="incoming">จำนวนของเข้า</option>
+                <option value="sales">ยอดขาย</option>
+                <option value="vegetables">เช็คสต็อกผัก</option>
+                <option value="waste">ของเสีย</option>
+              </select>
+            </div>
+          </div>
+          <div id="history-loading" class="text-center py-6 hidden"><div class="spinner mx-auto mb-2"></div><p class="text-gray-500 text-sm">กำลังโหลดประวัติ...</p></div>
+          <div id="history-list" class="space-y-3 max-h-[60vh] overflow-y-auto">
+            <p class="text-center text-gray-500 py-8">กดปุ่ม รีเฟรช เพื่อโหลดประวัติ</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+
+  <div id="toast" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white px-6 py-3 rounded-xl shadow-lg hidden z-50 transition-all flex items-center gap-2">
+    <span id="toast-icon"></span><span id="toast-message"></span>
+  </div>
+
+  <!-- Loading Overlay -->
+
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-black/40 z-40 flex items-center justify-center">
+    <div class="bg-white rounded-2xl p-6 text-center shadow-xl">
+      <div class="spinner mx-auto mb-3"></div>
+      <p id="loading-text" class="text-gray-700 font-medium">กำลังบันทึกข้อมูล...</p>
+      <p class="text-xs text-gray-400 mt-1">กำลังส่งข้อมูลไป Google Sheets</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG & DATA
+// ============================================================
+
+// *** วาง URL จาก Google Apps Script ตรงนี้เลย ***
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzSd5hq_3AxIVZ_gmJ98MqekSE7dZnZtMo85FZ6XIxmdg6U7g9qOD9t9fbXu3tjyVrF7w/exec';
+
+const freshItems = [
+  { name: 'สันคอสไลด์', unit: 'ถุง' }, { name: 'สามชั้นสไลด์', unit: 'ถุง' },
+  { name: 'หมูนุ่ม', unit: 'ถุง' }, { name: 'หมึก', unit: 'ถุง' },
+  { name: 'ปลาดอลลี่', unit: 'ถุง' }, { name: 'ปลาหมึกกรอบ', unit: 'ถุง' },
+  { name: 'แมงกะพรุน', unit: 'ถุง' }, { name: 'กุ้ง', unit: 'ถุง' },
+  { name: 'รากบัว', unit: 'ถุง' }, { name: 'ปูอัด', unit: 'ถุง' }, { name: 'ต็อก', unit: 'ถุง' }
+];
+const stickItems = [
+  { name: 'เต้าหู้ชีส', unit: 'ไม้' }, { name: 'ชีสหลายสี', unit: 'ไม้' },
+  { name: 'กุ้งพันสาหร่าย', unit: 'ไม้' }, { name: 'ลูกชิ้นกลม', unit: 'ไม้' },
+  { name: 'ไส้กรอกชีส', unit: 'ไม้' }, { name: 'ฟองเต้าหู้สามเหลี่ยม', unit: 'ไม้' },
+  { name: 'รวม (ถ้ามี)', unit: 'ไม้' }
+];
+const dryItems = [
+  { name: 'เส้นมันเทศ', unit: 'อัน' }, { name: 'เส้นอุด้ง', unit: 'อัน' },
+  { name: 'วุ้นเส้นหม่าล่า', unit: 'อัน' }, { name: 'บะหมี่', unit: 'อัน' },
+  { name: 'สาหร่าย', unit: 'อัน' }, { name: 'ฟองเต้าหู้', unit: 'อัน' },
+  { name: 'น้ำจิ้มสุกี้', unit: 'อัน' }, { name: 'น้ำจิ้มงา', unit: 'อัน' },
+  { name: 'น้ำจิ้มหน้าแดง', unit: 'อัน' }
+];
+const vegetables = [
+  { name: 'ผักกาดขาว', weight: 100 }, { name: 'เห็ดเข็มทอง', weight: 50 },
+  { name: 'กวางตุ้ง', weight: 50 }, { name: 'ผักบุ้ง', weight: 100 },
+  { name: 'ข้าวโพด', weight: 3 }, { name: 'กะหล่ำ', weight: 100 }
+];
+const vegIncomingItems = [
+  { name: 'ผักกาดขาว', unit: 'กรัม' },
+  { name: 'เห็ดเข็มทอง', unit: 'กรัม' },
+  { name: 'กวางตุ้ง',    unit: 'กรัม' },
+  { name: 'ผักบุ้ง',     unit: 'กรัม' },
+  { name: 'ข้าวโพด',    unit: 'กรัม' },
+  { name: 'กะหล่ำ',     unit: 'กรัม' }
+];
+const allItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
+const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
+
+// State
+let currentForm = '';
+let checkerName = '';
+let branch = '';
+let allRecords = [];
+let vegTab = 'before';
+let localStats = { weekly: 0, incoming: 0, sales: 0, vegetables: 0, waste: 0 };
+
+// ============================================================
+// APPS SCRIPT CODE (แสดงในหน้าตั้งค่า)
+// ============================================================
+const APPS_SCRIPT_CODE = `// วางโค้ดนี้ใน Google Apps Script แล้ว Deploy เป็น Web App
+const SHEET_NAMES = {
+  weekly: "เช็คสต็อกรายสัปดาห์",
+  incoming: "จำนวนของเข้า",
+  sales: "ยอดขาย",
+  vegetables: "เช็คสต็อกผัก",
+  waste: "ของเสีย"
+};
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = SHEET_NAMES[data.type] || data.type;
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+    }
+    // สร้าง header ถ้าเป็นแถวแรก
+    if (sheet.getLastRow() === 0) {
+      const headers = buildHeaders(data.type);
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length)
+        .setBackground('#ef4444').setFontColor('#ffffff').setFontWeight('bold');
+    }
+    const rows = buildRows(data);
+    rows.forEach(row => sheet.appendRow(row));
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: true, sheet: sheetName, rows: rows.length })
+    ).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: false, error: err.message })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  const action = e.parameter.action;
+  if (action === 'ping') {
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: true, message: 'Connected!' })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === 'history') {
+    return getHistory(e.parameter.type, e.parameter.date);
+  }
+  return ContentService.createTextOutput(
+    JSON.stringify({ success: false, error: 'Unknown action' })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getHistory(type, date) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const results = [];
+  const sheetNames = type && SHEET_NAMES[type]
+    ? [SHEET_NAMES[type]]
+    : Object.values(SHEET_NAMES);
+  sheetNames.forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const rowDate = row[0] ? String(row[0]).substring(0, 10) : '';
+      if (date && rowDate !== date) continue;
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = row[idx]; });
+      obj['_sheet'] = name;
+      results.push(obj);
+    }
+  });
+  results.sort((a, b) => new Date(b['วันที่เวลา'] || 0) - new Date(a['วันที่เวลา'] || 0));
+  return ContentService.createTextOutput(
+    JSON.stringify({ success: true, data: results.slice(0, 200) })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildHeaders(type) {
+  const base = ['วันที่เวลา', 'ผู้ตรวจ', 'สาขา'];
+  if (type === 'weekly') return [...base, 'หมวด', 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ'];
+  if (type === 'incoming') return [...base, 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ'];
+  if (type === 'sales') return [...base, 'ยอดขายรวม', 'โอน', 'เงินสด', 'ค่าใช้จ่าย', 'หมายเหตุ'];
+  if (type === 'vegetables') return [...base, 'ช่วง', 'รายการ', 'ของเดิม', 'เสีย', 'ชั่งเพิ่ม', 'ชั่ง(กรัม)', 'เหลือ', 'หมายเหตุ'];
+  if (type === 'waste') return [...base, 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ'];
+  return base;
+}
+
+function buildRows(data) {
+  const ts = data.timestamp;
+  const checker = data.checker;
+  const branch = data.branch;
+  const base = [ts, checker, branch];
+  const d = data.payload;
+
+  if (data.type === 'weekly') {
+    const rows = [];
+    (d.fresh || []).forEach(i => rows.push([...base, 'ของสด(ถุง)', i.name, i.qty, i.unit, i.note]));
+    (d.stick || []).forEach(i => rows.push([...base, 'ของสด(ไม้)', i.name, i.qty, i.unit, i.note]));
+    (d.dry || []).forEach(i => rows.push([...base, 'ของแห้ง', i.name, i.qty, i.unit, i.note]));
+    return rows;
+  }
+  if (data.type === 'incoming') {
+    return (d.items || []).map(i => [...base, i.name, i.qty, i.unit, i.note]);
+  }
+  if (data.type === 'sales') {
+    return [[...base, d.totalSales, d.transferAmount, d.cashAmount, d.expenses, d.note]];
+  }
+  if (data.type === 'vegetables') {
+    if (d.subType === 'before') {
+      return (d.items || []).map(i => [...base, 'ก่อนขาย', i.name, i.original, i.spoiled, i.added, i.weight, '', i.note]);
+    } else {
+      return (d.items || []).map(i => [...base, 'หลังขาย', i.name, '', '', '', '', i.remaining, i.note]);
+    }
+  }
+  if (data.type === 'waste') {
+    return (d.items || []).map(i => [...base, i.name, i.qty, i.unit, i.note]);
+  }
+  return [base];
+}`;
+
+// ============================================================
+// GOOGLE SHEETS API
+// ============================================================
+function getSheetsUrl() {
+  return SHEETS_URL;
+}
+
+async function sendToSheets(type, payload) {
+  const url = getSheetsUrl();
+  if (!url) {
+    showToast('⚠️ ยังไม่ได้ตั้งค่า URL — ข้อมูลบันทึกเฉพาะในเครื่อง', 'warn');
+    return { localOnly: true };
+  }
+  const body = {
+    type,
+    timestamp: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }),
+    checker: checkerName,
+    branch,
+    payload
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'text/plain' } // Apps Script ต้องการ text/plain
+  });
+  const json = await res.json();
+  return json;
+}
+
+async function loadHistory() {
+  const url = getSheetsUrl();
+  if (!url) {
+    document.getElementById('history-list').innerHTML = '<p class="text-center text-yellow-600 py-8">⚠️ ยังไม่ได้ตั้งค่า Google Sheets URL</p>';
+    return;
+  }
+  document.getElementById('history-loading').classList.remove('hidden');
+  document.getElementById('history-list').innerHTML = '';
+  try {
+    const date = document.getElementById('history-date').value;
+    const type = document.getElementById('history-type').value;
+    let fetchUrl = url + '?action=history';
+    if (date) fetchUrl += '&date=' + date;
+    if (type) fetchUrl += '&type=' + type;
+    const res = await fetch(fetchUrl);
+    const json = await res.json();
+    allRecords = json.data || [];
+    renderHistoryList(allRecords);
+  } catch(e) {
+    document.getElementById('history-list').innerHTML = '<p class="text-center text-red-500 py-8">เกิดข้อผิดพลาดในการโหลดประวัติ</p>';
+  } finally {
+    document.getElementById('history-loading').classList.add('hidden');
+  }
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function showPage(id) {
+  ['home-page','setup-page','checker-form','weekly-form','incoming-form','sales-form','vegetables-form','waste-form','history-page']
+    .forEach(p => document.getElementById(p).classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function goHome() { showPage('home-page'); currentForm = ''; }
+function backToChecker() { showPage('checker-form'); }
+function showSetup() {
+  document.getElementById('sheets-url-input').value = getSheetsUrl();
+  document.getElementById('apps-script-code').textContent = APPS_SCRIPT_CODE;
+  showPage('setup-page');
+}
+
+function showLoading(show, text='กำลังบันทึกข้อมูล...') {
+  document.getElementById('loading-overlay').classList.toggle('hidden', !show);
+  document.getElementById('loading-text').textContent = text;
+}
+
+function showToast(msg, type='success') {
+  const toast = document.getElementById('toast');
+  const icon = document.getElementById('toast-icon');
+  const message = document.getElementById('toast-message');
+  toast.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg z-50 transition-all flex items-center gap-2';
+  if (type === 'success') { toast.classList.add('bg-green-600','text-white'); icon.textContent = '✅'; }
+  else if (type === 'error') { toast.classList.add('bg-red-600','text-white'); icon.textContent = '❌'; }
+  else if (type === 'warn') { toast.classList.add('bg-yellow-500','text-white'); icon.textContent = '⚠️'; }
+  else { toast.classList.add('bg-gray-800','text-white'); icon.textContent = ''; }
+  message.textContent = msg;
+  toast.classList.remove('hidden');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
+}
+
+// ============================================================
+// SETUP PAGE
+// ============================================================
+function saveSetup() {
+  showToast('กรุณาแก้ไข SHEETS_URL ในโค้ดโดยตรงค่ะ', 'warn');
+}
+
+async function testConnection() {
+  const url = document.getElementById('sheets-url-input').value.trim();
+  if (!url) { showToast('กรุณากรอก URL ก่อน', 'warn'); return; }
+  const result = document.getElementById('setup-test-result');
+  result.className = 'text-sm p-3 rounded-xl bg-gray-100 text-gray-600';
+  result.classList.remove('hidden');
+  result.textContent = '⏳ กำลังทดสอบการเชื่อมต่อ...';
+  try {
+    const res = await fetch(url + '?action=ping');
+    const json = await res.json();
+    if (json.success) {
+      result.className = 'text-sm p-3 rounded-xl bg-green-50 text-green-700';
+      result.textContent = '✅ เชื่อมต่อสำเร็จ! Google Sheets พร้อมรับข้อมูล';
+    } else {
+      throw new Error(json.error || 'Unknown error');
+    }
+  } catch(e) {
+    result.className = 'text-sm p-3 rounded-xl bg-red-50 text-red-700';
+    result.textContent = '❌ เชื่อมต่อไม่ได้: ' + e.message;
+  }
+}
+
+function copyAppsScript() {
+  navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(() => {
+    showToast('คัดลอกโค้ดสำเร็จ!', 'success');
+  }).catch(() => {
+    showToast('กรุณาคัดลอกจากกล่องด้านบนด้วยตนเอง', 'warn');
+  });
+}
+
+// ============================================================
+// FORM LOGIC
+// ============================================================
+function openForm(type) {
+  currentForm = type;
+  const cfg = {
+    weekly:     { icon: 'bg-gradient-to-br from-red-500 to-red-600',     emoji: '📋', title: 'เช็คสต็อกรายสัปดาห์' },
+    incoming:   { icon: 'bg-gradient-to-br from-orange-500 to-orange-600', emoji: '📦', title: 'จำนวนของเข้า' },
+    sales:      { icon: 'bg-gradient-to-br from-green-500 to-green-600',   emoji: '💰', title: 'ยอดขาย' },
+    vegetables: { icon: 'bg-gradient-to-br from-emerald-500 to-emerald-600', emoji: '🥬', title: 'เช็คสต็อกผัก' },
+    waste:      { icon: 'bg-gradient-to-br from-gray-600 to-gray-700',     emoji: '🗑️', title: 'ของเสีย' }
+  }[type];
+  const fi = document.getElementById('form-icon');
+  fi.className = `w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center text-3xl ${cfg.icon}`;
+  fi.innerHTML = cfg.emoji;
+  document.getElementById('form-title').textContent = cfg.title;
+  document.getElementById('checker-name').value = '';
+  document.getElementById('branch-select').value = '';
+  showPage('checker-form');
+}
+
+function proceedToForm() {
+  checkerName = document.getElementById('checker-name').value.trim();
+  branch = document.getElementById('branch-select').value;
+  if (!checkerName || !branch) { showToast('กรุณากรอกข้อมูลให้ครบ', 'warn'); return; }
+  const infoText = `ผู้ตรวจ: ${checkerName} | สาขา: ${branch}`;
+  const infoMap = { weekly:'weekly-checker-info', incoming:'incoming-checker-info', sales:'sales-checker-info', vegetables:'veg-checker-info', waste:'waste-checker-info' };
+  const pageMap = { weekly:'weekly-form', incoming:'incoming-form', sales:'sales-form', vegetables:'vegetables-form', waste:'waste-form' };
+  document.getElementById(infoMap[currentForm]).textContent = infoText;
+  if (currentForm === 'sales') { document.getElementById('total-sales').value=''; document.getElementById('transfer-amount').value=''; document.getElementById('cash-amount').value=''; document.getElementById('expenses').value=''; document.getElementById('sales-note').value=''; }
+  if (currentForm === 'vegetables') {}
+  showPage(pageMap[currentForm]);
+}
+
+// ============================================================
+// RENDER TABLES
+// ============================================================
+function renderWeeklyTables() {
+  document.getElementById('fresh-items-table').innerHTML = freshItems.map((item,i) => `
+    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
+    <td class="p-2"><input type="number" min="0" class="weekly-fresh-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+    <td class="p-2 text-center text-gray-500">${item.unit}</td>
+    <td class="p-2"><input type="text" class="weekly-fresh-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
+  document.getElementById('stick-items-table').innerHTML = stickItems.map((item,i) => `
+    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
+    <td class="p-2"><input type="number" min="0" class="weekly-stick-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+    <td class="p-2 text-center text-gray-500">${item.unit}</td>
+    <td class="p-2"><input type="text" class="weekly-stick-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
+  document.getElementById('dry-items-table').innerHTML = dryItems.map((item,i) => `
+    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
+    <td class="p-2"><input type="number" min="0" class="weekly-dry-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+    <td class="p-2 text-center text-gray-500">${item.unit}</td>
+    <td class="p-2"><input type="text" class="weekly-dry-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
+  document.getElementById('weekly-veg-table').innerHTML = vegIncomingItems.map((item,i) => `
+    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
+    <td class="p-2"><input type="number" min="0" class="weekly-veg-input w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+    <td class="p-2 text-center text-gray-500">${item.unit}</td>
+    <td class="p-2"><input type="text" class="weekly-veg-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
+}
+
+function renderIncomingItems() {
+  document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item,i) => `
+    <div class="bg-gray-50 p-3 rounded-xl">
+      <div class="flex items-center gap-3">
+        <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
+        <label for="incoming-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
+      </div>
+      <div id="incoming-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
+        <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
+        <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
+        <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+      </div>
+    </div>`).join('');
+}
+
+function toggleIncomingItem(i) {
+  const fields = document.getElementById(`incoming-fields-${i}`);
+  document.getElementById(`incoming-check-${i}`).checked ? fields.classList.remove('hidden') : fields.classList.add('hidden');
+}
+
+function renderVegetableTables() {
+  document.getElementById('veg-before-table').innerHTML = vegetables.map((item,i) => `
+    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
+    <td class="p-2"><input type="number" min="0" class="veg-added w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
+    <td class="p-2 text-center text-gray-500 font-medium">${item.weight}</td>
+    <td class="p-2"><input type="text" class="veg-before-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
+}
+
+function renderWasteItems() {
+  document.getElementById('waste-items-list').innerHTML = allItems.map((item,i) => `
+    <div class="bg-gray-50 p-3 rounded-xl">
+      <div class="flex items-center gap-3">
+        <input type="checkbox" id="waste-check-${i}" class="w-5 h-5 text-gray-500 rounded" onchange="toggleWasteItem(${i})">
+        <label for="waste-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
+      </div>
+      <div id="waste-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
+        <input type="number" min="0" class="waste-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวนเสีย">
+        <div class="flex items-center justify-center text-gray-500 text-sm">ถุง</div>
+        <input type="text" class="waste-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+      </div>
+    </div>`).join('');
+}
+
+function toggleWasteItem(i) {
+  const fields = document.getElementById(`waste-fields-${i}`);
+  document.getElementById(`waste-check-${i}`).checked ? fields.classList.remove('hidden') : fields.classList.add('hidden');
+}
+
+// ============================================================
+// SAVE FUNCTIONS → Google Sheets
+// ============================================================
+async function saveRecord(type, payload) {
+  showLoading(true);
+  try {
+    const result = await sendToSheets(type, payload);
+    localStats[type] = (localStats[type] || 0) + 1;
+    updateStats();
+    if (result.localOnly) {
+      showToast('บันทึกในเครื่องแล้ว (ไม่มี URL)', 'warn');
+    } else {
+      showToast(`✅ บันทึกเข้า Google Sheets สำเร็จ! (ชีต: ${getSheetName(type)})`, 'success');
+    }
+    goHome();
+  } catch(e) {
+    showToast('❌ บันทึกไม่สำเร็จ: ' + e.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
+
+function getSheetName(type) {
+  return { weekly:'เช็คสต็อกรายสัปดาห์', incoming:'จำนวนของเข้า', sales:'ยอดขาย', vegetables:'เช็คสต็อกผัก', waste:'ของเสีย' }[type] || type;
+}
+
+async function saveWeeklyStock() {
+  const freshInputs = [...document.querySelectorAll('.weekly-fresh-input')];
+  const stickInputs = [...document.querySelectorAll('.weekly-stick-input')];
+  const dryInputs = [...document.querySelectorAll('.weekly-dry-input')];
+  const allInputs = [...freshInputs, ...stickInputs, ...dryInputs];
+  if (allInputs.some(inp => inp.value === '' || isNaN(parseInt(inp.value)))) {
+    document.getElementById('weekly-validation-msg').classList.remove('hidden');
+    showToast('กรุณากรอกตัวเลขให้ครบทุกช่อง (0 ได้)', 'warn'); return;
+  }
+  document.getElementById('weekly-validation-msg').classList.add('hidden');
+  const vegInputs = [...document.querySelectorAll('.weekly-veg-input')];
+  const payload = {
+    fresh: freshInputs.map((inp,i) => ({ name: freshItems[i].name, qty: parseInt(inp.value)||0, unit: freshItems[i].unit, note: document.querySelectorAll('.weekly-fresh-note')[i].value })),
+    stick: stickInputs.map((inp,i) => ({ name: stickItems[i].name, qty: parseInt(inp.value)||0, unit: stickItems[i].unit, note: document.querySelectorAll('.weekly-stick-note')[i].value })),
+    dry:   dryInputs.map((inp,i)   => ({ name: dryItems[i].name,   qty: parseInt(inp.value)||0, unit: dryItems[i].unit,   note: document.querySelectorAll('.weekly-dry-note')[i].value   })),
+    veg:   vegInputs.map((inp,i)   => ({ name: vegIncomingItems[i].name, qty: parseInt(inp.value)||0, unit: vegIncomingItems[i].unit, note: document.querySelectorAll('.weekly-veg-note')[i].value }))
+  };
+  await saveRecord('weekly', payload);
+}
+
+async function saveIncoming() {
+  const items = [];
+  incomingItems.forEach((item,i) => {
+    if (document.getElementById(`incoming-check-${i}`).checked) {
+      items.push({ name: item.name, qty: parseInt(document.querySelectorAll('.incoming-qty')[i].value)||0, unit: item.unit, note: document.querySelectorAll('.incoming-note')[i].value });
+    }
+  });
+  if (!items.length) { showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'warn'); return; }
+  await saveRecord('incoming', { items });
+}
+
+async function saveSales() {
+  const totalSales = document.getElementById('total-sales').value;
+  const transferAmount = document.getElementById('transfer-amount').value;
+  const cashAmount = document.getElementById('cash-amount').value;
+  const expenses = document.getElementById('expenses').value;
+  if (!totalSales || !transferAmount || !cashAmount || !expenses) {
+    document.getElementById('sales-validation-msg').classList.remove('hidden');
+    showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warn'); return;
+  }
+  document.getElementById('sales-validation-msg').classList.add('hidden');
+  await saveRecord('sales', { totalSales: parseFloat(totalSales), transferAmount: parseFloat(transferAmount), cashAmount: parseFloat(cashAmount), expenses: parseFloat(expenses), note: document.getElementById('sales-note').value });
+}
+
+async function saveVegetables() {
+  const a = [...document.querySelectorAll('.veg-added')];
+  if (a.some(inp => inp.value === '')) {
+    document.getElementById('veg-validation-msg').classList.remove('hidden');
+    showToast('กรุณากรอกข้อมูลให้ครบ', 'warn'); return;
+  }
+  document.getElementById('veg-validation-msg').classList.add('hidden');
+  const payload = {
+    items: vegetables.map((item,i) => ({
+      name: item.name,
+      added: parseInt(a[i].value)||0,
+      weight: item.weight,
+      note: document.querySelectorAll('.veg-before-note')[i].value
+    }))
+  };
+  await saveRecord('vegetables', payload);
+}
+
+async function saveWaste() {
+  const items = [];
+  allItems.forEach((item,i) => {
+    if (document.getElementById(`waste-check-${i}`).checked) {
+      items.push({ name: item.name, qty: parseInt(document.querySelectorAll('.waste-qty')[i].value)||0, unit: 'ถุง', note: document.querySelectorAll('.waste-note')[i].value });
+    }
+  });
+  if (!items.length) { showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'warn'); return; }
+  await saveRecord('waste', { items });
+}
+
+// ============================================================
+// HISTORY & STATS
+// ============================================================
+function showHistory() {
+  document.getElementById('history-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('history-type').value = '';
+  showPage('history-page');
+  loadHistory();
+}
+
+function filterHistory() {
+  if (allRecords.length === 0) { loadHistory(); return; }
+  const date = document.getElementById('history-date').value;
+  const type = document.getElementById('history-type').value;
+  let filtered = allRecords;
+  if (date) filtered = filtered.filter(r => String(r['วันที่เวลา']).includes(date.split('-').reverse().join('/')));
+  if (type) filtered = filtered.filter(r => r['_sheet'] === getSheetName(type));
+  renderHistoryList(filtered);
+}
+
+function renderHistoryList(records) {
+  const container = document.getElementById('history-list');
+  if (!records.length) { container.innerHTML = '<p class="text-center text-gray-500 py-8">ไม่พบข้อมูล</p>'; return; }
+  const sheetColors = {
+    'เช็คสต็อกรายสัปดาห์': 'red', 'จำนวนของเข้า': 'orange', 'ยอดขาย': 'green',
+    'เช็คสต็อกผัก': 'emerald', 'ของเสีย': 'gray'
+  };
+  const sheetEmoji = {
+    'เช็คสต็อกรายสัปดาห์': '📋', 'จำนวนของเข้า': '📦', 'ยอดขาย': '💰',
+    'เช็คสต็อกผัก': '🥬', 'ของเสีย': '🗑️'
+  };
+  // Group by timestamp+sheet
+  const grouped = {};
+  records.forEach(r => {
+    const key = r['วันที่เวลา'] + '||' + r['_sheet'];
+    if (!grouped[key]) grouped[key] = { sheet: r['_sheet'], ts: r['วันที่เวลา'], checker: r['ผู้ตรวจ'], branch: r['สาขา'], rows: [] };
+    grouped[key].rows.push(r);
+  });
+  container.innerHTML = Object.values(grouped).map(g => {
+    const color = sheetColors[g.sheet] || 'gray';
+    const emoji = sheetEmoji[g.sheet] || '📝';
+    const colorMap = { red:'bg-red-50 border-red-100', orange:'bg-orange-50 border-orange-100', green:'bg-green-50 border-green-100', emerald:'bg-emerald-50 border-emerald-100', gray:'bg-gray-100 border-gray-200' };
+    return `<div class="p-4 rounded-xl border ${colorMap[color]}">
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">${emoji}</span>
+          <div>
+            <div class="font-semibold text-gray-800">${g.sheet}</div>
+            <div class="text-sm text-gray-500">${g.ts}</div>
+          </div>
+        </div>
+        <span class="text-xs bg-white px-2 py-1 rounded-lg text-gray-500">${g.rows.length} รายการ</span>
+      </div>
+      <div class="mt-2 text-sm text-gray-600">
+        <div>ผู้ตรวจ: ${g.checker} | สาขา: ${g.branch}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateStats() {
+  Object.keys(localStats).forEach(k => {
+    const el = document.getElementById(`stat-${k}`);
+    if (el) el.textContent = localStats[k];
+  });
+  document.getElementById('stats-sync-status').textContent = SHEETS_URL.includes('วาง-URL') ? '🔴 ยังไม่ใส่ URL' : '🟢 เชื่อมต่อแล้ว';
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  renderWeeklyTables();
+  renderIncomingItems();
+  renderVegetableTables();
+  renderWasteItems();
+  updateStats();
+}
+
+init();
+</script>
+
+</body>
+</html>
