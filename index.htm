@@ -1,3 +1,21 @@
+<script>
+  const SECRET_PASSWORD = "สาขา2024@stock"; // เปลี่ยนเป็น password ที่ต้องการ
+  
+  function checkAuth() {
+    const saved = sessionStorage.getItem("auth_token");
+    if (saved === SECRET_PASSWORD) return; // ผ่านแล้ว
+    
+    const input = prompt("กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน:");
+    if (input === SECRET_PASSWORD) {
+      sessionStorage.setItem("auth_token", input);
+    } else {
+      document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%'>รหัสผ่านไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ</h2>";
+    }
+  }
+  
+  checkAuth();
+</script>
+
 <!doctype html>
 <html lang="th" class="h-full">
 <head>
