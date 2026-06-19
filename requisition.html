@@ -17,22 +17,73 @@
     .item-row:hover { background: #f9fafb; }
     .item-fields { display:none; }
     .item-fields.open { display:grid; }
+
+    #login-page {
+      min-height: 100vh; display:flex; align-items:center; justify-content:center;
+      background: linear-gradient(135deg, #fef2f2 0%, #fff7ed 50%, #fefce8 100%);
+      padding: 1rem;
+    }
+    .login-card { background:white; border-radius:1.5rem; padding:2.5rem 2rem; width:100%; max-width:380px;
+      box-shadow:0 20px 60px rgba(239,68,68,0.15), 0 4px 20px rgba(0,0,0,0.08); }
+    .login-input { width:100%; padding:0.875rem 1rem; border:2px solid #e5e7eb; border-radius:0.75rem;
+      font-size:1rem; font-family:'Sarabun',sans-serif; transition:all 0.2s; box-sizing:border-box; }
+    .login-input:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.1); }
+    .login-btn { width:100%; padding:0.875rem; background:linear-gradient(135deg,#ef4444,#dc2626); color:white;
+      border:none; border-radius:0.75rem; font-size:1rem; font-weight:600; font-family:'Sarabun',sans-serif;
+      cursor:pointer; transition:all 0.2s; box-shadow:0 4px 12px rgba(239,68,68,0.4); }
+    .login-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 6px 20px rgba(239,68,68,0.45); }
+    .login-btn:disabled { opacity:0.7; cursor:not-allowed; transform:none; }
+    .login-spinner { border:2px solid rgba(255,255,255,0.3); border-top:2px solid white; border-radius:50%;
+      width:18px; height:18px; animation:spin 0.8s linear infinite; display:inline-block; vertical-align:middle; margin-right:6px; }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50">
 
-<div class="min-h-screen p-4 md:p-6 fade-in">
+<!-- ===== หน้า Login ===== -->
+<div id="login-page">
+  <div class="login-card fade-in">
+    <div style="text-align:center; margin-bottom:1.75rem;">
+      <div style="width:72px; height:72px; background:linear-gradient(135deg,#ef4444,#dc2626); border-radius:1.25rem; display:flex; align-items:center; justify-content:center; margin:0 auto 1rem; box-shadow:0 8px 24px rgba(239,68,68,0.35);">
+        <span style="font-size:2rem;">📋</span>
+      </div>
+      <h1 style="font-size:1.4rem; font-weight:700; color:#1f2937; margin:0 0 0.25rem;">ใบเบิกของ</h1>
+      <p style="font-size:0.875rem; color:#9ca3af; margin:0;">หม่าล่าหน้าแดง — กรุณาเข้าสู่ระบบ</p>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:1rem;">
+      <div>
+        <label style="display:block; font-size:0.875rem; font-weight:500; color:#374151; margin-bottom:0.5rem;">Username</label>
+        <input type="text" id="login-username" class="login-input" placeholder="กรอก username" autocomplete="username"
+          onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+      </div>
+      <div>
+        <label style="display:block; font-size:0.875rem; font-weight:500; color:#374151; margin-bottom:0.5rem;">Password</label>
+        <input type="password" id="login-password" class="login-input" placeholder="กรอก password" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <div id="login-error" style="display:none; background:#fef2f2; border:1px solid #fecaca; border-radius:0.5rem; padding:0.75rem 1rem; color:#dc2626; font-size:0.875rem; text-align:center;"></div>
+      <button onclick="doLogin()" id="login-btn" class="login-btn">เข้าสู่ระบบ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== หน้าแอปหลัก ===== -->
+<div id="app" class="min-h-screen p-4 md:p-6 fade-in" style="display:none;">
   <div class="max-w-2xl mx-auto">
 
     <!-- Header -->
-    <div class="flex items-center gap-4 mb-6">
-      <div class="w-14 h-14 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
-        <span class="text-2xl">📋</span>
+    <div class="flex justify-between items-center mb-6">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+          <span class="text-2xl">📋</span>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800">ใบเบิกของ</h1>
+          <p class="text-sm text-gray-500">ร้านหม่าล่าหน้าแดง</p>
+        </div>
       </div>
-      <div>
-        <h1 class="text-2xl font-bold text-gray-800">ใบเบิกของ</h1>
-        <p class="text-sm text-gray-500">ร้านหม่าล่าหน้าแดง</p>
-      </div>
+      <button onclick="doLogout()" class="bg-white px-3 py-2 rounded-xl shadow text-sm text-gray-600 hover:shadow-md transition-all shrink-0">
+        ออกจากระบบ
+      </button>
     </div>
 
     <!-- ข้อมูลการเบิก -->
@@ -48,13 +99,14 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-600 mb-1">ชื่อผู้เบิก <span class="text-red-500">*</span></label>
-          <input type="text" id="req-name" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" placeholder="กรอกชื่อ">
+          <input type="text" id="req-name" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl bg-gray-50" placeholder="กรอกชื่อ" readonly>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-600 mb-1">สาขา <span class="text-red-500">*</span></label>
           <select id="req-branch" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl bg-white">
             <option value="">เลือกสาขา</option>
             <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
+            <option value="แบริ่ง">แบริ่ง</option>
           </select>
         </div>
       </div>
@@ -126,9 +178,104 @@
 </div>
 
 <script>
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyO2zsdo5uh7tOVYhks6J1IM31oaObusltjeqmV3YxYbuXXuqHzvzKh5KxQZyas_rgiog/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwbtcgAMAacRRwaCuzhObLg2O0oyjA5_dZIRSKzmu5xKD8NuSTgKWPTYgwbhP931_Bsiw/exec';
 
-// ── DATA ──
+// ============================================================
+// AUTH
+// ============================================================
+function getAuthToken()  { return sessionStorage.getItem('req_auth_token');  }
+function getAuthName()   { return sessionStorage.getItem('req_auth_name');   }
+function getAuthBranch() { return sessionStorage.getItem('req_auth_branch'); }
+
+function showLoginPage() {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  document.getElementById('req-name').value = getAuthName();
+
+  const branchSel = document.getElementById('req-branch');
+  const branch    = getAuthBranch();
+  if (branch && ![...branchSel.options].some(o => o.value === branch)) {
+    const opt = document.createElement('option');
+    opt.value = branch;
+    opt.textContent = branch;
+    branchSel.appendChild(opt);
+  }
+  if (branch) branchSel.value = branch;
+
+  document.getElementById('req-date').value = new Date().toISOString().split('T')[0];
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-btn');
+  errEl.style.display = 'none';
+
+  if (!username || !password) {
+    errEl.textContent = 'กรุณากรอก Username และ Password';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="login-spinner"></span> กำลังตรวจสอบ...';
+
+  try {
+    const res  = await fetch(SHEETS_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'login', username, password })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      sessionStorage.setItem('req_auth_token',  data.token);
+      sessionStorage.setItem('req_auth_name',   data.name);
+      sessionStorage.setItem('req_auth_branch', data.branch);
+      showApp();
+    } else {
+      errEl.textContent = data.message || 'Login ไม่สำเร็จ';
+      errEl.style.display = 'block';
+      document.getElementById('login-password').value = '';
+    }
+  } catch(e) {
+    errEl.textContent = 'เชื่อมต่อ Server ไม่ได้ กรุณาลองใหม่';
+    errEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'เข้าสู่ระบบ';
+}
+
+function doLogout() {
+  const token = getAuthToken();
+  sessionStorage.removeItem('req_auth_token');
+  sessionStorage.removeItem('req_auth_name');
+  sessionStorage.removeItem('req_auth_branch');
+  fetch(SHEETS_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'logout', token })
+  }).catch(() => {});
+  showLoginPage();
+}
+
+(function initAuth() {
+  if (getAuthToken()) showApp();
+  else showLoginPage();
+})();
+
+// ============================================================
+// DATA
+// ============================================================
 const freshItems = [
   { name:'สันคอสไลด์',    unit:'กิโลกรัม' }, { name:'สามชั้นสไลด์', unit:'กิโลกรัม' },
   { name:'หมูนุ่ม',       unit:'กิโลกรัม' }, { name:'สันนอก',       unit:'กิโลกรัม' },
@@ -136,7 +283,8 @@ const freshItems = [
   { name:'ปลาดอลลี่',     unit:'กิโลกรัม' }, { name:'ปลาหมึกกรอบ',  unit:'กิโลกรัม' },
   { name:'แมงกะพรุน',     unit:'กิโลกรัม' }, { name:'กุ้ง',         unit:'กิโลกรัม' },
   { name:'รากบัว',        unit:'กิโลกรัม' }, { name:'ปูอัด',        unit:'กิโลกรัม' },
-  { name:'ต็อก',          unit:'กิโลกรัม' }, { name:'หอย',          unit:'กิโลกรัม' }
+  { name:'ต็อก',          unit:'กิโลกรัม' }, { name:'หอย',          unit:'กิโลกรัม' },
+  { name:'เต้าหู้หลอด',   unit:'กิโลกรัม' }
 ];
 const stickItems = [
   { name:'เต้าหู้ชีส',           unit:'ถุง' }, { name:'ชีสหลายสี',           unit:'ถุง' },
@@ -157,7 +305,8 @@ const dryItems = [
   { name:'มาม่า ok สีดำ',         unit:'อัน'  }, { name:'มาม่า ok คาโบนาร่า',    unit:'อัน'  },
   { name:'มาม่า ok ต้มยำกุ้ง',    unit:'อัน'  }, { name:'มาม่า ok ไข่เค็ม',      unit:'อัน'  },
   { name:'มาม่า ok ฮอตแอนด์สไปซี่',unit:'อัน' }, { name:'มาม่าเผ็ดชมพู',         unit:'อัน'  },
-  { name:'มาม่าเผ็ดเหลือง',       unit:'อัน'  }, { name:'มาม่าเผ็ดดำ',           unit:'อัน'  }
+  { name:'มาม่าเผ็ดเหลือง',       unit:'อัน'  }, { name:'มาม่าเผ็ดดำ',           unit:'อัน'  },
+  { name:'มาม่า ok หม่าล่า',      unit:'อัน'  }
 ];
 const vegItems = [
   { name:'ผักกาดขาว',    unit:'กิโลกรัม' }, { name:'เห็ดเข็มทอง',  unit:'กิโลกรัม' },
@@ -167,7 +316,9 @@ const vegItems = [
   { name:'นม',           unit:'กล่อง'     }
 ];
 
-// ── RENDER (checkbox style) ──
+// ============================================================
+// RENDER (checkbox style)
+// ============================================================
 function renderList(containerId, items, prefix, accentColor) {
   const container = document.getElementById(containerId);
   container.innerHTML = items.map((item, i) => `
@@ -209,15 +360,17 @@ function toggleItem(prefix, i) {
   }
 }
 
-function init() {
-  document.getElementById('req-date').value = new Date().toISOString().split('T')[0];
+function initLists() {
   renderList('fresh-list', freshItems, 'fresh', 'red-500');
   renderList('stick-list', stickItems, 'stick', 'orange-500');
   renderList('dry-list',   dryItems,   'dry',   'yellow-500');
   renderList('veg-list',   vegItems,   'veg',   'emerald-500');
 }
+initLists();
 
-// ── COLLECT ──
+// ============================================================
+// COLLECT
+// ============================================================
 function collectSection(items, prefix) {
   return items
     .map((item, i) => ({
@@ -230,7 +383,9 @@ function collectSection(items, prefix) {
     .filter(i => i.checked);
 }
 
-// ── VALIDATE ──
+// ============================================================
+// VALIDATE
+// ============================================================
 function validateForm() {
   const date   = document.getElementById('req-date').value;
   const name   = document.getElementById('req-name').value.trim();
@@ -238,12 +393,10 @@ function validateForm() {
 
   if (!date) {
     showToast('⚠️ กรุณาเลือกวันที่เบิก', 'warn');
-    document.getElementById('req-date').focus();
     return null;
   }
   if (!name) {
-    showToast('⚠️ กรุณากรอกชื่อผู้เบิก', 'warn');
-    document.getElementById('req-name').focus();
+    showToast('⚠️ ไม่พบชื่อผู้เบิก กรุณา Login ใหม่', 'warn');
     return null;
   }
   if (!branch) {
@@ -262,7 +415,9 @@ function validateForm() {
   };
 }
 
-// ── SAVE ──
+// ============================================================
+// SAVE
+// ============================================================
 async function saveToSheets() {
   const d = validateForm();
   if (!d) return;
@@ -273,17 +428,20 @@ async function saveToSheets() {
     return;
   }
 
-  // เช็คว่ารายการที่ติ๊กแล้วกรอกจำนวนครบไหม
   const missing = allItems.filter(i => !i.qty || parseFloat(i.qty) <= 0);
   if (missing.length) {
     showToast(`⚠️ กรุณากรอกจำนวนของ "${missing[0].name}"`, 'warn');
     return;
   }
 
+  const token = getAuthToken();
+  if (!token) { doLogout(); return; }
+
   showLoading(true, 'กำลังบันทึกลง Google Sheets...');
   try {
     const body = {
       type:      'requisition',
+      token,
       timestamp: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }),
       checker:   d.name,
       branch:    d.branch,
@@ -301,9 +459,13 @@ async function saveToSheets() {
     });
     const json = await res.json();
 
+    if (json.code === 401) {
+      doLogout();
+      throw new Error('Session หมดอายุ กรุณา Login ใหม่');
+    }
+
     if (json.success) {
       showToast('✅ บันทึกลง Google Sheets สำเร็จ!', 'success');
-      // ล้างการเลือกทั้งหมดหลังบันทึก
       setTimeout(() => clearAll(true), 1500);
     } else {
       throw new Error(json.error || json.message || 'Unknown error');
@@ -315,13 +477,13 @@ async function saveToSheets() {
   }
 }
 
-// ── CLEAR ──
+// ============================================================
+// CLEAR
+// ============================================================
 function clearAll(silent = false) {
   if (!silent && !confirm('ล้างข้อมูลทั้งหมดหรือไม่?')) return;
-  document.getElementById('req-name').value   = '';
-  document.getElementById('req-branch').value = '';
-  document.getElementById('req-note').value   = '';
-  document.getElementById('req-date').value   = new Date().toISOString().split('T')[0];
+  document.getElementById('req-note').value = '';
+  document.getElementById('req-date').value = new Date().toISOString().split('T')[0];
 
   [['fresh',freshItems],['stick',stickItems],['dry',dryItems],['veg',vegItems]]
     .forEach(([prefix, items]) => {
@@ -340,7 +502,9 @@ function clearAll(silent = false) {
   if (!silent) showToast('✅ ล้างข้อมูลแล้ว', 'success');
 }
 
-// ── HELPERS ──
+// ============================================================
+// HELPERS
+// ============================================================
 function showLoading(show, text='กำลังบันทึก...') {
   document.getElementById('loading-overlay').classList.toggle('hidden', !show);
   document.getElementById('loading-text').textContent = text;
@@ -357,8 +521,6 @@ function showToast(msg, type='success') {
   clearTimeout(window._tt);
   window._tt = setTimeout(() => t.classList.add('hidden'), 3500);
 }
-
-init();
 </script>
 </body>
 </html>
