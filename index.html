@@ -251,6 +251,7 @@
             <select id="branch-select" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg bg-white">
               <option value="">เลือกสาขา</option>
               <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
+              <option value="แบริ่ง">แบริ่ง</option>
             </select>
           </div>
           <button onclick="proceedToForm()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
@@ -527,7 +528,7 @@
 // ============================================================
 // CONFIG
 // ============================================================
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyO2zsdo5uh7tOVYhks6J1IM31oaObusltjeqmV3YxYbuXXuqHzvzKh5KxQZyas_rgiog/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwbtcgAMAacRRwaCuzhObLg2O0oyjA5_dZIRSKzmu5xKD8NuSTgKWPTYgwbhP931_Bsiw/exec';
 
 // ============================================================
 // AUTH — Login / Logout
@@ -917,12 +918,15 @@ async function saveRecord(type, payload) {
   showLoading(true);
   try {
     const result = await sendToSheets(type, payload);
+    if (!result.success) {
+      throw new Error(result.error || result.message || 'บันทึกไม่สำเร็จ');
+    }
     localStats[type] = (localStats[type] || 0) + 1;
     updateStats();
     showToast(`✅ บันทึกเข้า Google Sheets สำเร็จ! (ชีต: ${getSheetName(type)})`, 'success');
     goHome();
   } catch(e) {
-    showToast('❌ บันทึกไม่สำเร็จ: ' + e.message, 'error');
+    showToast('❌ ' + e.message, 'error');
   } finally {
     showLoading(false);
   }
