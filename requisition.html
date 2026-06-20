@@ -178,7 +178,7 @@
 </div>
 
 <script>
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwbtcgAMAacRRwaCuzhObLg2O0oyjA5_dZIRSKzmu5xKD8NuSTgKWPTYgwbhP931_Bsiw/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw5Sj7xqMV7-o0gxLhURAx4GQtMQjB-06VK07k_tMbMzG-xCtbkTpU4Vw5OwIzb6oyBcA/exec';
 
 // ============================================================
 // AUTH
@@ -442,7 +442,6 @@ async function saveToSheets() {
     const body = {
       type:      'requisition',
       token,
-      timestamp: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }),
       checker:   d.name,
       branch:    d.branch,
       payload: {
