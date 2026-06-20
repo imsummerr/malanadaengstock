@@ -528,7 +528,7 @@
 // ============================================================
 // CONFIG
 // ============================================================
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwP_k_9_-LxOm_1T4WINmFQRptxD-3jkfK46gryJIpYE2umRev7srlkdNSrVf8uUkUg4g/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbySnK_2PfjO05tBXRs2EtaxRVnGzDtKJJ_VV44JaTFv4s4cNj3xw7hvz3zWBzPmXGukgA/exec';
 
 // ============================================================
 // AUTH — Login / Logout
@@ -966,6 +966,28 @@ async function saveIncoming() {
   if (!items.length) { showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'warn'); return; }
   await saveRecord('incoming', { items });
 }
+
+// ── DEBUG: เปิด console (F12) แล้วพิมพ์ debugIncoming() เพื่อดูสาเหตุที่กรอกซ้ำได้ ──
+async function debugIncoming() {
+  const items = [];
+  incomingItems.forEach((item,i) => {
+    if (document.getElementById(`incoming-check-${i}`).checked) {
+      items.push({ name: item.name, qty: parseInt(document.querySelectorAll('.incoming-qty')[i].value)||0, unit: item.unit, note: document.querySelectorAll('.incoming-note')[i].value });
+    }
+  });
+  const token = getAuthToken();
+  const body = {
+    type: 'incoming', token, checker: checkerName, branch,
+    debug: true,
+    payload: { items: items.length ? items : [{ name: 'TEST', qty: 1, unit: 'test', note: '' }] }
+  };
+  const res = await fetch(SHEETS_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) });
+  const json = await res.json();
+  console.log('=== DEBUG INCOMING ===');
+  console.log(JSON.stringify(json, null, 2));
+  return json;
+}
+
 
 async function saveSales() {
   const totalSales     = document.getElementById('total-sales').value;
