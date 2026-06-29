@@ -84,8 +84,8 @@
 
     <!-- คำอธิบายสูตร -->
     <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-5 text-sm text-blue-800">
-      <p class="font-semibold mb-1">📐 วิธีคำนวณ (รายสัปดาห์)</p>
-      <p>สต็อกอาทิตย์ที่แล้ว + ของเข้าในสัปดาห์นี้ − สต็อกอาทิตย์นี้ = จำนวนที่ใช้/หายไป → คูณมูลค่า/ชิ้น = มูลค่ารวม</p>
+      <p class="font-semibold mb-1">📐 วิธีคำนวณ</p>
+      <p>ของเข้าสะสมทั้งหมด (ถึงวันที่เลือก) − ของเสียภายในอาทิตย์นั้น − สต็อกคงเหลือ (เช็คสต็อกรายสัปดาห์) = จำนวนที่หายไป → คูณมูลค่า/ชิ้น = มูลค่ารวม</p>
     </div>
 
     <!-- ตั้งค่า -->
@@ -112,7 +112,7 @@
           <input type="number" id="unit-value" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" value="10" min="0" step="0.01">
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">ระบบจะดึงสต็อกอาทิตย์นี้และอาทิตย์ที่แล้ว และของเข้าในช่วง 7 วันที่ผ่านมา เฉพาะสาขาที่เลือก</p>
+      <p class="text-xs text-gray-400 mt-2">ระบบจะดึงของเข้าสะสมทั้งหมดถึงวันที่เลือก, ของเสียในสัปดาห์นั้น และสต็อกที่เช็คในวันนั้น เฉพาะสาขาที่เลือก</p>
       <button onclick="calculate()" id="calc-btn"
         class="w-full mt-4 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
@@ -147,9 +147,9 @@
         <table class="w-full text-sm">
           <thead><tr class="bg-gray-50">
             <th class="p-3 text-left font-medium text-gray-600">รายการ</th>
-            <th class="p-3 text-center font-medium text-gray-600">สต็อกอาทิตย์ที่แล้ว</th>
-            <th class="p-3 text-center font-medium text-gray-600">ของเข้าสัปดาห์นี้</th>
-            <th class="p-3 text-center font-medium text-gray-600">สต็อกอาทิตย์นี้</th>
+            <th class="p-3 text-center font-medium text-gray-600">เข้าสะสม</th>
+            <th class="p-3 text-center font-medium text-gray-600">เสียอาทิตย์นี้</th>
+            <th class="p-3 text-center font-medium text-gray-600">สต็อกปัจจุบัน</th>
             <th class="p-3 text-center font-medium text-gray-600">หายไป</th>
             <th class="p-3 text-center font-medium text-gray-600">มูลค่า (บาท)</th>
           </tr></thead>
@@ -320,35 +320,37 @@ async function calculate() {
     const currentSunday = new Date(yr, mo - 1, da);
     const currentSundayStr = toDateStr(currentSunday);
 
-    // อาทิตย์ที่แล้ว = 7 วันก่อน
+    // อาทิตย์ที่แล้ว = 7 วันก่อน (เพื่อกำหนดช่วงของเสียในสัปดาห์นี้)
     const prevSunday = new Date(currentSunday);
     prevSunday.setDate(prevSunday.getDate() - 7);
     const prevSundayStr = toDateStr(prevSunday);
 
-    const [incomingDataAll, weeklyDataAll] = await Promise.all([
+    const [incomingDataAll, weeklyDataAll, wasteDataAll] = await Promise.all([
       fetchAllHistory('incoming'),
-      fetchAllHistory('weekly')
+      fetchAllHistory('weekly'),
+      fetchAllHistory('waste')
     ]);
 
     // ── กรองเฉพาะสาขาที่เลือก ──
     const incomingData = incomingDataAll.filter(row => row['สาขา'] === branch);
     const weeklyData   = weeklyDataAll.filter(row => row['สาขา'] === branch);
+    const wasteData    = wasteDataAll.filter(row => row['สาขา'] === branch);
 
-    // ── สต็อกอาทิตย์ที่แล้ว (เช็คสต็อกรายสัปดาห์ครั้งก่อน) ──
-    const prevStock = {};
-    weeklyData.forEach(row => {
+    // ── ของเข้าสะสมทั้งหมด (ตั้งแต่ต้นจนถึงวันที่เลือก) ──
+    const incomingTotals = {};
+    incomingData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
-      if (toDateStr(rowDate) !== prevSundayStr) return;
+      if (toDateStr(rowDate) > currentSundayStr) return;
       const name = row['รายการ'];
       const qty  = parseFloat(row['จำนวน']) || 0;
       if (!name) return;
-      prevStock[name] = qty; // อันล่าสุดทับอันเก่า
+      incomingTotals[name] = (incomingTotals[name] || 0) + qty;
     });
 
-    // ── ของเข้าในสัปดาห์นี้ (วันหลังอาทิตย์ที่แล้ว ถึง อาทิตย์นี้) ──
-    const thisWeekIncoming = {};
-    incomingData.forEach(row => {
+    // ── ของเสียภายในอาทิตย์นั้น (วันหลังอาทิตย์ที่แล้ว ถึง อาทิตย์นี้) ──
+    const thisWeekWaste = {};
+    wasteData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
       const ds = toDateStr(rowDate);
@@ -356,10 +358,10 @@ async function calculate() {
       const name = row['รายการ'];
       const qty  = parseFloat(row['จำนวน']) || 0;
       if (!name) return;
-      thisWeekIncoming[name] = (thisWeekIncoming[name] || 0) + qty;
+      thisWeekWaste[name] = (thisWeekWaste[name] || 0) + qty;
     });
 
-    // ── สต็อกคงเหลืออาทิตย์นี้ ──
+    // ── สต็อกคงเหลือ (เช็คสต็อกรายสัปดาห์วันที่เลือก) ──
     const currentStock = {};
     weeklyData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
@@ -378,11 +380,10 @@ async function calculate() {
     }
 
     // ── คำนวณของหายต่อรายการ ──
-    // สูตร: สต็อกอาทิตย์ที่แล้ว + ของเข้าสัปดาห์นี้ − สต็อกอาทิตย์นี้ = หายไป
+    // สูตร: ของเข้าสะสมทั้งหมด − ของเสียอาทิตย์นี้ − สต็อกปัจจุบัน = หายไป
     const allNames = new Set([
       ...Object.keys(currentStock),
-      ...Object.keys(prevStock),
-      ...Object.keys(thisWeekIncoming)
+      ...Object.keys(incomingTotals)
     ]);
 
     const details = [];
@@ -390,12 +391,12 @@ async function calculate() {
 
     allNames.forEach(name => {
       if (!currentStock.hasOwnProperty(name)) return; // ต้องมีสต็อกปัจจุบัน
-      const prevQty     = prevStock[name] || 0;
-      const incomingQty = thisWeekIncoming[name] || 0;
+      const incomingQty = incomingTotals[name] || 0;
+      const wasteQty    = thisWeekWaste[name] || 0;
       const currentQty  = currentStock[name];
-      const lostQty     = prevQty + incomingQty - currentQty;
+      const lostQty     = incomingQty - wasteQty - currentQty;
       const lostValue   = lostQty * unitValue;
-      details.push({ name, prevQty, incomingQty, currentQty, lostQty, lostValue });
+      details.push({ name, incomingQty, wasteQty, currentQty, lostQty, lostValue });
       totalQtyLost   += lostQty;
       totalValueLost += lostValue;
     });
@@ -453,8 +454,8 @@ function renderTable(details) {
     return `
       <tr class="hover:bg-gray-50">
         <td class="p-3 font-medium text-gray-700">${d.name}</td>
-        <td class="p-3 text-center text-gray-500">${fmt(d.prevQty)}</td>
         <td class="p-3 text-center text-gray-600">${fmt(d.incomingQty)}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.wasteQty)}</td>
         <td class="p-3 text-center text-gray-600">${fmt(d.currentQty)}</td>
         <td class="p-3 text-center ${lostColor}">${fmt(d.lostQty)}</td>
         <td class="p-3 text-center ${lostColor}">${fmt(d.lostValue)}</td>
