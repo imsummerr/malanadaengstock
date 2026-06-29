@@ -308,7 +308,11 @@ function parseThaiDate(str) {
   }
   // ISO: parse as local date (split on T or space)
   const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
+  if (iso) {
+    let y = parseInt(iso[1]);
+    if (y > 2400) y -= 543; // API ส่งปี พ.ศ. ใน ISO format เช่น "2569-06-28T..."
+    return new Date(y, parseInt(iso[2]) - 1, parseInt(iso[3]));
+  }
   return null;
 }
 
