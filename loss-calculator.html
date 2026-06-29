@@ -196,12 +196,15 @@ function showLoginPage() {
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  // default วันที่เป็นวันอาทิตย์ล่าสุด
+  // default วันที่เป็นวันอาทิตย์ล่าสุด (ใช้ local date ป้องกัน UTC offset ทำให้วันเลื่อน)
   const today = new Date();
   const day   = today.getDay(); // 0 = อาทิตย์
   const lastSunday = new Date(today);
   lastSunday.setDate(today.getDate() - day);
-  document.getElementById('stock-date').value = lastSunday.toISOString().split('T')[0];
+  const sy = lastSunday.getFullYear();
+  const sm = String(lastSunday.getMonth() + 1).padStart(2, '0');
+  const sd = String(lastSunday.getDate()).padStart(2, '0');
+  document.getElementById('stock-date').value = `${sy}-${sm}-${sd}`;
 
   // ตั้งสาขาเริ่มต้นเป็นสาขาของผู้ใช้ที่ login (เลือกสาขาอื่นได้ภายหลัง)
   const myBranch  = sessionStorage.getItem('calc_auth_branch');
@@ -399,7 +402,15 @@ async function calculate() {
     console.log('[Loss Calc] thisWeekWaste items:', Object.keys(thisWeekWaste).length);
 
     if (!Object.keys(currentStock).length) {
-      showToast('⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์ในวันที่เลือก กรุณาเช็คว่าได้บันทึกสต็อกในวันนั้นแล้ว', 'warn');
+      // แสดง error box แทน toast เพื่อให้อ่านง่าย
+      document.getElementById('empty-state').innerHTML = `
+        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left max-w-md mx-auto">
+          <p class="font-semibold text-yellow-800 mb-2">⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์</p>
+          <p class="text-sm text-yellow-700 mb-1">วันที่เลือก: <strong>${currentSundayStr}</strong></p>
+          <p class="text-sm text-yellow-700">กรุณาตรวจสอบว่าได้บันทึก <strong>"เช็คสต็อกรายสัปดาห์"</strong> ใน index.html สำหรับวันนั้นแล้ว</p>
+          <p class="text-xs text-yellow-600 mt-2">ข้อมูลเช็คสต็อกที่ดึงมาได้: ${weeklyData.length} รายการ (ก่อนกรองวันที่)</p>
+        </div>`;
+      document.getElementById('empty-state').classList.remove('hidden');
       showLoading(false);
       return;
     }
