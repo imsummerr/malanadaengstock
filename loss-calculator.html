@@ -402,13 +402,32 @@ async function calculate() {
     console.log('[Loss Calc] thisWeekWaste items:', Object.keys(thisWeekWaste).length);
 
     if (!Object.keys(currentStock).length) {
-      // แสดง error box แทน toast เพื่อให้อ่านง่าย
+      // หาวันที่ที่มีข้อมูลเช็คสต็อกจริง (5 วันล่าสุด)
+      const availableDates = [...new Set(
+        weeklyData
+          .map(row => { const d = parseThaiDate(row['วันที่เวลา']); return d ? toDateStr(d) : null; })
+          .filter(Boolean)
+      )].sort().reverse().slice(0, 5);
+
+      const datesHtml = availableDates.length
+        ? `<div class="mt-3">
+            <p class="text-sm font-medium text-yellow-800 mb-2">📅 วันที่มีข้อมูลเช็คสต็อก (กดเพื่อใช้):</p>
+            <div class="flex flex-wrap gap-2">
+              ${availableDates.map(d => `
+                <button onclick="document.getElementById('stock-date').value='${d}'; calculate()"
+                  class="bg-yellow-200 hover:bg-yellow-300 text-yellow-900 text-sm font-semibold px-3 py-1 rounded-lg transition-all">
+                  ${d}
+                </button>`).join('')}
+            </div>
+          </div>`
+        : '';
+
       document.getElementById('empty-state').innerHTML = `
         <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left max-w-md mx-auto">
           <p class="font-semibold text-yellow-800 mb-2">⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์</p>
-          <p class="text-sm text-yellow-700 mb-1">วันที่เลือก: <strong>${currentSundayStr}</strong></p>
-          <p class="text-sm text-yellow-700">กรุณาตรวจสอบว่าได้บันทึก <strong>"เช็คสต็อกรายสัปดาห์"</strong> ใน index.html สำหรับวันนั้นแล้ว</p>
-          <p class="text-xs text-yellow-600 mt-2">ข้อมูลเช็คสต็อกที่ดึงมาได้: ${weeklyData.length} รายการ (ก่อนกรองวันที่)</p>
+          <p class="text-sm text-yellow-700">วันที่เลือก: <strong>${currentSundayStr}</strong></p>
+          ${datesHtml}
+          <p class="text-xs text-yellow-600 mt-3">ถ้ายังไม่ได้เช็คสต็อกวันนั้น ให้ไปบันทึกใน index.html ก่อน</p>
         </div>`;
       document.getElementById('empty-state').classList.remove('hidden');
       showLoading(false);
