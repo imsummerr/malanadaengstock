@@ -123,6 +123,7 @@
     <!-- สรุปผลรวม -->
     <div id="summary-box" class="hidden bg-white rounded-2xl shadow-md p-5 mb-5">
       <h2 class="font-semibold text-gray-700 mb-4">📊 สรุปผลรวม — <span id="summary-branch" class="text-red-600"></span></h2>
+      <p id="debug-info" class="text-xs text-gray-400 mb-3"></p>
       <div class="grid grid-cols-2 gap-3">
         <div class="bg-red-50 rounded-xl p-4 text-center">
           <div id="total-qty-lost" class="text-3xl font-bold text-red-600">0</div>
@@ -270,13 +271,25 @@ function doLogout() {
 // ============================================================
 // FETCH DATA FROM GOOGLE SHEETS
 // ============================================================
+const SHEET_NAME_MAP = {
+  incoming: 'จำนวนของเข้า',
+  weekly:   'เช็คสต็อกรายสัปดาห์',
+  waste:    'ของเสีย'
+};
+
 async function fetchAllHistory(type) {
   const token = getAuthToken();
   const res  = await fetch(`${SHEETS_URL}?action=history&type=${type}&token=${encodeURIComponent(token)}`);
   const json = await res.json();
   if (json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
   if (!json.success) throw new Error(json.message || json.error || 'โหลดข้อมูลไม่สำเร็จ');
-  return json.data || [];
+  const data = json.data || [];
+  // กรอง _sheet ฝั่ง client เผื่อ server คืนข้อมูลทุก sheet กลับมา
+  const sheetName = SHEET_NAME_MAP[type];
+  if (sheetName && data.some(r => r['_sheet'])) {
+    return data.filter(r => r['_sheet'] === sheetName);
+  }
+  return data;
 }
 
 // แปลง string วันที่ไทย "18/6/2569 14:30:00" หรือ ISO ให้เป็น Date (local midnight)
@@ -336,6 +349,14 @@ async function calculate() {
     const weeklyData   = weeklyDataAll.filter(row => row['สาขา'] === branch);
     const wasteData    = wasteDataAll.filter(row => row['สาขา'] === branch);
 
+    console.log('[Loss Calc] raw fetched:', {
+      incoming: incomingDataAll.length, weekly: weeklyDataAll.length, waste: wasteDataAll.length
+    });
+    console.log('[Loss Calc] filtered by branch:', {
+      incoming: incomingData.length, weekly: weeklyData.length, waste: wasteData.length,
+      branch, currentSundayStr, prevSundayStr
+    });
+
     // ── ของเข้าสะสมทั้งหมด (ตั้งแต่ต้นจนถึงวันที่เลือก) ──
     const incomingTotals = {};
     incomingData.forEach(row => {
@@ -373,8 +394,12 @@ async function calculate() {
       currentStock[name] = qty; // อันล่าสุดทับอันเก่า
     });
 
+    console.log('[Loss Calc] currentStock items:', Object.keys(currentStock).length, Object.keys(currentStock).slice(0,3));
+    console.log('[Loss Calc] incomingTotals items:', Object.keys(incomingTotals).length, Object.keys(incomingTotals).slice(0,3));
+    console.log('[Loss Calc] thisWeekWaste items:', Object.keys(thisWeekWaste).length);
+
     if (!Object.keys(currentStock).length) {
-      showToast('⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์ในวันที่เลือก', 'warn');
+      showToast('⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์ในวันที่เลือก กรุณาเช็คว่าได้บันทึกสต็อกในวันนั้นแล้ว', 'warn');
       showLoading(false);
       return;
     }
@@ -403,7 +428,17 @@ async function calculate() {
 
     details.sort((a, b) => b.lostQty - a.lostQty);
 
-    renderResults(details, totalQtyLost, totalValueLost);
+    console.log('[Loss Calc] details:', details.length, 'items, totalLost:', totalQtyLost);
+
+    const debugInfo = {
+      incomingRows: incomingData.length,
+      wasteRows: wasteData.length,
+      weeklyRows: weeklyData.length,
+      stockItems: Object.keys(currentStock).length,
+      incomingItems: Object.keys(incomingTotals).length
+    };
+
+    renderResults(details, totalQtyLost, totalValueLost, debugInfo);
     showToast('✅ คำนวณสำเร็จ', 'success');
 
   } catch(e) {
@@ -418,7 +453,7 @@ async function calculate() {
 // ============================================================
 let lastDetails = [];
 
-function renderResults(details, totalQty, totalValue) {
+function renderResults(details, totalQty, totalValue, debugInfo) {
   lastDetails = details;
 
   document.getElementById('empty-state').classList.add('hidden');
@@ -428,6 +463,14 @@ function renderResults(details, totalQty, totalValue) {
   document.getElementById('summary-branch').textContent = document.getElementById('calc-branch').value;
   document.getElementById('total-qty-lost').textContent   = totalQty.toLocaleString('th-TH', { maximumFractionDigits: 2 });
   document.getElementById('total-value-lost').textContent = totalValue.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+  // แสดง debug info
+  if (debugInfo) {
+    const el = document.getElementById('debug-info');
+    if (el) {
+      el.textContent = `ข้อมูลที่ใช้: ของเข้า ${debugInfo.incomingRows} รายการ (${debugInfo.incomingItems} รายการสินค้า) | เสีย ${debugInfo.wasteRows} รายการ | สต็อก ${debugInfo.weeklyRows} รายการ (${debugInfo.stockItems} รายการสินค้า)`;
+    }
+  }
 
   renderTable(details);
 }
