@@ -84,8 +84,8 @@
 
     <!-- คำอธิบายสูตร -->
     <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-5 text-sm text-blue-800">
-      <p class="font-semibold mb-1">📐 วิธีคำนวณ</p>
-      <p>ของเข้าสะสมทั้งหมด (ถึงวันที่เลือก) − ของเสียสะสม − สต็อกคงเหลือ (ที่เช็คในวันนั้น) = จำนวนที่ใช้ไป → คูณมูลค่า/ชิ้น = มูลค่ารวม</p>
+      <p class="font-semibold mb-1">📐 วิธีคำนวณ (รายสัปดาห์)</p>
+      <p>สต็อกอาทิตย์ที่แล้ว + ของเข้าในสัปดาห์นี้ − สต็อกอาทิตย์นี้ = จำนวนที่ใช้/หายไป → คูณมูลค่า/ชิ้น = มูลค่ารวม</p>
     </div>
 
     <!-- ตั้งค่า -->
@@ -112,7 +112,7 @@
           <input type="number" id="unit-value" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" value="10" min="0" step="0.01">
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">ระบบจะดึงสต็อกที่บันทึกในวันนี้ และของเข้าทั้งหมดตั้งแต่ต้นจนถึงวันนี้ เฉพาะสาขาที่เลือก</p>
+      <p class="text-xs text-gray-400 mt-2">ระบบจะดึงสต็อกอาทิตย์นี้และอาทิตย์ที่แล้ว และของเข้าในช่วง 7 วันที่ผ่านมา เฉพาะสาขาที่เลือก</p>
       <button onclick="calculate()" id="calc-btn"
         class="w-full mt-4 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
@@ -147,9 +147,9 @@
         <table class="w-full text-sm">
           <thead><tr class="bg-gray-50">
             <th class="p-3 text-left font-medium text-gray-600">รายการ</th>
-            <th class="p-3 text-center font-medium text-gray-600">เข้าสะสม</th>
-            <th class="p-3 text-center font-medium text-gray-600">เสียสะสม</th>
-            <th class="p-3 text-center font-medium text-gray-600">คงเหลือ</th>
+            <th class="p-3 text-center font-medium text-gray-600">สต็อกอาทิตย์ที่แล้ว</th>
+            <th class="p-3 text-center font-medium text-gray-600">ของเข้าสัปดาห์นี้</th>
+            <th class="p-3 text-center font-medium text-gray-600">สต็อกอาทิตย์นี้</th>
             <th class="p-3 text-center font-medium text-gray-600">หายไป</th>
             <th class="p-3 text-center font-medium text-gray-600">มูลค่า (บาท)</th>
           </tr></thead>
@@ -279,11 +279,10 @@ async function fetchAllHistory(type) {
   return json.data || [];
 }
 
-// แปลง string วันที่ไทย "18/6/2569 14:30:00" หรือ ISO ให้เป็น Date
+// แปลง string วันที่ไทย "18/6/2569 14:30:00" หรือ ISO ให้เป็น Date (local midnight)
 function parseThaiDate(str) {
   if (!str) return null;
   str = String(str);
-  // กรณีรูปแบบ d/m/yyyy (พ.ศ. หรือ ค.ศ.)
   const match = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (match) {
     let [, d, m, y] = match;
@@ -291,8 +290,15 @@ function parseThaiDate(str) {
     if (y > 2400) y -= 543; // พ.ศ. -> ค.ศ.
     return new Date(y, parseInt(m) - 1, parseInt(d));
   }
-  const d2 = new Date(str);
-  return isNaN(d2.getTime()) ? null : d2;
+  // ISO: parse as local date (split on T or space)
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
+  return null;
+}
+
+// แปลง Date เป็น "YYYY-MM-DD" ใน local time
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 // ============================================================
@@ -300,98 +306,101 @@ function parseThaiDate(str) {
 // ============================================================
 async function calculate() {
   const stockDateStr = document.getElementById('stock-date').value;
-  const unitValue     = parseFloat(document.getElementById('unit-value').value) || 0;
-  const branch         = document.getElementById('calc-branch').value;
+  const unitValue    = parseFloat(document.getElementById('unit-value').value) || 0;
+  const branch       = document.getElementById('calc-branch').value;
 
-  if (!branch) {
-    showToast('⚠️ กรุณาเลือกสาขา', 'warn');
-    return;
-  }
-  if (!stockDateStr) {
-    showToast('⚠️ กรุณาเลือกวันที่เช็คสต็อก', 'warn');
-    return;
-  }
+  if (!branch) { showToast('⚠️ กรุณาเลือกสาขา', 'warn'); return; }
+  if (!stockDateStr) { showToast('⚠️ กรุณาเลือกวันที่เช็คสต็อก', 'warn'); return; }
 
   showLoading(true, 'กำลังโหลดข้อมูลจาก Google Sheets...');
 
   try {
-    const stockDate = new Date(stockDateStr);
-    stockDate.setHours(23, 59, 59, 999); // รวมทั้งวันนั้น
+    // parse stockDateStr เป็น local date (ป้องกันปัญหา UTC offset)
+    const [yr, mo, da] = stockDateStr.split('-').map(Number);
+    const currentSunday = new Date(yr, mo - 1, da);
+    const currentSundayStr = toDateStr(currentSunday);
 
-    const [incomingDataAll, weeklyDataAll, wasteDataAll] = await Promise.all([
+    // อาทิตย์ที่แล้ว = 7 วันก่อน
+    const prevSunday = new Date(currentSunday);
+    prevSunday.setDate(prevSunday.getDate() - 7);
+    const prevSundayStr = toDateStr(prevSunday);
+
+    const [incomingDataAll, weeklyDataAll] = await Promise.all([
       fetchAllHistory('incoming'),
-      fetchAllHistory('weekly'),
-      fetchAllHistory('waste')
+      fetchAllHistory('weekly')
     ]);
 
     // ── กรองเฉพาะสาขาที่เลือก ──
     const incomingData = incomingDataAll.filter(row => row['สาขา'] === branch);
     const weeklyData   = weeklyDataAll.filter(row => row['สาขา'] === branch);
-    const wasteData    = wasteDataAll.filter(row => row['สาขา'] === branch);
 
-    // ── รวมของเข้าสะสม (ตั้งแต่ต้นจนถึงวันที่เลือก) ──
-    const incomingTotals = {}; // { ชื่อสินค้า: จำนวนรวม }
-    incomingData.forEach(row => {
-      const rowDate = parseThaiDate(row['วันที่เวลา']);
-      if (!rowDate || rowDate > stockDate) return;
-      const name = row['รายการ'];
-      const qty  = parseFloat(row['จำนวน']) || 0;
-      if (!name) return;
-      incomingTotals[name] = (incomingTotals[name] || 0) + qty;
-    });
-
-    // ── รวมของเสียสะสม (ตั้งแต่ต้นจนถึงวันที่เลือก) ──
-    const wasteTotals = {}; // { ชื่อสินค้า: จำนวนรวม }
-    wasteData.forEach(row => {
-      const rowDate = parseThaiDate(row['วันที่เวลา']);
-      if (!rowDate || rowDate > stockDate) return;
-      const name = row['รายการ'];
-      const qty  = parseFloat(row['จำนวน']) || 0;
-      if (!name) return;
-      wasteTotals[name] = (wasteTotals[name] || 0) + qty;
-    });
-
-    // ── หาสต็อกคงเหลือ ณ วันที่เลือก (จากเช็คสต็อกรายสัปดาห์) ──
-    // หา record ที่ตรงกับวันนั้น (อนุญาตช่วง ±1 วัน เผื่อเวลาบันทึกคลาดเคลื่อน)
-    const targetDateOnly = new Date(stockDateStr);
-    const stockRemaining = {}; // { ชื่อสินค้า: จำนวนคงเหลือ }
-
+    // ── สต็อกอาทิตย์ที่แล้ว (เช็คสต็อกรายสัปดาห์ครั้งก่อน) ──
+    const prevStock = {};
     weeklyData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
-      const diffDays = Math.abs((rowDate - targetDateOnly) / (1000*60*60*24));
-      if (diffDays > 1) return; // เอาเฉพาะวันที่ตรงกับที่เลือก (หรือใกล้เคียง 1 วัน)
+      if (toDateStr(rowDate) !== prevSundayStr) return;
       const name = row['รายการ'];
       const qty  = parseFloat(row['จำนวน']) || 0;
       if (!name) return;
-      // ถ้ามีหลาย record ตรงวันเดียวกัน เอาอันล่าสุด (ทับด้วยอันใหม่)
-      stockRemaining[name] = qty;
+      prevStock[name] = qty; // อันล่าสุดทับอันเก่า
     });
 
+    // ── ของเข้าในสัปดาห์นี้ (วันหลังอาทิตย์ที่แล้ว ถึง อาทิตย์นี้) ──
+    const thisWeekIncoming = {};
+    incomingData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      const ds = toDateStr(rowDate);
+      if (ds <= prevSundayStr || ds > currentSundayStr) return;
+      const name = row['รายการ'];
+      const qty  = parseFloat(row['จำนวน']) || 0;
+      if (!name) return;
+      thisWeekIncoming[name] = (thisWeekIncoming[name] || 0) + qty;
+    });
+
+    // ── สต็อกคงเหลืออาทิตย์นี้ ──
+    const currentStock = {};
+    weeklyData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      if (toDateStr(rowDate) !== currentSundayStr) return;
+      const name = row['รายการ'];
+      const qty  = parseFloat(row['จำนวน']) || 0;
+      if (!name) return;
+      currentStock[name] = qty; // อันล่าสุดทับอันเก่า
+    });
+
+    if (!Object.keys(currentStock).length) {
+      showToast('⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์ในวันที่เลือก', 'warn');
+      showLoading(false);
+      return;
+    }
+
     // ── คำนวณของหายต่อรายการ ──
-    const allNames = new Set([...Object.keys(incomingTotals), ...Object.keys(stockRemaining)]);
+    // สูตร: สต็อกอาทิตย์ที่แล้ว + ของเข้าสัปดาห์นี้ − สต็อกอาทิตย์นี้ = หายไป
+    const allNames = new Set([
+      ...Object.keys(currentStock),
+      ...Object.keys(prevStock),
+      ...Object.keys(thisWeekIncoming)
+    ]);
+
     const details = [];
-    let totalQtyLost = 0;
-    let totalValueLost = 0;
+    let totalQtyLost = 0, totalValueLost = 0;
 
     allNames.forEach(name => {
-      const incomingQty  = incomingTotals[name] || 0;
-      const wasteQty      = wasteTotals[name] || 0;
-      const remainingQty = stockRemaining.hasOwnProperty(name) ? stockRemaining[name] : null;
-
-      // ถ้าไม่มีข้อมูลสต็อกคงเหลือของรายการนี้เลย ข้ามไป (ไม่สามารถคำนวณได้)
-      if (remainingQty === null) return;
-
-      const lostQty  = incomingQty - wasteQty - remainingQty;
-      const lostValue = lostQty * unitValue;
-
-      details.push({ name, incomingQty, wasteQty, remainingQty, lostQty, lostValue });
+      if (!currentStock.hasOwnProperty(name)) return; // ต้องมีสต็อกปัจจุบัน
+      const prevQty     = prevStock[name] || 0;
+      const incomingQty = thisWeekIncoming[name] || 0;
+      const currentQty  = currentStock[name];
+      const lostQty     = prevQty + incomingQty - currentQty;
+      const lostValue   = lostQty * unitValue;
+      details.push({ name, prevQty, incomingQty, currentQty, lostQty, lostValue });
       totalQtyLost   += lostQty;
       totalValueLost += lostValue;
     });
 
-    // เรียงตามมูลค่าความเสียหายมากไปน้อย
-    details.sort((a, b) => b.lostValue - a.lostValue);
+    details.sort((a, b) => b.lostQty - a.lostQty);
 
     renderResults(details, totalQtyLost, totalValueLost);
     showToast('✅ คำนวณสำเร็จ', 'success');
@@ -440,14 +449,15 @@ function renderTable(details) {
 
   tbody.innerHTML = rows.map(d => {
     const lostColor = d.lostQty > 0 ? 'text-red-600 font-semibold' : d.lostQty < 0 ? 'text-blue-500' : 'text-gray-400';
+    const fmt = n => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
     return `
       <tr class="hover:bg-gray-50">
         <td class="p-3 font-medium text-gray-700">${d.name}</td>
-        <td class="p-3 text-center text-gray-600">${d.incomingQty.toLocaleString('th-TH', {maximumFractionDigits:2})}</td>
-        <td class="p-3 text-center text-gray-500">${d.wasteQty.toLocaleString('th-TH', {maximumFractionDigits:2})}</td>
-        <td class="p-3 text-center text-gray-600">${d.remainingQty.toLocaleString('th-TH', {maximumFractionDigits:2})}</td>
-        <td class="p-3 text-center ${lostColor}">${d.lostQty.toLocaleString('th-TH', {maximumFractionDigits:2})}</td>
-        <td class="p-3 text-center ${lostColor}">${d.lostValue.toLocaleString('th-TH', {maximumFractionDigits:2})}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.prevQty)}</td>
+        <td class="p-3 text-center text-gray-600">${fmt(d.incomingQty)}</td>
+        <td class="p-3 text-center text-gray-600">${fmt(d.currentQty)}</td>
+        <td class="p-3 text-center ${lostColor}">${fmt(d.lostQty)}</td>
+        <td class="p-3 text-center ${lostColor}">${fmt(d.lostValue)}</td>
       </tr>`;
   }).join('');
 }
