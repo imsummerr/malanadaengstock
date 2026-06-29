@@ -708,6 +708,23 @@ let branch      = '';
 let allRecords  = [];
 let localStats  = { weekly: 0, incoming: 0, sales: 0, vegetables: 0, waste: 0 };
 
+// ── Daily limit helpers (incoming) ──
+function getTodayKey() {
+  const now = new Date();
+  const local = new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000);
+  return local.toISOString().split('T')[0];
+}
+function getIncomingStorageKey() {
+  return `incoming_daily_${getTodayKey()}_${branch}`;
+}
+function getEnteredItemsToday() {
+  try { return JSON.parse(localStorage.getItem(getIncomingStorageKey()) || '[]'); } catch { return []; }
+}
+function markItemsEnteredToday(names) {
+  const updated = [...new Set([...getEnteredItemsToday(), ...names])];
+  localStorage.setItem(getIncomingStorageKey(), JSON.stringify(updated));
+}
+
 // ============================================================
 // GOOGLE SHEETS API  (ทุก request แนบ token)
 // ============================================================
@@ -827,6 +844,9 @@ function proceedToForm() {
   const infoMap  = { weekly:'weekly-checker-info', incoming:'incoming-checker-info', sales:'sales-checker-info', vegetables:'veg-checker-info', waste:'waste-checker-info' };
   const pageMap  = { weekly:'weekly-form', incoming:'incoming-form', sales:'sales-form', vegetables:'vegetables-form', waste:'waste-form' };
   document.getElementById(infoMap[currentForm]).textContent = infoText;
+  if (currentForm === 'incoming') {
+    renderIncomingItems();
+  }
   if (currentForm === 'sales') {
     document.getElementById('total-sales').value = '';
     document.getElementById('transfer-amount').value = '';
@@ -864,18 +884,31 @@ function renderWeeklyTables() {
 }
 
 function renderIncomingItems() {
-  document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item,i) => `
-    <div class="bg-gray-50 p-3 rounded-xl">
-      <div class="flex items-center gap-3">
-        <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
-        <label for="incoming-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
-      </div>
-      <div id="incoming-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
-        <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
-        <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
-        <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
-      </div>
-    </div>`).join('');
+  const entered = branch ? getEnteredItemsToday() : [];
+  document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item, i) => {
+    if (entered.includes(item.name)) {
+      return `
+        <div class="bg-green-50 p-3 rounded-xl border border-green-100">
+          <div class="flex items-center gap-3">
+            <span class="w-5 h-5 flex items-center justify-center text-green-500 font-bold">✓</span>
+            <span class="flex-1 font-medium text-gray-400 line-through">${item.name}</span>
+            <span class="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-lg whitespace-nowrap">กรอกแล้ววันนี้</span>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="bg-gray-50 p-3 rounded-xl">
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
+          <label for="incoming-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
+        </div>
+        <div id="incoming-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
+          <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
+          <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
+          <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function toggleIncomingItem(i) {
@@ -925,8 +958,10 @@ async function saveRecord(type, payload) {
     updateStats();
     showToast(`✅ บันทึกเข้า Google Sheets สำเร็จ! (ชีต: ${getSheetName(type)})`, 'success');
     goHome();
+    return true;
   } catch(e) {
     showToast('❌ ' + e.message, 'error');
+    return false;
   } finally {
     showLoading(false);
   }
@@ -958,13 +993,19 @@ async function saveWeeklyStock() {
 
 async function saveIncoming() {
   const items = [];
-  incomingItems.forEach((item,i) => {
-    if (document.getElementById(`incoming-check-${i}`).checked) {
-      items.push({ name: item.name, qty: parseInt(document.querySelectorAll('.incoming-qty')[i].value)||0, unit: item.unit, note: document.querySelectorAll('.incoming-note')[i].value });
+  const savedNames = [];
+  incomingItems.forEach((item, i) => {
+    const checkbox = document.getElementById(`incoming-check-${i}`);
+    if (checkbox && checkbox.checked) {
+      const qtyEl  = document.querySelector(`.incoming-qty[data-index="${i}"]`);
+      const noteEl = document.querySelector(`.incoming-note[data-index="${i}"]`);
+      items.push({ name: item.name, qty: parseInt(qtyEl ? qtyEl.value : 0) || 0, unit: item.unit, note: noteEl ? noteEl.value : '' });
+      savedNames.push(item.name);
     }
   });
   if (!items.length) { showToast('กรุณาเลือกรายการอย่างน้อย 1 รายการ', 'warn'); return; }
-  await saveRecord('incoming', { items });
+  const success = await saveRecord('incoming', { items });
+  if (success) markItemsEnteredToday(savedNames);
 }
 
 // ── DEBUG: เปิด console (F12) แล้วพิมพ์ debugIncoming() เพื่อดูสาเหตุที่กรอกซ้ำได้ ──
