@@ -402,16 +402,22 @@ async function calculate() {
     console.log('[Loss Calc] thisWeekWaste items:', Object.keys(thisWeekWaste).length);
 
     if (!Object.keys(currentStock).length) {
-      // หาวันที่ที่มีข้อมูลเช็คสต็อกจริง (5 วันล่าสุด)
-      const availableDates = [...new Set(
-        weeklyData
-          .map(row => { const d = parseThaiDate(row['วันที่เวลา']); return d ? toDateStr(d) : null; })
-          .filter(Boolean)
-      )].sort().reverse().slice(0, 5);
+      // วิเคราะห์ข้อมูลดิบเพื่อ debug
+      const parsedInfo = weeklyData.map(row => ({
+        raw: row['วันที่เวลา'],
+        parsed: (() => { const d = parseThaiDate(row['วันที่เวลา']); return d ? toDateStr(d) : 'FAIL'; })()
+      }));
+      const failCount = parsedInfo.filter(x => x.parsed === 'FAIL').length;
+      const availableDates = [...new Set(parsedInfo.filter(x => x.parsed !== 'FAIL').map(x => x.parsed))].sort().reverse().slice(0, 5);
+      const sampleRaw = weeklyData.slice(0, 2).map(r => r['วันที่เวลา']);
+
+      console.log('[Loss Calc] sample raw dates:', sampleRaw);
+      console.log('[Loss Calc] parse fail count:', failCount, '/', weeklyData.length);
+      console.log('[Loss Calc] available parsed dates:', availableDates);
 
       const datesHtml = availableDates.length
         ? `<div class="mt-3">
-            <p class="text-sm font-medium text-yellow-800 mb-2">📅 วันที่มีข้อมูลเช็คสต็อก (กดเพื่อใช้):</p>
+            <p class="text-sm font-medium text-yellow-800 mb-1">📅 วันที่มีข้อมูล (กดเพื่อใช้):</p>
             <div class="flex flex-wrap gap-2">
               ${availableDates.map(d => `
                 <button onclick="document.getElementById('stock-date').value='${d}'; calculate()"
@@ -420,14 +426,18 @@ async function calculate() {
                 </button>`).join('')}
             </div>
           </div>`
-        : '';
+        : `<p class="text-sm text-red-700 mt-2">⚠️ แปลงวันที่ไม่ได้เลย (parse fail ${failCount}/${weeklyData.length})</p>`;
 
       document.getElementById('empty-state').innerHTML = `
-        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left max-w-md mx-auto">
-          <p class="font-semibold text-yellow-800 mb-2">⚠️ ไม่พบข้อมูลเช็คสต็อกรายสัปดาห์</p>
+        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left mx-auto">
+          <p class="font-semibold text-yellow-800 mb-2">⚠️ ไม่พบข้อมูลเช็คสต็อกสำหรับวันที่เลือก</p>
           <p class="text-sm text-yellow-700">วันที่เลือก: <strong>${currentSundayStr}</strong></p>
           ${datesHtml}
-          <p class="text-xs text-yellow-600 mt-3">ถ้ายังไม่ได้เช็คสต็อกวันนั้น ให้ไปบันทึกใน index.html ก่อน</p>
+          <div class="mt-3 bg-white rounded-lg p-3 text-xs text-gray-500 font-mono break-all">
+            <p class="font-semibold text-gray-600 mb-1">ตัวอย่าง format วันที่ใน API:</p>
+            ${sampleRaw.map(r => `<p>"${r}"</p>`).join('')}
+            <p class="mt-1">แปลงไม่ได้: ${failCount}/${weeklyData.length} รายการ</p>
+          </div>
         </div>`;
       document.getElementById('empty-state').classList.remove('hidden');
       showLoading(false);
