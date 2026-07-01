@@ -698,8 +698,11 @@ const vegIncomingItems = [
   { name: 'น้ำดำ', unit: 'ขวด' }, { name: 'น้ำกระดูกหมู', unit: 'ขวด' },
   { name: 'นม', unit: 'ขวด' }
 ];
+const supplyItems = [
+  { name: 'ช้อน', unit: 'อัน' }, { name: 'ถ้วย', unit: 'ใบ' }
+];
 const allItems     = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
-const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
+const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems, ...supplyItems];
 
 // State
 let currentForm = '';
