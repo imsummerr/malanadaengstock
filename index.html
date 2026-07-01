@@ -725,6 +725,17 @@ function markItemsEnteredToday(names) {
   localStorage.setItem(getIncomingStorageKey(), JSON.stringify(updated));
 }
 
+// ── Daily limit helpers (sales) ──
+function getSalesStorageKey() {
+  return `sales_daily_${getTodayKey()}_${branch}`;
+}
+function hasSalesEnteredToday() {
+  return localStorage.getItem(getSalesStorageKey()) === 'true';
+}
+function markSalesEnteredToday() {
+  localStorage.setItem(getSalesStorageKey(), 'true');
+}
+
 // ============================================================
 // GOOGLE SHEETS API  (ทุก request แนบ token)
 // ============================================================
@@ -848,6 +859,10 @@ function proceedToForm() {
     renderIncomingItems();
   }
   if (currentForm === 'sales') {
+    if (hasSalesEnteredToday()) {
+      showToast('กรอกยอดขายแล้ววันนี้ ไม่สามารถกรอกซ้ำได้', 'warn');
+      return;
+    }
     document.getElementById('total-sales').value = '';
     document.getElementById('transfer-amount').value = '';
     document.getElementById('cash-amount').value = '';
@@ -1040,7 +1055,8 @@ async function saveSales() {
     showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warn'); return;
   }
   document.getElementById('sales-validation-msg').classList.add('hidden');
-  await saveRecord('sales', { totalSales, transferAmount, cashAmount, expenses, note: document.getElementById('sales-note').value });
+  const success = await saveRecord('sales', { totalSales, transferAmount, cashAmount, expenses, note: document.getElementById('sales-note').value });
+  if (success) markSalesEnteredToday();
 }
 
 async function saveVegetables() {
