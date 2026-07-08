@@ -344,6 +344,7 @@
           <h2 class="text-xl font-bold flex items-center gap-2"><span>📦</span> จำนวนของเข้า</h2>
         </div>
         <div class="p-4">
+          <div id="incoming-expiry-banner" class="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800 flex items-center gap-2"></div>
           <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
           <div id="incoming-items-list" class="space-y-2"></div>
         </div>
@@ -529,6 +530,9 @@
 // CONFIG
 // ============================================================
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzpinClYQpyZ4RZWVeXT0ZNHTTkHaCHNuZcf3T7HiuqrnJjAZZAgmse0abMg4uP6zu40A/exec';
+
+// อายุของสต็อก: ของเข้าวันที่ 1/7 → ต้องเคลียร์ทิ้งวันที่ 7/7 (บวก 6 วันจากวันที่ของเข้า)
+const EXPIRY_DAYS = 6;
 
 // ============================================================
 // AUTH — Login / Logout
@@ -717,6 +721,19 @@ function getTodayKey() {
   const local = new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000);
   return local.toISOString().split('T')[0];
 }
+
+// ── Expiry date helpers ──
+function getDateKeyOffset(days) {
+  const now = new Date();
+  const local = new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000);
+  local.setUTCDate(local.getUTCDate() + days);
+  return local.toISOString().split('T')[0]; // yyyy-mm-dd
+}
+function formatKeyDMY(key) {
+  const [y, m, d] = key.split('-');
+  return `${parseInt(d)}/${parseInt(m)}/${y}`;
+}
+function getExpireDateKey() { return getDateKeyOffset(EXPIRY_DAYS); }
 function getIncomingStorageKey() {
   return `incoming_daily_${getTodayKey()}_${branch}`;
 }
@@ -903,6 +920,10 @@ function renderWeeklyTables() {
 
 function renderIncomingItems() {
   const entered = branch ? getEnteredItemsToday() : [];
+  const banner = document.getElementById('incoming-expiry-banner');
+  if (banner) {
+    banner.innerHTML = `<span>📅</span><span>ของเข้าวันนี้ (${formatKeyDMY(getTodayKey())}) → <b>ต้องเคลียร์ทิ้งภายในวันที่ ${formatKeyDMY(getExpireDateKey())}</b></span>`;
+  }
   document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item, i) => {
     if (entered.includes(item.name)) {
       return `
@@ -924,6 +945,7 @@ function renderIncomingItems() {
           <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
           <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
           <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+          <div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKey())}</div>
         </div>
       </div>`;
   }).join('');
@@ -1017,7 +1039,14 @@ async function saveIncoming() {
     if (checkbox && checkbox.checked) {
       const qtyEl  = document.querySelector(`.incoming-qty[data-index="${i}"]`);
       const noteEl = document.querySelector(`.incoming-note[data-index="${i}"]`);
-      items.push({ name: item.name, qty: parseInt(qtyEl ? qtyEl.value : 0) || 0, unit: item.unit, note: noteEl ? noteEl.value : '' });
+      items.push({
+        name: item.name,
+        qty: parseInt(qtyEl ? qtyEl.value : 0) || 0,
+        unit: item.unit,
+        note: noteEl ? noteEl.value : '',
+        inDate: getTodayKey(),           // วันที่ของเข้า (yyyy-mm-dd)
+        expireDate: getExpireDateKey()   // วันที่ต้องเคลียร์ทิ้ง (yyyy-mm-dd)
+      });
       savedNames.push(item.name);
     }
   });
