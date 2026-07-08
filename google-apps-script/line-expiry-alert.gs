@@ -1,11 +1,15 @@
 /************************************************************
  * 🔔 แจ้งเตือน LINE: ของรายการไหนต้องทิ้งวันนี้
  *
- * วิธีทำงาน:
- *  - อ่านชีต "จำนวนของเข้า" ทุกเช้า (ตั้ง Trigger รายวัน)
- *  - แต่ละรายการมีอายุไม่เท่ากัน (ดู ITEM_EXPIRY_DAYS ด้านล่าง)
- *    นับรวมวันที่ของเข้า เช่น เข้า 1/7 อยู่ได้ 5 วัน → ต้องทิ้ง 5/7
- *  - ถ้าวันนี้มีของครบกำหนด (หรือเลยกำหนดแล้ว) จะส่งข้อความเข้า LINE
+ * มี 2 การแจ้งเตือน:
+ *  1) ของเข้าใหม่ — เช็คชีต "จำนวนของเข้า" ทุก 5 นาที
+ *     ถ้ามีของเข้าใหม่ จะแจ้ง LINE ทันทีว่าเข้าอะไรบ้าง
+ *     พร้อมวันที่ควรทิ้งของแต่ละรายการ
+ *  2) ของครบกำหนดทิ้ง — ทุกวันตอน 1 ทุ่ม (19:00 น.)
+ *     แจ้งว่าวันนี้ของรายการไหนต้องเอาออก/ทิ้งแล้ว
+ *
+ * อายุของแต่ละรายการดู ITEM_EXPIRY_DAYS ด้านล่าง
+ * นับรวมวันที่ของเข้า เช่น เข้า 1/7 อยู่ได้ 5 วัน → ต้องทิ้ง 5/7
  *
  * วิธีติดตั้ง: อ่านไฟล์ README.md ในโฟลเดอร์เดียวกัน
  ************************************************************/
@@ -29,7 +33,95 @@ function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
 var TZ = 'Asia/Bangkok';
 var OVERDUE_LOOKBACK_DAYS = 7;             // แจ้งของที่เลยกำหนดย้อนหลังไม่เกินกี่วัน
-var NOTIFY_HOUR = 9;                       // ส่งแจ้งเตือนตอนกี่โมง (9 = 09:00 น.)
+var NOTIFY_HOUR = 19;                      // แจ้งของครบกำหนดทิ้งตอนกี่โมง (19 = 1 ทุ่ม)
+var INCOMING_POLL_MINUTES = 5;             // เช็คของเข้าใหม่ทุกกี่นาที (ใช้ได้: 1, 5, 10, 15, 30)
+var PROP_LAST_ROW = 'LAST_NOTIFIED_INCOMING_ROW'; // ตำแหน่งแถวล่าสุดที่แจ้งไปแล้ว
+
+// ============================================================
+// 1) แจ้งเตือนของเข้าใหม่ (Trigger ทุก 5 นาทีเรียก checkNewIncoming)
+// ============================================================
+
+/**
+ * เช็คว่ามีของเข้าใหม่ในชีตหรือไม่ ถ้ามี → แจ้ง LINE ทันที
+ * ว่าเข้าอะไรบ้าง พร้อมวันที่ควรทิ้งของแต่ละรายการ
+ */
+function checkNewIncoming() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
+  if (!sheet) return;
+
+  var props = PropertiesService.getScriptProperties();
+  var lastRow = sheet.getLastRow();
+  var lastNotified = parseInt(props.getProperty(PROP_LAST_ROW) || '0', 10);
+
+  // รันครั้งแรก: จำตำแหน่งแถวปัจจุบันไว้ ไม่ย้อนแจ้งข้อมูลเก่า
+  if (!lastNotified) {
+    props.setProperty(PROP_LAST_ROW, String(lastRow));
+    return;
+  }
+  if (lastRow <= lastNotified) return; // ไม่มีแถวใหม่
+
+  var values = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();
+  var headers = values[0].map(function(h) { return String(h).trim(); });
+  var colDate    = findCol_(headers, ['วันที่เวลา', 'วันที่', 'timestamp']);
+  var colBranch  = findCol_(headers, ['สาขา', 'branch']);
+  var colChecker = findCol_(headers, ['ผู้ตรวจ', 'checker']);
+  var colName    = findCol_(headers, ['รายการ', 'ชื่อรายการ', 'ชื่อ', 'name']);
+  var colQty     = findCol_(headers, ['จำนวน', 'qty']);
+  var colUnit    = findCol_(headers, ['หน่วย', 'unit']);
+  if (colName === -1) return;
+
+  var items = [];
+  for (var r = lastNotified; r < lastRow; r++) { // index ใน values = เลขแถว - 1
+    var row = values[r];
+    var name = String(row[colName] || '').trim();
+    if (!name) continue;
+    var inDate = (colDate !== -1 ? parseThaiDate_(row[colDate]) : null) || new Date();
+    var days = getItemExpiryDays_(name);
+    var expire = new Date(inDate.getTime());
+    expire.setDate(expire.getDate() + days - 1);
+    items.push({
+      name:       name,
+      qty:        colQty     !== -1 ? row[colQty] : '',
+      unit:       colUnit    !== -1 ? String(row[colUnit] || '')    : '',
+      branch:     colBranch  !== -1 ? String(row[colBranch] || '')  : '',
+      checker:    colChecker !== -1 ? String(row[colChecker] || '') : '',
+      expiryDays: days,
+      expireStr:  thaiDMY_(expire)
+    });
+  }
+
+  // จำตำแหน่งใหม่ก่อนส่ง กันแจ้งซ้ำถ้าส่งสำเร็จแต่สคริปต์สะดุดทีหลัง
+  props.setProperty(PROP_LAST_ROW, String(lastRow));
+  if (!items.length) return;
+
+  sendLinePush_(buildIncomingMessage_(items));
+  Logger.log('แจ้งของเข้าใหม่ ' + items.length + ' รายการ');
+}
+
+function buildIncomingMessage_(items) {
+  var now = new Date();
+  var lines = ['📦 ของเข้าใหม่ (' + thaiDMY_(now) + ' ' + Utilities.formatDate(now, TZ, 'HH:mm') + ' น.)'];
+  var byBranch = {};
+  items.forEach(function(it) {
+    var key = '📍 ' + (it.branch || 'ไม่ระบุสาขา') + (it.checker ? ' — ผู้ตรวจ: ' + it.checker : '');
+    (byBranch[key] = byBranch[key] || []).push(it);
+  });
+  Object.keys(byBranch).forEach(function(b) {
+    lines.push('');
+    lines.push(b);
+    byBranch[b].forEach(function(it) {
+      lines.push('• ' + it.name +
+        (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') +
+        ' → ทิ้ง ' + it.expireStr + ' (อยู่ได้ ' + it.expiryDays + ' วัน)');
+    });
+  });
+  return lines.join('\n');
+}
+
+// ============================================================
+// 2) แจ้งเตือนของครบกำหนดทิ้ง (Trigger ทุกวัน 1 ทุ่ม เรียก notifyExpiringItems)
+// ============================================================
 
 /**
  * ฟังก์ชันหลัก — Trigger รายวันจะเรียกตัวนี้
@@ -176,20 +268,37 @@ function sendLinePush_(text) {
 // ============================================================
 
 /**
- * รันครั้งเดียวเพื่อตั้ง Trigger ส่งแจ้งเตือนทุกวันตอน NOTIFY_HOUR น.
+ * รันครั้งเดียวเพื่อตั้ง Trigger ทั้ง 2 ตัว:
+ *  - เช็คของเข้าใหม่ทุก INCOMING_POLL_MINUTES นาที → แจ้ง LINE ทันทีที่มีของเข้า
+ *  - แจ้งของครบกำหนดทิ้งทุกวันตอนประมาณ NOTIFY_HOUR น. (19 = 1 ทุ่ม)
+ * (ถ้าแก้เวลา ให้รันฟังก์ชันนี้ซ้ำอีกครั้ง)
  */
-function setupDailyTrigger() {
-  // ลบ trigger เก่าของฟังก์ชันนี้ก่อน กันซ้ำ
+function setupTriggers() {
+  // ลบ trigger เก่าของสคริปต์นี้ก่อน กันซ้ำ
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === 'notifyExpiringItems') ScriptApp.deleteTrigger(t);
+    var f = t.getHandlerFunction();
+    if (f === 'notifyExpiringItems' || f === 'checkNewIncoming') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('notifyExpiringItems')
     .timeBased()
     .everyDays(1)
     .atHour(NOTIFY_HOUR)
     .create();
-  Logger.log('ตั้ง Trigger รายวันเวลาประมาณ ' + NOTIFY_HOUR + ':00 น. เรียบร้อย');
+  ScriptApp.newTrigger('checkNewIncoming')
+    .timeBased()
+    .everyMinutes(INCOMING_POLL_MINUTES)
+    .create();
+  // จำตำแหน่งแถวปัจจุบันของชีตของเข้า จะได้ไม่ย้อนแจ้งข้อมูลเก่า
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INCOMING_SHEET_NAME);
+  if (sheet) {
+    PropertiesService.getScriptProperties().setProperty(PROP_LAST_ROW, String(sheet.getLastRow()));
+  }
+  Logger.log('ตั้ง Trigger เรียบร้อย: เช็คของเข้าใหม่ทุก ' + INCOMING_POLL_MINUTES +
+             ' นาที + แจ้งของครบกำหนดทุกวันประมาณ ' + NOTIFY_HOUR + ':00 น.');
 }
+
+// ชื่อเดิม เผื่อเคยตั้งไว้แล้ว — เรียกตัวใหม่ให้เลย
+function setupDailyTrigger() { setupTriggers(); }
 
 /**
  * ทดสอบส่งข้อความเข้า LINE (เช็คว่า token/target ถูกต้อง)
