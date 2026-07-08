@@ -3,14 +3,29 @@
  *
  * วิธีทำงาน:
  *  - อ่านชีต "จำนวนของเข้า" ทุกเช้า (ตั้ง Trigger รายวัน)
- *  - ของเข้าวันที่ 1/7 → ครบกำหนดทิ้งวันที่ 7/7 (บวก EXPIRY_DAYS วัน)
+ *  - แต่ละรายการมีอายุไม่เท่ากัน (ดู ITEM_EXPIRY_DAYS ด้านล่าง)
+ *    นับรวมวันที่ของเข้า เช่น เข้า 1/7 อยู่ได้ 5 วัน → ต้องทิ้ง 5/7
  *  - ถ้าวันนี้มีของครบกำหนด (หรือเลยกำหนดแล้ว) จะส่งข้อความเข้า LINE
  *
  * วิธีติดตั้ง: อ่านไฟล์ README.md ในโฟลเดอร์เดียวกัน
  ************************************************************/
 
 // ── ตั้งค่า ──
-var EXPIRY_DAYS = 6;                       // ของเข้า 1/7 → ทิ้ง 7/7
+// อายุของแต่ละรายการ (วัน นับรวมวันที่ของเข้า) — รายการที่ไม่อยู่ในตารางใช้ค่า DEFAULT
+var EXPIRY_DAYS_DEFAULT = 7;
+var ITEM_EXPIRY_DAYS = {
+  // ไม่เกิน 5 วัน
+  'สันคอสไลด์': 5, 'สามชั้นสไลด์': 5, 'เนื้อแดง': 5, 'กุ้ง': 5,
+  // ไม่เกิน 10 วัน
+  'หมึก': 10, 'ปลาดอลลี่': 10, 'ปลาหมึกกรอบ': 10, 'แมงกะพรุน': 10,
+  // ไม่เกิน 1 เดือน (30 วัน)
+  'รากบัว': 30, 'ต็อก': 30, 'แป้งต็อก': 30,
+  // ไม่เกิน 14 วัน
+  'ปูอัด': 14, 'เต้าหู้ชีส': 14, 'ชีสหลายสี': 14, 'กุ้งพันสาหร่าย': 14,
+  'ไส้กรอกพันเบคอน': 14, 'ฟองเต้าหู้สามเหลี่ยม': 14, 'ไส้กรอกหนังกรอบ': 14, 'ไส้กรอกชมพู': 14
+};
+function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
+
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
 var TZ = 'Asia/Bangkok';
 var OVERDUE_LOOKBACK_DAYS = 7;             // แจ้งของที่เลยกำหนดย้อนหลังไม่เกินกี่วัน
@@ -59,19 +74,24 @@ function getItemsToDiscard_() {
     var inDate = parseThaiDate_(row[colDate]);
     if (!inDate) continue;
 
+    var name = String(row[colName] || '').trim();
+    if (!name) continue;
+
+    // อยู่ได้ N วัน นับรวมวันของเข้า → วันที่ต้องทิ้ง = วันเข้า + (N-1)
+    var expiryDays = getItemExpiryDays_(name);
     var expire = new Date(inDate.getTime());
-    expire.setDate(expire.getDate() + EXPIRY_DAYS);
+    expire.setDate(expire.getDate() + expiryDays - 1);
     var expireKey = dateKey_(expire);
 
     var item = {
-      name:      String(row[colName] || '').trim(),
-      qty:       colQty    !== -1 ? row[colQty]    : '',
-      unit:      colUnit   !== -1 ? String(row[colUnit] || '')   : '',
-      branch:    colBranch !== -1 ? String(row[colBranch] || '') : '',
-      inDate:    thaiDMY_(inDate),
-      expireKey: expireKey
+      name:       name,
+      qty:        colQty    !== -1 ? row[colQty]    : '',
+      unit:       colUnit   !== -1 ? String(row[colUnit] || '')   : '',
+      branch:     colBranch !== -1 ? String(row[colBranch] || '') : '',
+      inDate:     thaiDMY_(inDate),
+      expiryDays: expiryDays,
+      expireKey:  expireKey
     };
-    if (!item.name) continue;
 
     if (expireKey === tKey) {
       today.push(item);
