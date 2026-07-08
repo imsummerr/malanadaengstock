@@ -953,13 +953,12 @@ function renderIncomingItems() {
         <div class="flex items-center gap-3">
           <input type="checkbox" id="incoming-check-${i}" class="w-5 h-5 text-orange-500 rounded" onchange="toggleIncomingItem(${i})">
           <label for="incoming-check-${i}" class="flex-1 font-medium text-gray-700">${item.name}</label>
-          <span class="text-xs text-gray-400 whitespace-nowrap">อยู่ได้ ${getItemExpiryDays(item.name)} วัน</span>
         </div>
         <div id="incoming-fields-${i}" class="hidden mt-3 grid grid-cols-3 gap-2">
           <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
           <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
           <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
-          <div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ อยู่ได้ ${getItemExpiryDays(item.name)} วัน — ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKeyFor(item.name))}</div>
+          <div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKeyFor(item.name))}</div>
         </div>
       </div>`;
   }).join('');

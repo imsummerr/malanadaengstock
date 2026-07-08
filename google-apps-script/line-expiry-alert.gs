@@ -113,7 +113,7 @@ function buildIncomingMessage_(items) {
     byBranch[b].forEach(function(it) {
       lines.push('• ' + it.name +
         (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') +
-        ' → ทิ้ง ' + it.expireStr + ' (อยู่ได้ ' + it.expiryDays + ' วัน)');
+        ' → ทิ้ง ' + it.expireStr);
     });
   });
   return lines.join('\n');
