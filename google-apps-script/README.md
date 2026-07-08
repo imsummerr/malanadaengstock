@@ -53,6 +53,8 @@
 
 ## ขั้นตอนที่ 1: สร้าง LINE Bot (Messaging API)
 
+> 💡 **ถ้ามี LINE Bot จากระบบอื่นอยู่แล้ว (เช่น Lagombake) ข้ามขั้นตอนนี้ได้เลย** — เปิด Apps Script ของระบบนั้น คัดลอก Channel access token กับ Target ID (จากโค้ดหรือจาก Script Properties) มาใช้ในขั้นตอนที่ 3 ได้ทันที ข้อความจะถูกส่งจากบอทตัวเดิม เข้าแชท/กลุ่มเดิม
+
 > ⚠️ LINE Notify ปิดบริการไปแล้ว (มี.ค. 2025) จึงต้องใช้ **LINE Messaging API** แทน
 
 1. เข้า https://developers.line.biz/console/ → Login ด้วยบัญชี LINE
