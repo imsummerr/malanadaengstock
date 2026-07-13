@@ -515,6 +515,7 @@ async function calculate() {
 
     allNames.forEach(name => {
       if (!currentStock.hasOwnProperty(name)) return; // ต้องมีสต็อกปัจจุบัน
+      if (isExcludedItem(name)) return; // ของไม่มีราคา ไม่ต้องนับ
       const openingQty  = openingStock[name] || 0;
       const incomingQty = incomingTotals[name] || 0;
       const wasteQty    = thisWeekWaste[name] || 0;
@@ -992,6 +993,7 @@ function buildUsageByPeriod(weeklyData, incomingData, wasteData) {
 
     const usage = {};
     Object.keys(closing).forEach(name => {
+      if (isExcludedItem(name)) return; // ของไม่มีราคา ไม่ต้องนับ
       const u = (opening[name] || 0) + (incoming[name] || 0) - (waste[name] || 0) - closing[name];
       if (u > 0) usage[name] = u;
     });
@@ -1076,6 +1078,13 @@ function getUnitPrice(name, defaultPrice) {
   if (isMamaOk(name))   return 20;
   if (isMamaPhed(name)) return 45;
   return defaultPrice;
+}
+
+// รายการที่ไม่มีราคาขาย — ไม่นับในคำนวณของหาย/ขายดี (ถ้วย ช้อน นม น้ำกระดูกหมู น้ำดำ)
+const EXCLUDED_ITEMS = ['ถ้วย', 'ช้อน', 'นม', 'น้ำดำ', 'น้ำกระดูกหมู', 'กระดูกหมู'];
+function isExcludedItem(name) {
+  const n = normalizeName(name);
+  return EXCLUDED_ITEMS.some(x => n === normalizeName(x)) || n.startsWith('ถ้วย');
 }
 
 // หมวดสินค้าสำหรับจัดกลุ่มในตาราง (เรียงตามลำดับนี้)
