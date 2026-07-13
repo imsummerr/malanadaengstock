@@ -113,6 +113,7 @@
         </div>
       </div>
       <p class="text-xs text-gray-400 mt-2">ระบบจะดึงของเข้าสะสมทั้งหมดถึงวันที่เลือก, ของเสียในสัปดาห์นั้น และสต็อกที่เช็คในวันนั้น เฉพาะสาขาที่เลือก</p>
+      <p class="text-xs text-gray-400 mt-1">💰 ราคาพิเศษอัตโนมัติ: มาม่า ok ทุกรส = 20 บาท, มาม่าเผ็ด (ชมพู/เหลือง/ดำ) = 45 บาท — รายการอื่นใช้มูลค่าต่อชิ้นด้านบน</p>
       <button onclick="calculate()" id="calc-btn"
         class="w-full mt-4 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
@@ -152,6 +153,7 @@
             <th class="p-3 text-center font-medium text-gray-600">เสียอาทิตย์นี้</th>
             <th class="p-3 text-center font-medium text-gray-600">สต็อกปัจจุบัน</th>
             <th class="p-3 text-center font-medium text-gray-600">หายไป</th>
+            <th class="p-3 text-center font-medium text-gray-600">ราคา/ชิ้น</th>
             <th class="p-3 text-center font-medium text-gray-600">มูลค่า (บาท)</th>
           </tr></thead>
           <tbody id="detail-table" class="divide-y divide-gray-100"></tbody>
@@ -464,13 +466,19 @@ async function calculate() {
       const wasteQty    = thisWeekWaste[name] || 0;
       const currentQty  = currentStock[name];
       const lostQty     = incomingQty - wasteQty - currentQty;
-      const lostValue   = lostQty * unitValue;
-      details.push({ name, incomingQty, wasteQty, currentQty, lostQty, lostValue });
+      const price       = getUnitPrice(name, unitValue);
+      const lostValue   = lostQty * price;
+      details.push({ name, incomingQty, wasteQty, currentQty, lostQty, price, lostValue });
       totalQtyLost   += lostQty;
       totalValueLost += lostValue;
     });
 
-    details.sort((a, b) => b.lostQty - a.lostQty);
+    // เรียงเป็นกลุ่ม: มาม่า ok → มาม่าเผ็ด → มาม่าอื่นๆ → หมู → อื่นๆ (ในกลุ่มเรียงตามชื่อ)
+    details.sort((a, b) => {
+      const ga = getItemGroup(a.name), gb = getItemGroup(b.name);
+      if (ga !== gb) return ga - gb;
+      return a.name.localeCompare(b.name, 'th');
+    });
 
     console.log('[Loss Calc] details:', details.length, 'items, totalLost:', totalQtyLost);
 
@@ -531,7 +539,7 @@ function renderTable(details) {
   const tbody = document.getElementById('detail-table');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400 py-6">ไม่มีรายการ</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-400 py-6">ไม่มีรายการ</td></tr>';
     return;
   }
 
@@ -545,9 +553,44 @@ function renderTable(details) {
         <td class="p-3 text-center text-gray-500">${fmt(d.wasteQty)}</td>
         <td class="p-3 text-center text-gray-600">${fmt(d.currentQty)}</td>
         <td class="p-3 text-center ${lostColor}">${fmt(d.lostQty)}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.price)}</td>
         <td class="p-3 text-center ${lostColor}">${fmt(d.lostValue)}</td>
       </tr>`;
   }).join('');
+}
+
+// ============================================================
+// ราคาและกลุ่มสินค้า
+// ============================================================
+// มาม่า ok ทุกรส = 20 บาท, มาม่าเผ็ด (ชมพู/เหลือง/ดำ) = 45 บาท, อื่นๆ ใช้ราคาจากช่องมูลค่าต่อชิ้น
+function normalizeName(name) {
+  return String(name).toLowerCase().replace(/\s+/g, '');
+}
+
+function isMamaOk(name) {
+  const n = normalizeName(name);
+  return n.includes('มาม่า') && (n.includes('ok') || n.includes('โอเค'));
+}
+
+function isMamaPhed(name) {
+  const n = normalizeName(name);
+  return n.includes('มาม่า') && n.includes('เผ็ด');
+}
+
+function getUnitPrice(name, defaultPrice) {
+  if (isMamaOk(name))   return 20;
+  if (isMamaPhed(name)) return 45;
+  return defaultPrice;
+}
+
+// กลุ่มสำหรับเรียงลำดับ: 0=มาม่า ok, 1=มาม่าเผ็ด, 2=มาม่าอื่นๆ, 3=หมู, 4=อื่นๆ
+function getItemGroup(name) {
+  const n = normalizeName(name);
+  if (isMamaOk(name))       return 0;
+  if (isMamaPhed(name))     return 1;
+  if (n.includes('มาม่า'))  return 2;
+  if (n.includes('หมู'))    return 3;
+  return 4;
 }
 
 // ============================================================
