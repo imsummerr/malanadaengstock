@@ -178,12 +178,12 @@
       <div id="stats-table" class="overflow-x-auto mb-5"></div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <h3 class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด (ช่วงที่คำนวณ)</h3>
-          <div id="stats-top-sellers"></div>
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด — เรียงทุกรายการ (ช่วงที่คำนวณ)</h3>
+          <div id="stats-top-sellers" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ ของเสียบ่อยสุด (จากประวัติทั้งหมด)</h3>
-          <div id="stats-top-waste"></div>
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด — เรียงทุกรายการ (จากประวัติทั้งหมด)</h3>
+          <div id="stats-top-waste" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
       </div>
     </div>
@@ -801,9 +801,9 @@ function renderStats() {
 }
 
 function renderTopLists(details, wasteData) {
-  // ขายดีสุด = หายไป/ขายไปมากสุดในช่วงที่คำนวณ
+  // ขายดีสุด = หายไป/ขายไปมากสุดในช่วงที่คำนวณ (เรียงทุกรายการ)
   const topSellers = [...details].filter(d => d.lostQty > 0)
-    .sort((a, b) => b.lostQty - a.lostQty).slice(0, 10);
+    .sort((a, b) => b.lostQty - a.lostQty);
   document.getElementById('stats-top-sellers').innerHTML = topSellers.length
     ? topSellers.map((d, i) => `
         <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
@@ -822,7 +822,7 @@ function renderTopLists(details, wasteData) {
     wasteAgg[name].times++;
   });
   const topWaste = Object.entries(wasteAgg)
-    .sort((a, b) => b[1].times - a[1].times || b[1].qty - a[1].qty).slice(0, 10);
+    .sort((a, b) => b[1].times - a[1].times || b[1].qty - a[1].qty);
   document.getElementById('stats-top-waste').innerHTML = topWaste.length
     ? topWaste.map(([name, w], i) => `
         <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
