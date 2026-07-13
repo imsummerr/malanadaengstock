@@ -473,7 +473,7 @@ async function calculate() {
       totalValueLost += lostValue;
     });
 
-    // เรียงเป็นกลุ่ม: มาม่า ok → มาม่าเผ็ด → มาม่าอื่นๆ → หมู → อื่นๆ (ในกลุ่มเรียงตามชื่อ)
+    // เรียงเป็นหมวด: หมู/เนื้อ → ทะเล → ของสดอื่นๆ → เสียบไม้ → มาม่า ok → มาม่าเผ็ด → เส้น/ของแห้ง → ผัก → อื่นๆ
     details.sort((a, b) => {
       const ga = getItemGroup(a.name), gb = getItemGroup(b.name);
       if (ga !== gb) return ga - gb;
@@ -543,10 +543,20 @@ function renderTable(details) {
     return;
   }
 
+  let prevGroup = -1;
   tbody.innerHTML = rows.map(d => {
     const lostColor = d.lostQty > 0 ? 'text-red-600 font-semibold' : d.lostQty < 0 ? 'text-blue-500' : 'text-gray-400';
     const fmt = n => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
-    return `
+    const group = getItemGroup(d.name);
+    let sectionHeader = '';
+    if (group !== prevGroup) {
+      prevGroup = group;
+      sectionHeader = `
+        <tr class="bg-red-50/70">
+          <td colspan="7" class="px-3 py-2 text-xs font-bold text-red-700">${ITEM_CATEGORIES[group].label}</td>
+        </tr>`;
+    }
+    return sectionHeader + `
       <tr class="hover:bg-gray-50">
         <td class="p-3 font-medium text-gray-700">${d.name}</td>
         <td class="p-3 text-center text-gray-600">${fmt(d.incomingQty)}</td>
@@ -583,14 +593,42 @@ function getUnitPrice(name, defaultPrice) {
   return defaultPrice;
 }
 
-// กลุ่มสำหรับเรียงลำดับ: 0=มาม่า ok, 1=มาม่าเผ็ด, 2=มาม่าอื่นๆ, 3=หมู, 4=อื่นๆ
+// หมวดสินค้าสำหรับจัดกลุ่มในตาราง (เรียงตามลำดับนี้)
+const ITEM_CATEGORIES = [
+  { label: '🥩 หมู / เนื้อ',       items: ['สันคอสไลด์','สามชั้นสไลด์','หมูนุ่ม','สันนอก','เนื้อแดง'] },
+  { label: '🦑 ทะเล',              items: ['หมึก','ปลาดอลลี่','ปลาหมึกกรอบ','แมงกะพรุน','กุ้ง','ปูอัด','หอย'] },
+  { label: '🥟 ของสดอื่นๆ',        items: ['รากบัว','ต็อก','เต้าหู้หลอด'] },
+  { label: '🍢 ของเสียบไม้',       items: ['เต้าหู้ชีส','ชีสหลายสี','กุ้งพันสาหร่าย','ลูกชิ้นกลม','ไส้กรอกชีส','ไส้กรอกพันเบคอน','ฟองเต้าหู้สามเหลี่ยม','รวม (ถ้ามี)','ไส้กรอกหนังกรอบ','ไส้กรอกชมพู'] },
+  { label: '🍜 มาม่า ok (20฿)',    items: [] },
+  { label: '🌶️ มาม่าเผ็ด (45฿)',  items: [] },
+  { label: '🍝 เส้น / มาม่า / ของแห้ง', items: ['เส้นมันเทศ','เส้นอุด้ง','วุ้นเส้นหม่าล่า','บะหมี่','สาหร่าย','ฟองเต้าหู้','น้ำจิ้มสุกี้','น้ำจิ้มงา','น้ำจิ้มหน้าแดง','ควิซ ต้มยำกุ้ง','มาม่า ต้มยำกุ้ง','มาม่า ต้มยำกุ้งน้ำข้น','มาม่า หมูสับ','ยำยำ ผัดขี้เมา'] },
+  { label: '🥬 ผัก',               items: ['ผักกาดขาว','เห็ดเข็มทอง','เห็ดชิเมจิ','กวางตุ้ง','ผักบุ้ง','ข้าวโพด','กะหล่ำ','น้ำดำ','น้ำกระดูกหมู','นม'] },
+  { label: '📦 อื่นๆ',             items: [] }
+];
+
+const GROUP_MAMA_OK   = ITEM_CATEGORIES.findIndex(c => c.label.includes('มาม่า ok'));
+const GROUP_MAMA_PHED = ITEM_CATEGORIES.findIndex(c => c.label.includes('มาม่าเผ็ด'));
+
+// map ชื่อสินค้า (normalize แล้ว) -> เลขหมวด
+const CATEGORY_MAP = {};
+ITEM_CATEGORIES.forEach((cat, idx) => {
+  cat.items.forEach(name => { CATEGORY_MAP[normalizeName(name)] = idx; });
+});
+
 function getItemGroup(name) {
   const n = normalizeName(name);
-  if (isMamaOk(name))       return 0;
-  if (isMamaPhed(name))     return 1;
-  if (n.includes('มาม่า'))  return 2;
-  if (n.includes('หมู'))    return 3;
-  return 4;
+  // มาม่า ok / มาม่าเผ็ด จับก่อนเสมอ (ราคาพิเศษ)
+  if (isMamaOk(name))   return GROUP_MAMA_OK;
+  if (isMamaPhed(name)) return GROUP_MAMA_PHED;
+  // ชื่อที่รู้จักในหมวด
+  if (CATEGORY_MAP.hasOwnProperty(n)) return CATEGORY_MAP[n];
+  // เดาจากคำในชื่อ (สำหรับสินค้าใหม่ที่ยังไม่อยู่ในรายการ)
+  if (n.includes('มาม่า') || n.includes('เส้น') || n.includes('บะหมี่') || n.includes('น้ำจิ้ม')) return 6;
+  if (n.includes('เห็ด') || n.includes('ผัก')) return 7;
+  if (n.includes('ไส้กรอก') || n.includes('ลูกชิ้น') || n.includes('ชีส')) return 3;
+  if (n.includes('ปลา') || n.includes('กุ้ง') || n.includes('หอย') || n.includes('หมึก') || n.includes('ปู')) return 1;
+  if (n.includes('หมู') || n.includes('เนื้อ') || n.includes('สันคอ') || n.includes('สันนอก') || n.includes('สามชั้น')) return 0;
+  return ITEM_CATEGORIES.length - 1; // อื่นๆ
 }
 
 // ============================================================
