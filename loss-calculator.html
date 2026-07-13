@@ -712,8 +712,29 @@ function buildDailySales(salesData) {
 
 function setStatsMode(mode) { statsMode = mode; renderStats(); }
 
+// ตัวเลือกช่วงของแต่ละแท็บ ('' = ทั้งหมด)
+let statsSel = { daily: '', weekly: '', monthly: '' };
+function setStatsSel(mode, val) { statsSel[mode] = val; renderStats(); }
+
+function statsPicker(mode, options, selected, allLabel) {
+  return `<div class="mb-3 flex items-center gap-2 flex-wrap">
+    <label class="text-sm text-gray-500">เลือกดู:</label>
+    <select onchange="setStatsSel('${mode}', this.value)"
+      class="text-sm p-2 border-2 border-gray-200 rounded-lg bg-white">
+      <option value="">${allLabel}</option>
+      ${options.map(o => `<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
 function renderStatsSummary(el, totals) {
   if (!totals.length) { el.innerHTML = ''; return; }
+  if (totals.length === 1) {
+    el.innerHTML = `<div class="bg-blue-50 rounded-xl p-3 text-center col-span-3">
+      <div class="font-bold text-blue-700 text-xl">${fmtBaht(totals[0])}</div>
+      <div class="text-xs text-gray-500">ยอดขาย (บาท)</div></div>`;
+    return;
+  }
   const sum = totals.reduce((a, b) => a + b, 0);
   const avg = sum / totals.length;
   el.innerHTML = `
@@ -764,10 +785,14 @@ function renderStats() {
   }
 
   if (statsMode === 'daily') {
-    const recent = [...days].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 31);
-    renderStatsSummary(sumEl, recent.map(r => r.total));
-    tblEl.innerHTML = statsTable(['วันที่', 'ยอดขาย (บาท)'],
-      recent.map(r => [dayLabel(r.date), fmtBaht(r.total)]));
+    const sortedDays = [...days].sort((a, b) => b.date.localeCompare(a.date));
+    const sel   = sortedDays.some(d => d.date === statsSel.daily) ? statsSel.daily : '';
+    const shown = sel ? sortedDays.filter(d => d.date === sel) : sortedDays.slice(0, 31);
+    renderStatsSummary(sumEl, shown.map(r => r.total));
+    tblEl.innerHTML = statsPicker('daily',
+        sortedDays.map(d => ({ value: d.date, label: dayLabel(d.date) })), sel, 'ทั้งหมด (31 วันล่าสุด)')
+      + statsTable(['วันที่', 'ยอดขาย (บาท)'],
+        shown.map(r => [dayLabel(r.date), fmtBaht(r.total)]));
   }
 
   if (statsMode === 'weekly') {
@@ -776,17 +801,21 @@ function renderStats() {
     checkDates.forEach((cd, i) => {
       const start  = i > 0 ? checkDates[i - 1] : null;
       const inDays = days.filter(d => d.date <= cd && (!start || d.date > start));
-      periods.push({ label: 'จบ ' + dayLabel(cd), days: inDays });
+      periods.push({ key: cd, label: 'จบ ' + dayLabel(cd), days: inDays });
     });
     const last    = checkDates[checkDates.length - 1];
     const pending = last ? days.filter(d => d.date > last) : days;
-    if (pending.length) periods.push({ label: 'ยังไม่เช็ค', days: pending });
+    if (pending.length) periods.push({ key: 'pending', label: 'ยังไม่เช็ค', days: pending });
+    periods.reverse(); // ใหม่สุดก่อน
 
-    const shown  = periods.slice(-12).reverse();
-    const latest = shown.find(p => p.days.length);
-    renderStatsSummary(sumEl, latest ? latest.days.map(d => d.total) : []);
-    tblEl.innerHTML = statsTable(['สัปดาห์', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
-      shown.map(p => periodRow(p.label, p.days)));
+    const sel    = periods.some(p => p.key === statsSel.weekly) ? statsSel.weekly : '';
+    const shown  = sel ? periods.filter(p => p.key === sel) : periods.slice(0, 12);
+    const sumSrc = sel ? shown[0].days : ((shown.find(p => p.days.length) || {}).days || []);
+    renderStatsSummary(sumEl, sumSrc.map(d => d.total));
+    tblEl.innerHTML = statsPicker('weekly',
+        periods.map(p => ({ value: p.key, label: p.label })), sel, 'ทั้งหมด (12 รอบล่าสุด)')
+      + statsTable(['สัปดาห์', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+        shown.map(p => periodRow(p.label, p.days)));
   }
 
   if (statsMode === 'monthly') {
@@ -795,13 +824,15 @@ function renderStats() {
       const mk = d.date.slice(0, 7);
       (byMonth[mk] = byMonth[mk] || []).push(d);
     });
-    const months = Object.keys(byMonth).sort().reverse().slice(0, 12);
-    renderStatsSummary(sumEl, months.length ? byMonth[months[0]].map(d => d.total) : []);
-    tblEl.innerHTML = statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
-      months.map(mk => {
-        const [y, m] = mk.split('-');
-        return periodRow(`${THAI_MONTHS[parseInt(m) - 1]} ${y}`, byMonth[mk]);
-      }));
+    const monthLabel = mk => { const [y, m] = mk.split('-'); return `${THAI_MONTHS[parseInt(m) - 1]} ${y}`; };
+    const months = Object.keys(byMonth).sort().reverse();
+    const sel    = months.includes(statsSel.monthly) ? statsSel.monthly : '';
+    const shown  = sel ? [sel] : months.slice(0, 12);
+    renderStatsSummary(sumEl, shown.length ? byMonth[shown[0]].map(d => d.total) : []);
+    tblEl.innerHTML = statsPicker('monthly',
+        months.map(mk => ({ value: mk, label: monthLabel(mk) })), sel, 'ทั้งหมด (12 เดือนล่าสุด)')
+      + statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+        shown.map(mk => periodRow(monthLabel(mk), byMonth[mk])));
   }
 }
 
