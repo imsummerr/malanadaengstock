@@ -164,6 +164,30 @@
       </div>
     </div>
 
+    <!-- สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน -->
+    <div id="stats-box" class="hidden bg-white rounded-2xl shadow-md p-5 mb-8">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 class="font-semibold text-gray-700">📈 สรุปยอดขาย</h2>
+        <div class="flex gap-1 bg-gray-100 rounded-xl p-1">
+          <button onclick="setStatsMode('daily')"   id="stats-btn-daily"   class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายวัน</button>
+          <button onclick="setStatsMode('weekly')"  id="stats-btn-weekly"  class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายสัปดาห์</button>
+          <button onclick="setStatsMode('monthly')" id="stats-btn-monthly" class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายเดือน</button>
+        </div>
+      </div>
+      <div id="stats-summary" class="grid grid-cols-3 gap-2 mb-4"></div>
+      <div id="stats-table" class="overflow-x-auto mb-5"></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด (ช่วงที่คำนวณ)</h3>
+          <div id="stats-top-sellers"></div>
+        </div>
+        <div>
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ ของเสียบ่อยสุด (จากประวัติทั้งหมด)</h3>
+          <div id="stats-top-waste"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="empty-state" class="text-center text-gray-400 py-10">
       เลือกวันที่เช็คสต็อกแล้วกด "คำนวณ" เพื่อดูผลลัพธ์
     </div>
@@ -532,6 +556,16 @@ async function calculate() {
     };
 
     renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays);
+
+    // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
+    const allCheckDates = [...new Set(weeklyData
+      .map(r => { const d = parseThaiDate(r['วันที่เวลา']); return d ? toDateStr(d) : null; })
+      .filter(Boolean))].sort();
+    statsData = { days: buildDailySales(salesData), checkDates: allCheckDates };
+    renderStats();
+    renderTopLists(details, wasteData);
+    document.getElementById('stats-box').classList.remove('hidden');
+
     showToast('✅ คำนวณสำเร็จ', 'success');
 
   } catch(e) {
@@ -640,6 +674,162 @@ function renderTable(details) {
         <td class="p-3 text-center ${lostColor}">${fmt(d.lostValue)}</td>
       </tr>`;
   }).join('');
+}
+
+// ============================================================
+// สรุปยอดขาย (รายวัน / รายสัปดาห์ / รายเดือน)
+// ============================================================
+let statsData = null;
+let statsMode = 'weekly';
+const THAI_DAYS   = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function fmtBaht(n) { return n.toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+
+function dayLabel(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${THAI_DAYS[dt.getDay()]} ${d}/${m}`;
+}
+
+// รวมยอดขายเป็นรายวัน (กรณีบันทึกหลายรอบในวันเดียวกันจะบวกรวมกัน)
+function buildDailySales(salesData) {
+  const byDay = {};
+  salesData.forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d) return;
+    const ds = toDateStr(d);
+    byDay[ds] = (byDay[ds] || 0) + (parseFloat(row['ยอดขายรวม (บาท)']) || 0);
+  });
+  return Object.entries(byDay).map(([date, total]) => ({ date, total }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function setStatsMode(mode) { statsMode = mode; renderStats(); }
+
+function renderStatsSummary(el, totals) {
+  if (!totals.length) { el.innerHTML = ''; return; }
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const avg = sum / totals.length;
+  el.innerHTML = `
+    <div class="bg-blue-50 rounded-xl p-3 text-center"><div class="font-bold text-blue-700">${fmtBaht(avg)}</div><div class="text-xs text-gray-500">เฉลี่ย/วัน (บาท)</div></div>
+    <div class="bg-green-50 rounded-xl p-3 text-center"><div class="font-bold text-green-700">${fmtBaht(Math.max(...totals))}</div><div class="text-xs text-gray-500">วันดีสุด (บาท)</div></div>
+    <div class="bg-yellow-50 rounded-xl p-3 text-center"><div class="font-bold text-yellow-700">${fmtBaht(Math.min(...totals))}</div><div class="text-xs text-gray-500">วันน้อยสุด (บาท)</div></div>`;
+}
+
+function statsTable(headers, rows) {
+  if (!rows.length) return '<p class="text-sm text-gray-400 text-center py-4">ไม่มีข้อมูล</p>';
+  return `<table class="w-full text-sm">
+    <thead><tr class="bg-gray-50">${headers.map((h, i) =>
+      `<th class="p-2 ${i === 0 ? 'text-left' : 'text-center'} font-medium text-gray-600 whitespace-nowrap">${h}</th>`).join('')}</tr></thead>
+    <tbody class="divide-y divide-gray-100">${rows.map(r =>
+      `<tr>${r.map((c, i) =>
+        `<td class="p-2 ${i === 0 ? 'text-left font-medium text-gray-700' : 'text-center text-gray-600'} whitespace-nowrap">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function periodRow(label, days) {
+  if (!days.length) return [label, '-', '-', '-', '-'];
+  const totals = days.map(d => d.total);
+  const sum    = totals.reduce((a, b) => a + b, 0);
+  const best   = days.reduce((a, b) => b.total > a.total ? b : a);
+  const worst  = days.reduce((a, b) => b.total < a.total ? b : a);
+  return [label, fmtBaht(sum), fmtBaht(sum / days.length),
+    `${dayLabel(best.date)} (${fmtBaht(best.total)})`,
+    `${dayLabel(worst.date)} (${fmtBaht(worst.total)})`];
+}
+
+function renderStats() {
+  if (!statsData) return;
+  const { days, checkDates } = statsData;
+
+  ['daily', 'weekly', 'monthly'].forEach(m => {
+    const btn = document.getElementById('stats-btn-' + m);
+    if (btn) btn.className = 'px-3 py-1.5 rounded-lg text-sm font-medium transition-all ' +
+      (m === statsMode ? 'bg-white shadow text-red-600' : 'text-gray-500');
+  });
+
+  const sumEl = document.getElementById('stats-summary');
+  const tblEl = document.getElementById('stats-table');
+
+  if (!days.length) {
+    sumEl.innerHTML = '';
+    tblEl.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">ยังไม่มีข้อมูลยอดขาย — บันทึกยอดขายรายวันใน index.html ก่อน</p>';
+    return;
+  }
+
+  if (statsMode === 'daily') {
+    const recent = [...days].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 31);
+    renderStatsSummary(sumEl, recent.map(r => r.total));
+    tblEl.innerHTML = statsTable(['วันที่', 'ยอดขาย (บาท)'],
+      recent.map(r => [dayLabel(r.date), fmtBaht(r.total)]));
+  }
+
+  if (statsMode === 'weekly') {
+    // แบ่งช่วงตามรอบเช็คสต็อก: ช่วง = หลังเช็คครั้งก่อน ถึงวันเช็คครั้งนั้น
+    const periods = [];
+    checkDates.forEach((cd, i) => {
+      const start  = i > 0 ? checkDates[i - 1] : null;
+      const inDays = days.filter(d => d.date <= cd && (!start || d.date > start));
+      periods.push({ label: 'จบ ' + dayLabel(cd), days: inDays });
+    });
+    const last    = checkDates[checkDates.length - 1];
+    const pending = last ? days.filter(d => d.date > last) : days;
+    if (pending.length) periods.push({ label: 'ยังไม่เช็ค', days: pending });
+
+    const shown  = periods.slice(-12).reverse();
+    const latest = shown.find(p => p.days.length);
+    renderStatsSummary(sumEl, latest ? latest.days.map(d => d.total) : []);
+    tblEl.innerHTML = statsTable(['สัปดาห์', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+      shown.map(p => periodRow(p.label, p.days)));
+  }
+
+  if (statsMode === 'monthly') {
+    const byMonth = {};
+    days.forEach(d => {
+      const mk = d.date.slice(0, 7);
+      (byMonth[mk] = byMonth[mk] || []).push(d);
+    });
+    const months = Object.keys(byMonth).sort().reverse().slice(0, 12);
+    renderStatsSummary(sumEl, months.length ? byMonth[months[0]].map(d => d.total) : []);
+    tblEl.innerHTML = statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+      months.map(mk => {
+        const [y, m] = mk.split('-');
+        return periodRow(`${THAI_MONTHS[parseInt(m) - 1]} ${y}`, byMonth[mk]);
+      }));
+  }
+}
+
+function renderTopLists(details, wasteData) {
+  // ขายดีสุด = หายไป/ขายไปมากสุดในช่วงที่คำนวณ
+  const topSellers = [...details].filter(d => d.lostQty > 0)
+    .sort((a, b) => b.lostQty - a.lostQty).slice(0, 10);
+  document.getElementById('stats-top-sellers').innerHTML = topSellers.length
+    ? topSellers.map((d, i) => `
+        <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+          <span class="text-gray-700">${i + 1}. ${d.name}</span>
+          <span class="font-semibold text-red-600">${fmtBaht(d.lostQty)} ชิ้น</span>
+        </div>`).join('')
+    : '<p class="text-sm text-gray-400">ไม่มีข้อมูล</p>';
+
+  // ของเสียบ่อย = นับจำนวนครั้ง + จำนวนชิ้นรวม จากประวัติของเสียทั้งหมด
+  const wasteAgg = {};
+  wasteData.forEach(row => {
+    const name = row['รายการ'];
+    if (!name) return;
+    if (!wasteAgg[name]) wasteAgg[name] = { qty: 0, times: 0 };
+    wasteAgg[name].qty += parseFloat(row['จำนวน']) || 0;
+    wasteAgg[name].times++;
+  });
+  const topWaste = Object.entries(wasteAgg)
+    .sort((a, b) => b[1].times - a[1].times || b[1].qty - a[1].qty).slice(0, 10);
+  document.getElementById('stats-top-waste').innerHTML = topWaste.length
+    ? topWaste.map(([name, w], i) => `
+        <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+          <span class="text-gray-700">${i + 1}. ${name}</span>
+          <span class="text-gray-500">${w.times} ครั้ง / ${fmtBaht(w.qty)} ชิ้น</span>
+        </div>`).join('')
+    : '<p class="text-sm text-gray-400">ไม่มีของเสียเลย 🎉</p>';
 }
 
 // ============================================================
