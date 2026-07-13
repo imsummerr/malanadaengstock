@@ -561,7 +561,7 @@ async function calculate() {
     const allCheckDates = [...new Set(weeklyData
       .map(r => { const d = parseThaiDate(r['วันที่เวลา']); return d ? toDateStr(d) : null; })
       .filter(Boolean))].sort();
-    statsData = { days: buildDailySales(salesData), checkDates: allCheckDates };
+    statsData = { days: buildDailySales(salesData), checkDates: allCheckDates, waste: wasteData };
     renderStats();
     // อันดับขายดี/เสียบ่อย ใช้เฉพาะช่วงที่คำนวณ (ไม่เอาสัปดาห์ก่อนมาปน)
     const wasteInWindow = wasteData.filter(row => {
@@ -822,14 +822,51 @@ function renderStats() {
   }
 
   if (statsMode === 'daily') {
-    const sortedDays = [...days].sort((a, b) => b.date.localeCompare(a.date));
+    // ของเสียแยกตามวัน (ตรงจาก Google Sheet ไม่ผูกกับรอบคำนวณ)
+    const wasteByDay = {};
+    (statsData.waste || []).forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d) return;
+      const ds = toDateStr(d);
+      (wasteByDay[ds] = wasteByDay[ds] || []).push(row);
+    });
+    const wasteQtyOf = ds => (wasteByDay[ds] || []).reduce((a, r) => a + (parseFloat(r['จำนวน']) || 0), 0);
+
+    // รวมวันที่มียอดขาย + วันที่มีของเสีย (เผื่อวันที่มีแต่ของเสียไม่มียอดขาย)
+    const dayMap = {};
+    days.forEach(d => { dayMap[d.date] = d.total; });
+    Object.keys(wasteByDay).forEach(ds => { if (!(ds in dayMap)) dayMap[ds] = null; });
+    const sortedDays = Object.keys(dayMap).sort().reverse().map(date => ({ date, total: dayMap[date] }));
+
     const sel   = sortedDays.some(d => d.date === statsSel.daily) ? statsSel.daily : '';
     const shown = sel ? sortedDays.filter(d => d.date === sel) : sortedDays.slice(0, 31);
-    renderStatsSummary(sumEl, shown.map(r => r.total));
-    tblEl.innerHTML = statsPicker('daily',
+    renderStatsSummary(sumEl, shown.filter(r => r.total !== null).map(r => r.total));
+
+    let html = statsPicker('daily',
         sortedDays.map(d => ({ value: d.date, label: dayLabel(d.date) })), sel, 'ทั้งหมด (31 วันล่าสุด)')
-      + statsTable(['วันที่', 'ยอดขาย (บาท)'],
-        shown.map(r => [dayLabel(r.date), fmtBaht(r.total)]));
+      + statsTable(['วันที่', 'ยอดขาย (บาท)', 'ของเสีย'],
+        shown.map(r => {
+          const wq = wasteQtyOf(r.date);
+          return [dayLabel(r.date),
+            r.total === null ? '-' : fmtBaht(r.total),
+            wq > 0 ? `<span class="text-red-600 font-semibold">${fmtBaht(wq)} ชิ้น</span>` : '-'];
+        }));
+
+    // ถ้าเลือกวันเดียว แสดงรายละเอียดของเสียวันนั้น
+    if (sel) {
+      const rows = wasteByDay[sel] || [];
+      html += `<div class="mt-4">
+        <h4 class="text-sm font-semibold text-gray-600 mb-2">🗑️ ของเสียวันที่ ${dayLabel(sel)}</h4>
+        ${rows.length
+          ? rows.map(r => `
+              <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+                <span class="text-gray-700">${r['รายการ'] || '-'}${r['หมายเหตุ'] ? ` <span class="text-xs text-gray-400">(${r['หมายเหตุ']})</span>` : ''}</span>
+                <span class="font-semibold text-red-600">${fmtBaht(parseFloat(r['จำนวน']) || 0)} ${r['หน่วย'] || ''}</span>
+              </div>`).join('')
+          : '<p class="text-sm text-gray-400">ไม่มีของเสียวันนั้น 🎉</p>'}
+      </div>`;
+    }
+    tblEl.innerHTML = html;
   }
 
   if (statsMode === 'weekly') {
