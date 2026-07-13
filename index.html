@@ -207,10 +207,6 @@
         <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">💰</span></div>
         <span class="font-semibold text-center leading-tight">ยอดขาย</span>
       </button>
-      <button onclick="openForm('vegetables')" class="btn-main bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
-        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🥬</span></div>
-        <span class="font-semibold text-center leading-tight">เช็คสต็อก<br>ผัก</span>
-      </button>
       <button onclick="openForm('waste')" class="btn-main bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3">
         <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center"><span class="text-3xl">🗑️</span></div>
         <span class="font-semibold text-center leading-tight">ของเสีย</span>
@@ -221,11 +217,10 @@
     <div class="mt-8 max-w-4xl mx-auto">
       <div class="bg-white rounded-2xl p-4 shadow-md">
         <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📊</span> สรุปวันนี้ <span id="stats-sync-status" class="text-xs text-gray-400 ml-auto"></span></h3>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
           <div class="bg-red-50 p-3 rounded-xl"><div id="stat-weekly" class="text-2xl font-bold text-red-600">0</div><div class="text-xs text-gray-500">สต็อกสัปดาห์</div></div>
           <div class="bg-orange-50 p-3 rounded-xl"><div id="stat-incoming" class="text-2xl font-bold text-orange-600">0</div><div class="text-xs text-gray-500">ของเข้า</div></div>
           <div class="bg-green-50 p-3 rounded-xl"><div id="stat-sales" class="text-2xl font-bold text-green-600">0</div><div class="text-xs text-gray-500">ยอดขาย</div></div>
-          <div class="bg-emerald-50 p-3 rounded-xl"><div id="stat-vegetables" class="text-2xl font-bold text-emerald-600">0</div><div class="text-xs text-gray-500">สต็อกผัก</div></div>
           <div class="bg-gray-100 p-3 rounded-xl"><div id="stat-waste" class="text-2xl font-bold text-gray-600">0</div><div class="text-xs text-gray-500">ของเสีย</div></div>
         </div>
       </div>
@@ -397,43 +392,6 @@
     </div>
   </div>
 
-  <!-- ===== หน้าเช็คสต็อกผัก ===== -->
-  <div id="vegetables-form" class="hidden min-h-full p-4 md:p-6 fade-in">
-    <div class="max-w-4xl mx-auto">
-      <div class="flex justify-between items-center mb-4">
-        <button onclick="backToChecker()" class="flex items-center gap-2 text-gray-600 hover:text-gray-800">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> กลับ
-        </button>
-        <div id="veg-checker-info" class="text-sm text-gray-500"></div>
-      </div>
-      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div class="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white p-4">
-          <h2 class="text-xl font-bold flex items-center gap-2"><span>🥬</span> เช็คสต็อกผัก</h2>
-        </div>
-        <div id="veg-before-section" class="p-4">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm"><thead><tr class="bg-emerald-50">
-              <th class="p-2 text-left font-medium text-gray-600">รายการ</th>
-              <th class="p-2 text-center font-medium text-gray-600 w-20">ชั่งเพิ่ม</th>
-              <th class="p-2 text-center font-medium text-gray-600 w-16">ชั่ง (กรัม)</th>
-              <th class="p-2 text-left font-medium text-gray-600">หมายเหตุ</th>
-            </tr></thead>
-            <tbody id="veg-before-table" class="divide-y divide-gray-100"></tbody></table>
-          </div>
-        </div>
-        <div class="p-4 bg-gray-50 border-t">
-          <div id="veg-validation-msg" class="text-red-500 text-sm mb-3 hidden">กรุณากรอกข้อมูลให้ครบทุกช่อง</div>
-          <button onclick="saveVegetables()" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 rounded-xl font-semibold text-lg shadow-md hover:shadow-lg transition-all">
-            <span class="flex items-center justify-center gap-2">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-              บันทึกข้อมูล
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ===== หน้าของเสีย ===== -->
   <div id="waste-form" class="hidden min-h-full p-4 md:p-6 fade-in">
     <div class="max-w-4xl mx-auto">
@@ -494,7 +452,6 @@
                 <option value="weekly">เช็คสต็อกรายสัปดาห์</option>
                 <option value="incoming">จำนวนของเข้า</option>
                 <option value="sales">ยอดขาย</option>
-                <option value="vegetables">เช็คสต็อกผัก</option>
                 <option value="waste">ของเสีย</option>
               </select>
             </div>
@@ -686,11 +643,6 @@ const dryItems = [
   { name: 'มาม่าเผ็ดดำ', unit: 'อัน' },
   { name: 'มาม่า ok หม่าล่า', unit: 'อัน' }
 ];
-const vegetables = [
-  { name: 'ผักกาดขาว', weight: 100 }, { name: 'เห็ดเข็มทอง', weight: 50 },
-  { name: 'กวางตุ้ง', weight: 50 }, { name: 'ผักบุ้ง', weight: 100 },
-  { name: 'ข้าวโพด', weight: 3 }, { name: 'กะหล่ำ', weight: 100 }
-];
 const vegIncomingItems = [
   { name: 'ผักกาดขาว', unit: 'กรัม' }, { name: 'เห็ดเข็มทอง', unit: 'กรัม' },
   { name: 'กวางตุ้ง', unit: 'กรัม' }, { name: 'ผักบุ้ง', unit: 'กรัม' },
@@ -709,7 +661,7 @@ let currentForm = '';
 let checkerName = '';
 let branch      = '';
 let allRecords  = [];
-let localStats  = { weekly: 0, incoming: 0, sales: 0, vegetables: 0, waste: 0 };
+let localStats  = { weekly: 0, incoming: 0, sales: 0, waste: 0 };
 
 // ── Daily limit helpers (incoming) ──
 function getTodayKey() {
@@ -803,7 +755,7 @@ async function loadHistory() {
 // UI HELPERS
 // ============================================================
 function showPage(id) {
-  ['home-page','checker-form','weekly-form','incoming-form','sales-form','vegetables-form','waste-form','history-page']
+  ['home-page','checker-form','weekly-form','incoming-form','sales-form','waste-form','history-page']
     .forEach(p => document.getElementById(p).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
@@ -840,7 +792,6 @@ function openForm(type) {
     weekly:     { icon: 'bg-gradient-to-br from-red-500 to-red-600',      emoji: '📋', title: 'เช็คสต็อกรายสัปดาห์' },
     incoming:   { icon: 'bg-gradient-to-br from-orange-500 to-orange-600', emoji: '📦', title: 'จำนวนของเข้า' },
     sales:      { icon: 'bg-gradient-to-br from-green-500 to-green-600',   emoji: '💰', title: 'ยอดขาย' },
-    vegetables: { icon: 'bg-gradient-to-br from-emerald-500 to-emerald-600',emoji: '🥬', title: 'เช็คสต็อกผัก' },
     waste:      { icon: 'bg-gradient-to-br from-gray-600 to-gray-700',     emoji: '🗑️', title: 'ของเสีย' }
   }[type];
   const fi = document.getElementById('form-icon');
@@ -855,8 +806,8 @@ function proceedToForm() {
   branch      = document.getElementById('branch-select').value;
   if (!checkerName || !branch) { showToast('กรุณากรอกข้อมูลให้ครบ', 'warn'); return; }
   const infoText = `ผู้ตรวจ: ${checkerName} | สาขา: ${branch}`;
-  const infoMap  = { weekly:'weekly-checker-info', incoming:'incoming-checker-info', sales:'sales-checker-info', vegetables:'veg-checker-info', waste:'waste-checker-info' };
-  const pageMap  = { weekly:'weekly-form', incoming:'incoming-form', sales:'sales-form', vegetables:'vegetables-form', waste:'waste-form' };
+  const infoMap  = { weekly:'weekly-checker-info', incoming:'incoming-checker-info', sales:'sales-checker-info', waste:'waste-checker-info' };
+  const pageMap  = { weekly:'weekly-form', incoming:'incoming-form', sales:'sales-form', waste:'waste-form' };
   document.getElementById(infoMap[currentForm]).textContent = infoText;
   if (currentForm === 'incoming') {
     renderIncomingItems();
@@ -934,14 +885,6 @@ function toggleIncomingItem(i) {
   document.getElementById(`incoming-check-${i}`).checked ? fields.classList.remove('hidden') : fields.classList.add('hidden');
 }
 
-function renderVegetableTables() {
-  document.getElementById('veg-before-table').innerHTML = vegetables.map((item,i) => `
-    <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
-    <td class="p-2"><input type="number" min="0" class="veg-added w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="0"></td>
-    <td class="p-2 text-center text-gray-500 font-medium">${item.weight}</td>
-    <td class="p-2"><input type="text" class="veg-before-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ"></td></tr>`).join('');
-}
-
 function renderWasteItems() {
   document.getElementById('waste-items-list').innerHTML = allItems.map((item,i) => `
     <div class="bg-gray-50 p-3 rounded-xl">
@@ -986,7 +929,7 @@ async function saveRecord(type, payload) {
 }
 
 function getSheetName(type) {
-  return { weekly:'เช็คสต็อกรายสัปดาห์', incoming:'จำนวนของเข้า', sales:'ยอดขาย', vegetables:'เช็คสต็อกผัก', waste:'ของเสีย' }[type] || type;
+  return { weekly:'เช็คสต็อกรายสัปดาห์', incoming:'จำนวนของเข้า', sales:'ยอดขาย', waste:'ของเสีย' }[type] || type;
 }
 
 async function saveWeeklyStock() {
@@ -1062,24 +1005,6 @@ async function saveSales() {
   if (success) markSalesEnteredToday();
 }
 
-async function saveVegetables() {
-  const a = [...document.querySelectorAll('.veg-added')];
-  if (a.some(inp => inp.value === '')) {
-    document.getElementById('veg-validation-msg').classList.remove('hidden');
-    showToast('กรุณากรอกข้อมูลให้ครบ', 'warn'); return;
-  }
-  document.getElementById('veg-validation-msg').classList.add('hidden');
-  const payload = {
-    items: vegetables.map((item,i) => ({
-      name:   item.name,
-      added:  parseInt(a[i].value)||0,
-      weight: item.weight,
-      note:   document.querySelectorAll('.veg-before-note')[i].value
-    }))
-  };
-  await saveRecord('vegetables', payload);
-}
-
 async function saveWaste() {
   const items = [];
   allItems.forEach((item,i) => {
@@ -1153,7 +1078,6 @@ function updateStats() {
 function init() {
   renderWeeklyTables();
   renderIncomingItems();
-  renderVegetableTables();
   renderWasteItems();
 }
 
