@@ -182,7 +182,7 @@
           <div id="stats-top-sellers" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด — เรียงทุกรายการ (ช่วงที่คำนวณ)</h3>
+          <h3 id="stats-waste-head" class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด</h3>
           <div id="stats-top-waste" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
       </div>
@@ -563,12 +563,7 @@ async function calculate() {
       .filter(Boolean))].sort();
     statsData = { days: buildDailySales(salesData), checkDates: allCheckDates, waste: wasteData };
     renderStats();
-    // อันดับขายดี/เสียบ่อย ใช้เฉพาะช่วงที่คำนวณ (ไม่เอาสัปดาห์ก่อนมาปน)
-    const wasteInWindow = wasteData.filter(row => {
-      const d = parseThaiDate(row['วันที่เวลา']);
-      return d && inWindow(toDateStr(d));
-    });
-    renderTopLists(details, wasteInWindow);
+    renderTopLists(details);
     document.getElementById('stats-box').classList.remove('hidden');
 
     showToast('✅ คำนวณสำเร็จ', 'success');
@@ -867,6 +862,10 @@ function renderStats() {
       </div>`;
     }
     tblEl.innerHTML = html;
+
+    // อันดับของเสียตามช่วงที่เลือก
+    if (sel) renderWasteRank(ds => ds === sel, 'วัน ' + dayLabel(sel));
+    else { const set = new Set(shown.map(r => r.date)); renderWasteRank(ds => set.has(ds), '31 วันล่าสุด'); }
   }
 
   if (statsMode === 'weekly') {
@@ -875,11 +874,11 @@ function renderStats() {
     checkDates.forEach((cd, i) => {
       const start  = i > 0 ? checkDates[i - 1] : null;
       const inDays = days.filter(d => d.date <= cd && (!start || d.date > start));
-      periods.push({ key: cd, label: 'จบ ' + dayLabel(cd), days: inDays });
+      periods.push({ key: cd, label: 'จบ ' + dayLabel(cd), days: inDays, start, end: cd });
     });
     const last    = checkDates[checkDates.length - 1];
     const pending = last ? days.filter(d => d.date > last) : days;
-    if (pending.length) periods.push({ key: 'pending', label: 'ยังไม่เช็ค', days: pending });
+    if (pending.length) periods.push({ key: 'pending', label: 'ยังไม่เช็ค', days: pending, start: last || null, end: null });
     periods.reverse(); // ใหม่สุดก่อน
 
     const sel    = periods.some(p => p.key === statsSel.weekly) ? statsSel.weekly : '';
@@ -890,6 +889,14 @@ function renderStats() {
         periods.map(p => ({ value: p.key, label: p.label })), sel, 'ทั้งหมด (12 รอบล่าสุด)')
       + statsTable(['สัปดาห์', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
         shown.map(p => periodRow(p.label, p.days)));
+
+    // อันดับของเสียตามรอบที่เลือก
+    const inPeriod = p => ds => (!p.start || ds > p.start) && (!p.end || ds <= p.end);
+    if (sel) renderWasteRank(inPeriod(shown[0]), 'รอบ' + shown[0].label);
+    else if (shown.length) {
+      const oldest = shown[shown.length - 1], newest = shown[0];
+      renderWasteRank(ds => (!oldest.start || ds > oldest.start) && (!newest.end || ds <= newest.end), 'ทุกรอบที่แสดง');
+    }
   }
 
   if (statsMode === 'monthly') {
@@ -920,10 +927,14 @@ function renderStats() {
         months.map(mk => ({ value: mk, label: monthLabel(mk) })), sel, 'ทั้งหมด (12 เดือนล่าสุด)')
       + statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
         shown.map(mk => periodRow(monthLabel(mk), byMonth[mk])));
+
+    // อันดับของเสียตามเดือนที่เลือก
+    if (sel) renderWasteRank(ds => ds.slice(0, 7) === sel, 'เดือน ' + monthLabel(sel));
+    else { const set = new Set(shown); renderWasteRank(ds => set.has(ds.slice(0, 7)), 'เดือนที่แสดงทั้งหมด'); }
   }
 }
 
-function renderTopLists(details, wasteData) {
+function renderTopLists(details) {
   // ขายดีสุด = หายไป/ขายไปมากสุดในช่วงที่คำนวณ (เรียงทุกรายการ)
   const topSellers = [...details].filter(d => d.lostQty > 0)
     .sort((a, b) => b.lostQty - a.lostQty);
@@ -934,25 +945,33 @@ function renderTopLists(details, wasteData) {
           <span class="font-semibold text-red-600">${fmtBaht(d.lostQty)} ชิ้น</span>
         </div>`).join('')
     : '<p class="text-sm text-gray-400">ไม่มีข้อมูล</p>';
+}
 
-  // ของเสียบ่อย = นับจำนวนครั้ง + จำนวนชิ้นรวม จากประวัติของเสียทั้งหมด
+// อันดับของเสีย เปลี่ยนตามช่วงที่เลือกดูในแท็บสรุปยอดขาย
+function renderWasteRank(pred, contextLabel) {
+  const el   = document.getElementById('stats-top-waste');
+  const head = document.getElementById('stats-waste-head');
+  if (head) head.textContent = '🗑️ เสียบ่อยสุด — ' + contextLabel;
+
   const wasteAgg = {};
-  wasteData.forEach(row => {
+  (statsData.waste || []).forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d || !pred(toDateStr(d))) return;
     const name = row['รายการ'];
     if (!name) return;
     if (!wasteAgg[name]) wasteAgg[name] = { qty: 0, times: 0 };
     wasteAgg[name].qty += parseFloat(row['จำนวน']) || 0;
     wasteAgg[name].times++;
   });
-  const topWaste = Object.entries(wasteAgg)
+  const ranked = Object.entries(wasteAgg)
     .sort((a, b) => b[1].times - a[1].times || b[1].qty - a[1].qty);
-  document.getElementById('stats-top-waste').innerHTML = topWaste.length
-    ? topWaste.map(([name, w], i) => `
+  el.innerHTML = ranked.length
+    ? ranked.map(([name, w], i) => `
         <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
           <span class="text-gray-700">${i + 1}. ${name}</span>
           <span class="text-gray-500">${w.times} ครั้ง / ${fmtBaht(w.qty)} ชิ้น</span>
         </div>`).join('')
-    : '<p class="text-sm text-gray-400">ไม่มีของเสียเลย 🎉</p>';
+    : '<p class="text-sm text-gray-400">ไม่มีของเสียในช่วงนี้ 🎉</p>';
 }
 
 // ============================================================
