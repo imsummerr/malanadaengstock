@@ -713,7 +713,7 @@ function buildDailySales(salesData) {
 function setStatsMode(mode) { statsMode = mode; renderStats(); }
 
 // ตัวเลือกช่วงของแต่ละแท็บ ('' = ทั้งหมด)
-let statsSel = { daily: '', weekly: '', monthly: '' };
+let statsSel = { daily: '', weekly: '', monthly: '', year: '' };
 function setStatsSel(mode, val) { statsSel[mode] = val; renderStats(); }
 
 function statsPicker(mode, options, selected, allLabel) {
@@ -763,6 +763,43 @@ function periodRow(label, days) {
   return [label, fmtBaht(sum), fmtBaht(sum / days.length),
     `${dayLabel(best.date)} (${fmtBaht(best.total)})`,
     `${dayLabel(worst.date)} (${fmtBaht(worst.total)})`];
+}
+
+// กราฟแท่งยอดขายรายเดือนทั้งปี (12 เดือน)
+function monthlyChart(byMonth, year) {
+  const vals = [];
+  for (let m = 1; m <= 12; m++) {
+    const mk = `${year}-${String(m).padStart(2, '0')}`;
+    const ds = byMonth[mk] || [];
+    vals.push({ m, mk, total: ds.reduce((a, b) => a + b.total, 0), has: ds.length > 0 });
+  }
+  const max      = Math.max(...vals.map(v => v.total), 1);
+  const withData = vals.filter(v => v.has);
+  const best     = withData.length ? withData.reduce((a, b) => b.total > a.total ? b : a) : null;
+  const worst    = withData.length > 1 ? withData.reduce((a, b) => b.total < a.total ? b : a) : null;
+
+  return `
+  <div class="mb-4">
+    <div class="flex items-end gap-[2px] h-44">
+      ${vals.map(v => {
+        const h = v.has ? Math.max(4, Math.round(v.total / max * 130)) : 2;
+        const isBest  = best  && v.mk === best.mk;
+        const isWorst = worst && v.mk === worst.mk;
+        const lbl = (isBest || isWorst)
+          ? `<div class="text-[10px] ${isBest ? 'text-red-700 font-bold' : 'text-gray-500'} leading-none mb-0.5 whitespace-nowrap">${fmtBaht(v.total)}</div>`
+          : '';
+        const caption = `${THAI_MONTHS[v.m - 1]} ${year}: ${v.has ? fmtBaht(v.total) + ' บาท' : 'ไม่มีข้อมูล'}`;
+        return `<div class="flex-1 flex flex-col items-center justify-end h-full cursor-pointer min-w-0"
+          onclick="document.getElementById('chart-caption').textContent='${caption}'"
+          onmouseenter="document.getElementById('chart-caption').textContent='${caption}'">
+          ${lbl}
+          <div class="w-full rounded-t ${v.has ? 'bg-red-500 hover:bg-red-700' : 'bg-gray-200'} transition-colors" style="height:${h}px"></div>
+          <div class="text-[10px] text-gray-500 mt-1 whitespace-nowrap">${THAI_MONTHS[v.m - 1]}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <p id="chart-caption" class="text-xs text-gray-500 text-center mt-2">แตะ/ชี้แท่งเพื่อดูยอดแต่ละเดือน</p>
+  </div>`;
 }
 
 function renderStats() {
@@ -829,7 +866,20 @@ function renderStats() {
     const sel    = months.includes(statsSel.monthly) ? statsSel.monthly : '';
     const shown  = sel ? [sel] : months.slice(0, 12);
     renderStatsSummary(sumEl, shown.length ? byMonth[shown[0]].map(d => d.total) : []);
-    tblEl.innerHTML = statsPicker('monthly',
+
+    // กราฟทั้งปี + ตัวเลือกปี
+    const years   = [...new Set(months.map(mk => mk.slice(0, 4)))].sort().reverse();
+    const yearSel = years.includes(statsSel.year) ? statsSel.year : years[0];
+    const yearPicker = `<div class="flex items-center gap-2 mb-2">
+      <label class="text-sm text-gray-500">📊 กราฟทั้งปี:</label>
+      <select onchange="setStatsSel('year', this.value)"
+        class="text-sm p-2 border-2 border-gray-200 rounded-lg bg-white">
+        ${years.map(y => `<option value="${y}" ${y === yearSel ? 'selected' : ''}>${y}</option>`).join('')}
+      </select>
+    </div>`;
+
+    tblEl.innerHTML = yearPicker + monthlyChart(byMonth, yearSel)
+      + statsPicker('monthly',
         months.map(mk => ({ value: mk, label: monthLabel(mk) })), sel, 'ทั้งหมด (12 เดือนล่าสุด)')
       + statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
         shown.map(mk => periodRow(monthLabel(mk), byMonth[mk])));
