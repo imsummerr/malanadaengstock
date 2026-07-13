@@ -871,9 +871,15 @@ function renderStats() {
     // อันดับของเสียตามช่วงที่เลือก
     if (sel) renderWasteRank(ds => ds === sel, 'วัน ' + dayLabel(sel));
     else { const set = new Set(shown.map(r => r.date)); renderWasteRank(ds => set.has(ds), '31 วันล่าสุด'); }
-    // ขายดีรายวันคำนวณไม่ได้ (รู้ยอดต่อรายการเป็นรายรอบเช็คสต็อก)
-    sellersUnavailable(sel ? 'วัน ' + dayLabel(sel) : 'รายวัน',
-      'ยอดขายต่อรายการรู้ได้เป็นรายรอบเช็คสต็อก — ดูได้ในแท็บรายสัปดาห์หรือรายเดือน');
+    // อันดับขายดี: ยอดต่อรายการรู้เป็นรายรอบเช็ค — เลือกวันจะแสดงรอบที่ครอบวันนั้น
+    if (sel) {
+      const end = (statsData.checkDates || []).find(cd => cd >= sel);
+      if (end) renderSellerRank(e => e === end, 'รอบที่รวมวัน ' + dayLabel(sel) + ' (จบ ' + dayLabel(end) + ')');
+      else sellersUnavailable('วัน ' + dayLabel(sel), 'วันนี้อยู่ในรอบที่ยังไม่ได้เช็คสต็อก จึงยังคำนวณยอดขายต่อรายการไม่ได้');
+    } else if (shown.length) {
+      const minD = shown[shown.length - 1].date, maxD = shown[0].date;
+      renderSellerRank(e => e >= minD && e <= maxD, '31 วันล่าสุด (รอบเช็คในช่วงนี้)');
+    }
   }
 
   if (statsMode === 'weekly') {
