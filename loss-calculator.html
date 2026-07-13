@@ -178,7 +178,7 @@
       <div id="stats-table" class="overflow-x-auto mb-5"></div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <h3 class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด — เรียงทุกรายการ (ช่วงที่คำนวณ)</h3>
+          <h3 id="stats-sellers-head" class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด</h3>
           <div id="stats-top-sellers" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
         <div>
@@ -561,9 +561,13 @@ async function calculate() {
     const allCheckDates = [...new Set(weeklyData
       .map(r => { const d = parseThaiDate(r['วันที่เวลา']); return d ? toDateStr(d) : null; })
       .filter(Boolean))].sort();
-    statsData = { days: buildDailySales(salesData), checkDates: allCheckDates, waste: wasteData };
+    statsData = {
+      days: buildDailySales(salesData),
+      checkDates: allCheckDates,
+      waste: wasteData,
+      usage: buildUsageByPeriod(weeklyData, incomingData, wasteData)
+    };
     renderStats();
-    renderTopLists(details);
     document.getElementById('stats-box').classList.remove('hidden');
 
     showToast('✅ คำนวณสำเร็จ', 'success');
@@ -866,6 +870,9 @@ function renderStats() {
     // อันดับของเสียตามช่วงที่เลือก
     if (sel) renderWasteRank(ds => ds === sel, 'วัน ' + dayLabel(sel));
     else { const set = new Set(shown.map(r => r.date)); renderWasteRank(ds => set.has(ds), '31 วันล่าสุด'); }
+    // ขายดีรายวันคำนวณไม่ได้ (รู้ยอดต่อรายการเป็นรายรอบเช็คสต็อก)
+    sellersUnavailable(sel ? 'วัน ' + dayLabel(sel) : 'รายวัน',
+      'ยอดขายต่อรายการรู้ได้เป็นรายรอบเช็คสต็อก — ดูได้ในแท็บรายสัปดาห์หรือรายเดือน');
   }
 
   if (statsMode === 'weekly') {
@@ -896,6 +903,15 @@ function renderStats() {
     else if (shown.length) {
       const oldest = shown[shown.length - 1], newest = shown[0];
       renderWasteRank(ds => (!oldest.start || ds > oldest.start) && (!newest.end || ds <= newest.end), 'ทุกรอบที่แสดง');
+    }
+    // อันดับขายดีตามรอบที่เลือก (รอบ = วันเช็คสต็อกที่จบรอบ)
+    if (sel === 'pending') {
+      sellersUnavailable('รอบยังไม่เช็ค', 'รอบนี้ยังไม่ได้เช็คสต็อก จึงยังคำนวณยอดขายต่อรายการไม่ได้');
+    } else if (sel) {
+      renderSellerRank(end => end === sel, 'รอบ' + shown[0].label);
+    } else {
+      const keys = new Set(shown.filter(p => p.key !== 'pending').map(p => p.key));
+      renderSellerRank(end => keys.has(end), 'ทุกรอบที่แสดง');
     }
   }
 
@@ -931,20 +947,84 @@ function renderStats() {
     // อันดับของเสียตามเดือนที่เลือก
     if (sel) renderWasteRank(ds => ds.slice(0, 7) === sel, 'เดือน ' + monthLabel(sel));
     else { const set = new Set(shown); renderWasteRank(ds => set.has(ds.slice(0, 7)), 'เดือนที่แสดงทั้งหมด'); }
+    // อันดับขายดีตามเดือนที่เลือก (นับรอบเช็คที่จบในเดือนนั้น)
+    if (sel) renderSellerRank(end => end.slice(0, 7) === sel, 'เดือน ' + monthLabel(sel));
+    else { const set = new Set(shown); renderSellerRank(end => set.has(end.slice(0, 7)), 'เดือนที่แสดงทั้งหมด'); }
   }
 }
 
-function renderTopLists(details) {
-  // ขายดีสุด = หายไป/ขายไปมากสุดในช่วงที่คำนวณ (เรียงทุกรายการ)
-  const topSellers = [...details].filter(d => d.lostQty > 0)
-    .sort((a, b) => b.lostQty - a.lostQty);
-  document.getElementById('stats-top-sellers').innerHTML = topSellers.length
-    ? topSellers.map((d, i) => `
+// คำนวณยอดใช้ไป/ขายไปต่อรายการ ของทุกรอบเช็คสต็อก
+// คืน { วันเช็ค(YYYY-MM-DD): { ชื่อสินค้า: จำนวนที่ใช้ไป } }
+function buildUsageByPeriod(weeklyData, incomingData, wasteData) {
+  const stockByDate = {};
+  weeklyData.forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d) return;
+    const ds = toDateStr(d);
+    const name = row['รายการ'];
+    if (!name) return;
+    (stockByDate[ds] = stockByDate[ds] || {})[name] = parseFloat(row['จำนวน']) || 0;
+  });
+  const checks = Object.keys(stockByDate).sort();
+
+  const usageByPeriod = {};
+  checks.forEach((end, i) => {
+    const start   = i > 0 ? checks[i - 1] : null;
+    const opening = start ? stockByDate[start] : {};
+    const closing = stockByDate[end];
+    const within  = ds => ds <= end && (!start || ds > start);
+
+    const incoming = {}, waste = {};
+    incomingData.forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d || !within(toDateStr(d))) return;
+      const name = row['รายการ'];
+      if (!name) return;
+      incoming[name] = (incoming[name] || 0) + (parseFloat(row['จำนวน']) || 0);
+    });
+    wasteData.forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d || !within(toDateStr(d))) return;
+      const name = row['รายการ'];
+      if (!name) return;
+      waste[name] = (waste[name] || 0) + (parseFloat(row['จำนวน']) || 0);
+    });
+
+    const usage = {};
+    Object.keys(closing).forEach(name => {
+      const u = (opening[name] || 0) + (incoming[name] || 0) - (waste[name] || 0) - closing[name];
+      if (u > 0) usage[name] = u;
+    });
+    usageByPeriod[end] = usage;
+  });
+  return usageByPeriod;
+}
+
+// อันดับขายดี เปลี่ยนตามช่วงที่เลือกดู (รวมยอดจากรอบเช็คที่อยู่ในช่วงนั้น)
+function renderSellerRank(pred, contextLabel) {
+  const el   = document.getElementById('stats-top-sellers');
+  const head = document.getElementById('stats-sellers-head');
+  if (head) head.textContent = '🏆 ขายดีสุด — ' + contextLabel;
+
+  const agg = {};
+  Object.entries(statsData.usage || {}).forEach(([end, usage]) => {
+    if (!pred(end)) return;
+    Object.entries(usage).forEach(([name, qty]) => { agg[name] = (agg[name] || 0) + qty; });
+  });
+  const ranked = Object.entries(agg).sort((a, b) => b[1] - a[1]);
+  el.innerHTML = ranked.length
+    ? ranked.map(([name, qty], i) => `
         <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
-          <span class="text-gray-700">${i + 1}. ${d.name}</span>
-          <span class="font-semibold text-red-600">${fmtBaht(d.lostQty)} ชิ้น</span>
+          <span class="text-gray-700">${i + 1}. ${name}</span>
+          <span class="font-semibold text-red-600">${fmtBaht(qty)} ชิ้น</span>
         </div>`).join('')
-    : '<p class="text-sm text-gray-400">ไม่มีข้อมูล</p>';
+    : '<p class="text-sm text-gray-400">ไม่มีข้อมูลขายในช่วงนี้</p>';
+}
+
+function sellersUnavailable(contextLabel, msg) {
+  const head = document.getElementById('stats-sellers-head');
+  if (head) head.textContent = '🏆 ขายดีสุด — ' + contextLabel;
+  document.getElementById('stats-top-sellers').innerHTML = `<p class="text-sm text-gray-400">${msg}</p>`;
 }
 
 // อันดับของเสีย เปลี่ยนตามช่วงที่เลือกดูในแท็บสรุปยอดขาย
