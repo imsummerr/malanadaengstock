@@ -182,7 +182,7 @@
           <div id="stats-top-sellers" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด — เรียงทุกรายการ (จากประวัติทั้งหมด)</h3>
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด — เรียงทุกรายการ (ช่วงที่คำนวณ)</h3>
           <div id="stats-top-waste" class="max-h-96 overflow-y-auto pr-1"></div>
         </div>
       </div>
@@ -563,7 +563,12 @@ async function calculate() {
       .filter(Boolean))].sort();
     statsData = { days: buildDailySales(salesData), checkDates: allCheckDates };
     renderStats();
-    renderTopLists(details, wasteData);
+    // อันดับขายดี/เสียบ่อย ใช้เฉพาะช่วงที่คำนวณ (ไม่เอาสัปดาห์ก่อนมาปน)
+    const wasteInWindow = wasteData.filter(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      return d && inWindow(toDateStr(d));
+    });
+    renderTopLists(details, wasteInWindow);
     document.getElementById('stats-box').classList.remove('hidden');
 
     showToast('✅ คำนวณสำเร็จ', 'success');
