@@ -287,7 +287,8 @@ const SHEET_NAME_MAP = {
 
 async function fetchAllHistory(type) {
   const token = getAuthToken();
-  const res  = await fetch(`${SHEETS_URL}?action=history&type=${type}&token=${encodeURIComponent(token)}`);
+  // &_=timestamp กันเบราว์เซอร์ cache ผลเก่า — ดึงข้อมูลสดจาก Sheet ทุกครั้ง
+  const res  = await fetch(`${SHEETS_URL}?action=history&type=${type}&token=${encodeURIComponent(token)}&_=${Date.now()}`, { cache: 'no-store' });
   const json = await res.json();
   if (json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
   if (!json.success) throw new Error(json.message || json.error || 'โหลดข้อมูลไม่สำเร็จ');
