@@ -376,6 +376,20 @@
             <input type="text" id="cash-amount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
           <div><label class="block text-sm font-medium text-gray-700 mb-2">ค่าใช้จ่าย (บาท) <span class="text-red-500">*</span></label>
             <input type="text" id="expenses" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0"></div>
+
+          <!-- ===== ส่วน Delivery ===== -->
+          <div class="bg-purple-50 border border-purple-100 rounded-xl p-3 space-y-3">
+            <p class="text-sm font-semibold text-purple-800 flex items-center gap-1">🛵 ยอดขาย Delivery <span class="text-xs font-normal text-purple-400">(แยกจากยอดขายรวม)</span></p>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">ยอดขายจาก Delivery (บาท)</label>
+              <input type="text" id="delivery-sales" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="เช่น 6 ถุง = 60">
+              <p class="text-xs text-gray-400 mt-1">นับเป็นชิ้น × ราคา เช่น ใช้ 6 ถุง = 60 บาท</p></div>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">วันนี้มีเมนู Delivery อะไรบ้าง</label>
+              <div id="delivery-menu-list" class="flex flex-col gap-1"></div></div>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">ลูกค้าแอดเพิ่ม (บาท)</label>
+              <input type="text" id="delivery-add" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+              <p class="text-xs text-gray-400 mt-1">ของที่ลูกค้าแอดเพิ่มนอกเซ็ต คิดเป็นบาท</p></div>
+          </div>
+
           <div><label class="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
             <textarea id="sales-note" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" rows="2" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea></div>
         </div>
@@ -654,6 +668,8 @@ const vegIncomingItems = [
 const supplyItems = [
   { name: 'ช้อน', unit: 'อัน' }, { name: 'ถ้วย', unit: 'ใบ' }
 ];
+// เมนู Delivery ให้พนักงานติ๊กว่าวันนี้มีเมนูอะไรบ้าง (แก้เพิ่มได้)
+const deliveryMenus = ['หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวมหมู'];
 const allItems     = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
 const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems, ...supplyItems];
 
@@ -823,6 +839,9 @@ function proceedToForm() {
     document.getElementById('cash-amount').value = '';
     document.getElementById('expenses').value = '';
     document.getElementById('sales-note').value = '';
+    renderDeliveryMenus();
+    document.getElementById('delivery-sales').value = '';
+    document.getElementById('delivery-add').value = '';
   }
   showPage(pageMap[currentForm]);
 }
@@ -830,6 +849,14 @@ function proceedToForm() {
 // ============================================================
 // RENDER TABLES
 // ============================================================
+function renderDeliveryMenus() {
+  document.getElementById('delivery-menu-list').innerHTML = deliveryMenus.map((name, i) => `
+    <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+      <input type="checkbox" class="delivery-menu-chk w-4 h-4 rounded accent-purple-500" data-name="${name}">
+      ${name}
+    </label>`).join('');
+}
+
 function renderWeeklyTables() {
   document.getElementById('fresh-items-table').innerHTML = freshItems.map((item,i) => `
     <tr><td class="p-2 font-medium text-gray-700">${item.name}</td>
@@ -1002,7 +1029,16 @@ async function saveSales() {
     showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warn'); return;
   }
   document.getElementById('sales-validation-msg').classList.add('hidden');
-  const success = await saveRecord('sales', { totalSales, transferAmount, cashAmount, expenses, note: document.getElementById('sales-note').value });
+  // ── ข้อมูล Delivery (ไม่บังคับกรอก) ──
+  const deliverySales = document.getElementById('delivery-sales').value || '0';
+  const deliveryAdd   = document.getElementById('delivery-add').value || '0';
+  const deliveryMenusSelected = [...document.querySelectorAll('.delivery-menu-chk:checked')]
+    .map(c => c.dataset.name).join(', ');
+  const success = await saveRecord('sales', {
+    totalSales, transferAmount, cashAmount, expenses,
+    deliverySales, deliveryMenus: deliveryMenusSelected, deliveryAdd,
+    note: document.getElementById('sales-note').value
+  });
   if (success) markSalesEnteredToday();
 }
 

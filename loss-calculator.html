@@ -537,13 +537,15 @@ async function calculate() {
 
     console.log('[Loss Calc] details:', details.length, 'items, totalLost:', totalQtyLost);
 
-    // ── ยอดขายจริงในช่วงเดียวกัน (หลังเช็คครั้งก่อน ถึงวันที่เลือก) ──
-    let weekSales = 0, salesDays = 0;
+    // ── ยอดขายจริงในช่วงเดียวกัน (หน้าร้าน + Delivery + แอดเพิ่ม) ──
+    let weekSales = 0, salesDays = 0, weekFront = 0, weekDelivery = 0;
     salesData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
       if (!inWindow(toDateStr(rowDate))) return;
-      weekSales += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
+      weekSales    += rowSalesTotal(row);
+      weekFront    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
+      weekDelivery += (parseFloat(row['ยอดขาย Delivery (บาท)']) || 0) + (parseFloat(row['ลูกค้าแอดเพิ่ม (บาท)']) || 0);
       salesDays++;
     });
     console.log('[Loss Calc] weekSales:', weekSales, 'from', salesDays, 'records');
@@ -556,7 +558,7 @@ async function calculate() {
       incomingItems: Object.keys(incomingTotals).length
     };
 
-    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays);
+    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays, weekFront, weekDelivery);
 
     // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
     const allCheckDates = [...new Set(weeklyData
@@ -585,7 +587,7 @@ async function calculate() {
 // ============================================================
 let lastDetails = [];
 
-function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays) {
+function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, weekFront, weekDelivery) {
   lastDetails = details;
 
   document.getElementById('empty-state').classList.add('hidden');
@@ -614,9 +616,13 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
       verdict = `⚠️ ยอดขายน้อยกว่ามูลค่าของที่ใช้ไป <strong>${fmt(-diff)} บาท</strong> — เงิน/ของอาจหายไป`;
       boxCls  = 'bg-red-50 border-red-200 text-red-800';
     }
+    const deliveryLine = (weekDelivery > 0)
+      ? `<p class="text-xs opacity-80 mb-2">ยอดขายจริง = หน้าร้าน ${fmt(weekFront)} + Delivery/แอดเพิ่ม ${fmt(weekDelivery)} บาท</p>`
+      : '';
     cmpEl.innerHTML = `
       <div class="border rounded-xl p-4 ${boxCls}">
         <p class="font-semibold text-sm mb-2">💵 เทียบกับยอดขายจริง (${salesDays} วันในสัปดาห์นี้)</p>
+        ${deliveryLine}
         <div class="grid grid-cols-3 gap-2 text-center text-sm mb-2">
           <div><div class="font-bold">${fmt(weekSales)}</div><div class="text-xs opacity-70">ยอดขายจริง (บาท)</div></div>
           <div><div class="font-bold">${fmt(totalValue)}</div><div class="text-xs opacity-70">มูลค่าของที่ใช้ไป (บาท)</div></div>
@@ -697,6 +703,13 @@ function dayLabel(ds) {
   return `${THAI_DAYS[dt.getDay()]} ${d}/${m}`;
 }
 
+// ยอดขายจริงต่อแถว = หน้าร้าน + Delivery + ลูกค้าแอดเพิ่ม
+function rowSalesTotal(row) {
+  return (parseFloat(row['ยอดขายรวม (บาท)']) || 0)
+       + (parseFloat(row['ยอดขาย Delivery (บาท)']) || 0)
+       + (parseFloat(row['ลูกค้าแอดเพิ่ม (บาท)']) || 0);
+}
+
 // รวมยอดขายเป็นรายวัน (กรณีบันทึกหลายรอบในวันเดียวกันจะบวกรวมกัน)
 function buildDailySales(salesData) {
   const byDay = {};
@@ -704,7 +717,7 @@ function buildDailySales(salesData) {
     const d = parseThaiDate(row['วันที่เวลา']);
     if (!d) return;
     const ds = toDateStr(d);
-    byDay[ds] = (byDay[ds] || 0) + (parseFloat(row['ยอดขายรวม (บาท)']) || 0);
+    byDay[ds] = (byDay[ds] || 0) + rowSalesTotal(row);
   });
   return Object.entries(byDay).map(([date, total]) => ({ date, total }))
     .sort((a, b) => a.date.localeCompare(b.date));
