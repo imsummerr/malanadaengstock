@@ -379,15 +379,13 @@
 
           <!-- ===== ส่วน Delivery ===== -->
           <div class="bg-purple-50 border border-purple-100 rounded-xl p-3 space-y-3">
-            <p class="text-sm font-semibold text-purple-800 flex items-center gap-1">🛵 ยอดขาย Delivery <span class="text-xs font-normal text-purple-400">(แยกจากยอดขายรวม)</span></p>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">ยอดขายจาก Delivery (บาท)</label>
-              <input type="text" id="delivery-sales" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="เช่น 6 ถุง = 60">
-              <p class="text-xs text-gray-400 mt-1">นับเป็นชิ้น × ราคา เช่น ใช้ 6 ถุง = 60 บาท</p></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">วันนี้มีเมนู Delivery อะไรบ้าง</label>
-              <div id="delivery-menu-list" class="flex flex-col gap-1"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">ลูกค้าแอดเพิ่ม (บาท)</label>
-              <input type="text" id="delivery-add" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
-              <p class="text-xs text-gray-400 mt-1">ของที่ลูกค้าแอดเพิ่มนอกเซ็ต คิดเป็นบาท</p></div>
+            <p class="text-sm font-semibold text-purple-800 flex items-center gap-1">🛵 Delivery วันนี้ <span class="text-xs font-normal text-purple-400">(นับเป็นจำนวนถุงที่ใช้ ไม่มีเงินเข้า)</span></p>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">ติ๊กเมนูที่มีวันนี้ + จำนวนเซ็ต</label>
+              <div id="delivery-menu-list" class="flex flex-col gap-2"></div></div>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">ลูกค้าแอดเพิ่ม (ถุง)</label>
+              <input type="number" min="0" id="delivery-add" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0" oninput="updateDeliveryTotal()">
+              <p class="text-xs text-gray-400 mt-1">จำนวนถุงที่ลูกค้าเลือกเพิ่มนอกเซ็ต</p></div>
+            <p id="delivery-total-bags" class="text-sm font-semibold text-purple-700"></p>
           </div>
 
           <div><label class="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
@@ -668,8 +666,13 @@ const vegIncomingItems = [
 const supplyItems = [
   { name: 'ช้อน', unit: 'อัน' }, { name: 'ถ้วย', unit: 'ใบ' }
 ];
-// เมนู Delivery ให้พนักงานติ๊กว่าวันนี้มีเมนูอะไรบ้าง (แก้เพิ่มได้)
-const deliveryMenus = ['หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวมหมู'];
+// เมนู Delivery: แต่ละเซ็ตใช้กี่ถุง (แก้เพิ่มได้)
+const deliveryMenus = [
+  { name: 'หม่าล่าหน้าแดง', bags: 14 },
+  { name: 'หม่าล่าทะเล',    bags: 14 },
+  { name: 'หม่าล่ารวมหมู',  bags: 13 },
+  { name: 'อุด้ง',           bags: 6 }
+];
 const allItems     = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems];
 const incomingItems = [...freshItems, ...stickItems, ...dryItems, ...vegIncomingItems, ...supplyItems];
 
@@ -839,9 +842,8 @@ function proceedToForm() {
     document.getElementById('cash-amount').value = '';
     document.getElementById('expenses').value = '';
     document.getElementById('sales-note').value = '';
-    renderDeliveryMenus();
-    document.getElementById('delivery-sales').value = '';
     document.getElementById('delivery-add').value = '';
+    renderDeliveryMenus();
   }
   showPage(pageMap[currentForm]);
 }
@@ -850,11 +852,45 @@ function proceedToForm() {
 // RENDER TABLES
 // ============================================================
 function renderDeliveryMenus() {
-  document.getElementById('delivery-menu-list').innerHTML = deliveryMenus.map((name, i) => `
-    <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-      <input type="checkbox" class="delivery-menu-chk w-4 h-4 rounded accent-purple-500" data-name="${name}">
-      ${name}
-    </label>`).join('');
+  document.getElementById('delivery-menu-list').innerHTML = deliveryMenus.map((m, i) => `
+    <div class="flex items-center gap-2 text-sm text-gray-700">
+      <input type="checkbox" id="dlv-chk-${i}" class="delivery-menu-chk w-4 h-4 rounded accent-purple-500 shrink-0"
+        data-index="${i}" onchange="onDeliveryChange(${i})">
+      <label for="dlv-chk-${i}" class="flex-1 cursor-pointer">${m.name} <span class="text-xs text-gray-400">(${m.bags} ถุง/เซ็ต)</span></label>
+      <input type="number" min="1" value="1" id="dlv-qty-${i}" disabled
+        class="delivery-menu-qty w-16 p-2 border border-gray-200 rounded-lg text-center disabled:bg-gray-100 disabled:text-gray-300"
+        data-index="${i}" oninput="updateDeliveryTotal()">
+      <span class="text-xs text-gray-400">เซ็ต</span>
+    </div>`).join('');
+  updateDeliveryTotal();
+}
+
+function onDeliveryChange(i) {
+  const chk = document.getElementById('dlv-chk-' + i);
+  const qty = document.getElementById('dlv-qty-' + i);
+  qty.disabled = !chk.checked;
+  updateDeliveryTotal();
+}
+
+function getDeliveryData() {
+  let bags = 0;
+  const parts = [];
+  deliveryMenus.forEach((m, i) => {
+    const chk = document.getElementById('dlv-chk-' + i);
+    if (!chk || !chk.checked) return;
+    const qty = parseInt(document.getElementById('dlv-qty-' + i).value) || 1;
+    bags += m.bags * qty;
+    parts.push(`${m.name}×${qty}`);
+  });
+  const addBags = parseInt(document.getElementById('delivery-add').value) || 0;
+  return { bags, addBags, menusText: parts.join(', ') };
+}
+
+function updateDeliveryTotal() {
+  const d = getDeliveryData();
+  const total = d.bags + d.addBags;
+  document.getElementById('delivery-total-bags').textContent =
+    total > 0 ? `รวมใช้ ${total} ถุง (เมนู ${d.bags} + แอดเพิ่ม ${d.addBags})` : '';
 }
 
 function renderWeeklyTables() {
@@ -1029,14 +1065,11 @@ async function saveSales() {
     showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warn'); return;
   }
   document.getElementById('sales-validation-msg').classList.add('hidden');
-  // ── ข้อมูล Delivery (ไม่บังคับกรอก) ──
-  const deliverySales = document.getElementById('delivery-sales').value || '0';
-  const deliveryAdd   = document.getElementById('delivery-add').value || '0';
-  const deliveryMenusSelected = [...document.querySelectorAll('.delivery-menu-chk:checked')]
-    .map(c => c.dataset.name).join(', ');
+  // ── ข้อมูล Delivery: นับเป็นจำนวนถุงที่ใช้ ไม่มีเงินเข้า (ไม่บังคับกรอก) ──
+  const dlv = getDeliveryData();
   const success = await saveRecord('sales', {
     totalSales, transferAmount, cashAmount, expenses,
-    deliverySales, deliveryMenus: deliveryMenusSelected, deliveryAdd,
+    deliveryBags: dlv.bags, deliveryMenus: dlv.menusText, deliveryAdd: dlv.addBags,
     note: document.getElementById('sales-note').value
   });
   if (success) markSalesEnteredToday();

@@ -537,17 +537,18 @@ async function calculate() {
 
     console.log('[Loss Calc] details:', details.length, 'items, totalLost:', totalQtyLost);
 
-    // ── ยอดขายจริงในช่วงเดียวกัน (หน้าร้าน + Delivery + แอดเพิ่ม) ──
-    let weekSales = 0, salesDays = 0, weekFront = 0, weekDelivery = 0;
+    // ── ยอดขายจริง + จำนวนถุง Delivery ในช่วงเดียวกัน ──
+    // Delivery ใช้ของแต่ไม่มีเงินเข้า จึงหักมูลค่าถุง delivery ออกก่อนเทียบ
+    let weekSales = 0, salesDays = 0, deliveryBags = 0;
     salesData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
       if (!inWindow(toDateStr(rowDate))) return;
-      weekSales    += rowSalesTotal(row);
-      weekFront    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
-      weekDelivery += (parseFloat(row['ยอดขาย Delivery (บาท)']) || 0) + (parseFloat(row['ลูกค้าแอดเพิ่ม (บาท)']) || 0);
+      weekSales    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
+      deliveryBags += rowDeliveryBags(row);
       salesDays++;
     });
+    const deliveryValue = deliveryBags * unitValue;
     console.log('[Loss Calc] weekSales:', weekSales, 'from', salesDays, 'records');
 
     const debugInfo = {
@@ -558,7 +559,7 @@ async function calculate() {
       incomingItems: Object.keys(incomingTotals).length
     };
 
-    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays, weekFront, weekDelivery);
+    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays, deliveryBags, deliveryValue);
 
     // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
     const allCheckDates = [...new Set(weeklyData
@@ -587,7 +588,7 @@ async function calculate() {
 // ============================================================
 let lastDetails = [];
 
-function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, weekFront, weekDelivery) {
+function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, deliveryBags, deliveryValue) {
   lastDetails = details;
 
   document.getElementById('empty-state').classList.add('hidden');
@@ -607,17 +608,19 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
         💵 ไม่พบข้อมูลยอดขายในสัปดาห์นี้ — บันทึกยอดขายรายวันใน index.html เพื่อเทียบกับมูลค่าของที่ใช้ไป
       </div>`;
   } else {
-    const diff = weekSales - totalValue;
+    // Delivery ใช้ของแต่ไม่มีเงินเข้า — หักมูลค่าถุง delivery ออกจากมูลค่าที่ต้องได้เงิน
+    const expectValue = totalValue - (deliveryValue || 0);
+    const diff = weekSales - expectValue;
     let verdict, boxCls;
     if (diff >= 0) {
       verdict = `✅ ยอดขายครอบคลุมมูลค่าของที่ใช้ไป (เกิน ${fmt(diff)} บาท)`;
       boxCls  = 'bg-green-50 border-green-200 text-green-800';
     } else {
-      verdict = `⚠️ ยอดขายน้อยกว่ามูลค่าของที่ใช้ไป <strong>${fmt(-diff)} บาท</strong> — เงิน/ของอาจหายไป`;
+      verdict = `⚠️ ยอดขายน้อยกว่าที่ควรได้ <strong>${fmt(-diff)} บาท</strong> — เงิน/ของอาจหายไป`;
       boxCls  = 'bg-red-50 border-red-200 text-red-800';
     }
-    const deliveryLine = (weekDelivery > 0)
-      ? `<p class="text-xs opacity-80 mb-2">ยอดขายจริง = หน้าร้าน ${fmt(weekFront)} + Delivery/แอดเพิ่ม ${fmt(weekDelivery)} บาท</p>`
+    const deliveryLine = (deliveryBags > 0)
+      ? `<p class="text-xs opacity-80 mb-2">🛵 หัก Delivery ${fmt(deliveryBags)} ถุง = ${fmt(deliveryValue)} บาท (ใช้ของแต่ไม่มีเงินเข้า) → ที่ต้องได้เงิน = ${fmt(totalValue)} − ${fmt(deliveryValue)} = ${fmt(expectValue)} บาท</p>`
       : '';
     cmpEl.innerHTML = `
       <div class="border rounded-xl p-4 ${boxCls}">
@@ -625,7 +628,7 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
         ${deliveryLine}
         <div class="grid grid-cols-3 gap-2 text-center text-sm mb-2">
           <div><div class="font-bold">${fmt(weekSales)}</div><div class="text-xs opacity-70">ยอดขายจริง (บาท)</div></div>
-          <div><div class="font-bold">${fmt(totalValue)}</div><div class="text-xs opacity-70">มูลค่าของที่ใช้ไป (บาท)</div></div>
+          <div><div class="font-bold">${fmt(expectValue)}</div><div class="text-xs opacity-70">มูลค่าที่ต้องได้เงิน (บาท)</div></div>
           <div><div class="font-bold">${diff >= 0 ? '+' : ''}${fmt(diff)}</div><div class="text-xs opacity-70">ส่วนต่าง (บาท)</div></div>
         </div>
         <p class="text-xs">${verdict}</p>
@@ -703,11 +706,10 @@ function dayLabel(ds) {
   return `${THAI_DAYS[dt.getDay()]} ${d}/${m}`;
 }
 
-// ยอดขายจริงต่อแถว = หน้าร้าน + Delivery + ลูกค้าแอดเพิ่ม
-function rowSalesTotal(row) {
-  return (parseFloat(row['ยอดขายรวม (บาท)']) || 0)
-       + (parseFloat(row['ยอดขาย Delivery (บาท)']) || 0)
-       + (parseFloat(row['ลูกค้าแอดเพิ่ม (บาท)']) || 0);
+// จำนวนถุง Delivery ต่อแถว (ใช้ของแต่ไม่มีเงินเข้า)
+function rowDeliveryBags(row) {
+  return (parseFloat(row['ถุง Delivery (ชิ้น)']) || 0)
+       + (parseFloat(row['ลูกค้าแอดเพิ่ม (ชิ้น)']) || 0);
 }
 
 // รวมยอดขายเป็นรายวัน (กรณีบันทึกหลายรอบในวันเดียวกันจะบวกรวมกัน)
@@ -717,7 +719,7 @@ function buildDailySales(salesData) {
     const d = parseThaiDate(row['วันที่เวลา']);
     if (!d) return;
     const ds = toDateStr(d);
-    byDay[ds] = (byDay[ds] || 0) + rowSalesTotal(row);
+    byDay[ds] = (byDay[ds] || 0) + (parseFloat(row['ยอดขายรวม (บาท)']) || 0);
   });
   return Object.entries(byDay).map(([date, total]) => ({ date, total }))
     .sort((a, b) => a.date.localeCompare(b.date));
