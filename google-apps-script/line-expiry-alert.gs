@@ -31,6 +31,18 @@ var ITEM_EXPIRY_DAYS = {
 function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
 
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
+
+// ── กลุ่ม LINE ของแต่ละสาขา ──
+// ใส่ Group ID (ขึ้นต้น C...) ของกลุ่มแต่ละสาขา — วิธีหาดู README หัวข้อ webhook.site
+// แจ้งเตือนของสาขาไหน จะส่งเข้ากลุ่มสาขานั้นเท่านั้น
+// สาขาที่ยังไม่ใส่ (เว้น '' ไว้) จะส่งไปปลายทางกลาง (LINE_TARGET_ID หรือ broadcast) แทน
+var BRANCH_LINE_GROUPS = {
+  'ตลาดทรัพย์พัฒนา': '',   // ← ใส่ C... ของกลุ่มสาขาตลาดทรัพย์พัฒนา
+  'แบริ่ง': ''              // ← ใส่ C... ของกลุ่มสาขาแบริ่ง
+};
+function getBranchTarget_(branch) {
+  return BRANCH_LINE_GROUPS[String(branch || '').trim()] || '';
+}
 var TZ = 'Asia/Bangkok';
 var OVERDUE_LOOKBACK_DAYS = 7;             // แจ้งของที่เลยกำหนดย้อนหลังไม่เกินกี่วัน
 var NOTIFY_HOUR = 19;                      // แจ้งของครบกำหนดทิ้งตอนกี่โมง (19 = 1 ทุ่ม)
@@ -95,8 +107,16 @@ function checkNewIncoming() {
   props.setProperty(PROP_LAST_ROW, String(lastRow));
   if (!items.length) return;
 
-  sendLinePush_(buildIncomingMessage_(items));
-  Logger.log('แจ้งของเข้าใหม่ ' + items.length + ' รายการ');
+  // แยกส่งตามสาขา — ของสาขาไหนเข้ากลุ่มสาขานั้น
+  var byBranch = {};
+  items.forEach(function(it) {
+    var b = String(it.branch || '').trim();
+    (byBranch[b] = byBranch[b] || []).push(it);
+  });
+  Object.keys(byBranch).forEach(function(b) {
+    sendLine_(buildIncomingMessage_(byBranch[b]), getBranchTarget_(b));
+  });
+  Logger.log('แจ้งของเข้าใหม่ ' + items.length + ' รายการ (' + Object.keys(byBranch).length + ' สาขา)');
 }
 
 function buildIncomingMessage_(items) {
@@ -132,9 +152,27 @@ function notifyExpiringItems() {
     Logger.log('วันนี้ไม่มีของต้องทิ้ง — ไม่ส่งแจ้งเตือน');
     return;
   }
-  var msg = buildMessage_(result);
-  sendLinePush_(msg);
-  Logger.log('ส่งแจ้งเตือน LINE แล้ว:\n' + msg);
+
+  // แยกส่งตามสาขา — สาขาไหนถึงวันทิ้ง แจ้งเข้ากลุ่มสาขานั้น
+  var branches = {};
+  result.today.forEach(function(it) {
+    var b = String(it.branch || '').trim();
+    (branches[b] = branches[b] || { today: [], overdue: [] }).today.push(it);
+  });
+  result.overdue.forEach(function(it) {
+    var b = String(it.branch || '').trim();
+    (branches[b] = branches[b] || { today: [], overdue: [] }).overdue.push(it);
+  });
+
+  Object.keys(branches).forEach(function(b) {
+    var msg = buildMessage_({
+      today:    branches[b].today,
+      overdue:  branches[b].overdue,
+      todayKey: result.todayKey
+    });
+    sendLine_(msg, getBranchTarget_(b));
+    Logger.log('ส่งแจ้งเตือนสาขา "' + (b || 'ไม่ระบุ') + '":\n' + msg);
+  });
 }
 
 /**
@@ -243,15 +281,15 @@ function groupByBranch_(items, formatFn) {
  * ส่งข้อความผ่าน LINE Messaging API
  * ต้องตั้ง Script Properties: LINE_CHANNEL_ACCESS_TOKEN
  *
- * ปลายทางเลือกได้ 2 แบบ:
- *  - ไม่ตั้ง LINE_TARGET_ID → broadcast: ส่งหา "ทุกคนที่แอดบอทเป็นเพื่อน"
- *    (ง่ายสุด ไม่ต้องหา ID ไม่ต้องใช้ webhook)
- *  - ตั้ง LINE_TARGET_ID → push: ส่งเข้าแชทเดียว (U... = แชทส่วนตัว, C... = กลุ่ม)
+ * ลำดับการเลือกปลายทาง:
+ *  1. targetId ที่ส่งเข้ามา (เช่น Group ID ของกลุ่มสาขา จาก BRANCH_LINE_GROUPS)
+ *  2. ถ้าไม่มี → ใช้ LINE_TARGET_ID จาก Script Properties
+ *  3. ถ้าไม่มีอีก → broadcast: ส่งหา "ทุกคนที่แอดบอทเป็นเพื่อน"
  */
-function sendLinePush_(text) {
+function sendLine_(text, targetId) {
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
-  var to    = props.getProperty('LINE_TARGET_ID');
+  var to    = targetId || props.getProperty('LINE_TARGET_ID');
   if (!token) {
     throw new Error('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties (ดู README.md)');
   }
@@ -315,11 +353,26 @@ function setupTriggers() {
 function setupDailyTrigger() { setupTriggers(); }
 
 /**
- * ทดสอบส่งข้อความเข้า LINE (เช็คว่า token/target ถูกต้อง)
+ * ทดสอบส่งข้อความเข้า LINE (เช็คว่า token ถูกต้อง — ส่งไปปลายทางกลาง)
  */
 function testLineConnection() {
-  sendLinePush_('✅ ทดสอบระบบแจ้งเตือนของหมดอายุ — เชื่อมต่อ LINE สำเร็จ!');
+  sendLine_('✅ ทดสอบระบบแจ้งเตือนของหมดอายุ — เชื่อมต่อ LINE สำเร็จ!');
   Logger.log('ส่งข้อความทดสอบแล้ว เช็คใน LINE ได้เลย');
+}
+
+/**
+ * ทดสอบส่งข้อความเข้ากลุ่มของทุกสาขาที่ใส่ Group ID ไว้ใน BRANCH_LINE_GROUPS
+ */
+function testBranchGroups() {
+  Object.keys(BRANCH_LINE_GROUPS).forEach(function(b) {
+    var id = BRANCH_LINE_GROUPS[b];
+    if (id) {
+      sendLine_('✅ ทดสอบ: กลุ่มนี้จะได้รับแจ้งเตือนสต็อกของสาขา "' + b + '"', id);
+      Logger.log('ส่งทดสอบเข้ากลุ่มสาขา "' + b + '" แล้ว');
+    } else {
+      Logger.log('⚠️ สาขา "' + b + '" ยังไม่ได้ใส่ Group ID — แจ้งเตือนของสาขานี้จะไปปลายทางกลางแทน');
+    }
+  });
 }
 
 /**
