@@ -339,6 +339,7 @@
           <h2 class="text-xl font-bold flex items-center gap-2"><span>📦</span> จำนวนของเข้า</h2>
         </div>
         <div class="p-4">
+          <div id="incoming-expiry-banner" class="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800 flex items-center gap-2"></div>
           <p class="text-gray-600 mb-4">เลือกรายการที่ต้องการบันทึก:</p>
           <div id="incoming-items-list" class="space-y-2"></div>
         </div>
@@ -509,6 +510,21 @@
 // CONFIG
 // ============================================================
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzQqGBjKeW8Ba1Bz29Btx06_QO7oHoMUkLVTx2uIsANwN__GCsZ9LoYd6mcYRiuPboOHQ/exec';
+
+// อายุของสต็อก (นับรวมวันที่ของเข้า): เข้า 1/7 อยู่ได้ 7 วัน → ต้องทิ้ง 7/7
+const EXPIRY_DAYS_DEFAULT = 7;
+const ITEM_EXPIRY_DAYS = {
+  // ไม่เกิน 5 วัน
+  'สันคอสไลด์': 5, 'สามชั้นสไลด์': 5, 'เนื้อแดง': 5, 'กุ้ง': 5,
+  // ไม่เกิน 10 วัน
+  'หมึก': 10, 'ปลาดอลลี่': 10, 'ปลาหมึกกรอบ': 10, 'แมงกะพรุน': 10,
+  // ไม่เกิน 1 เดือน (30 วัน)
+  'รากบัว': 30, 'ต็อก': 30, 'แป้งต็อก': 30,
+  // ไม่เกิน 14 วัน
+  'ปูอัด': 14, 'เต้าหู้ชีส': 14, 'ชีสหลายสี': 14, 'กุ้งพันสาหร่าย': 14,
+  'ไส้กรอกพันเบคอน': 14, 'ฟองเต้าหู้สามเหลี่ยม': 14, 'ไส้กรอกหนังกรอบ': 14, 'ไส้กรอกชมพู': 14
+};
+function getItemExpiryDays(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
 
 // ============================================================
 // AUTH — Login / Logout
@@ -701,6 +717,20 @@ function getTodayKey() {
   const local = new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000);
   return local.toISOString().split('T')[0];
 }
+
+// ── Expiry date helpers ──
+function getDateKeyOffset(days) {
+  const now = new Date();
+  const local = new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000);
+  local.setUTCDate(local.getUTCDate() + days);
+  return local.toISOString().split('T')[0]; // yyyy-mm-dd
+}
+function formatKeyDMY(key) {
+  const [y, m, d] = key.split('-');
+  return `${parseInt(d)}/${parseInt(m)}/${y}`;
+}
+// วันหมดอายุนับรวมวันของเข้า: อยู่ได้ N วัน = บวก N-1 วันจากวันนี้
+function getExpireDateKeyFor(name) { return getDateKeyOffset(getItemExpiryDays(name) - 1); }
 function getIncomingStorageKey() {
   return `incoming_daily_${getTodayKey()}_${branch}`;
 }
@@ -932,6 +962,10 @@ function renderWeeklyTables() {
 
 function renderIncomingItems() {
   const entered = branch ? getEnteredItemsToday() : [];
+  const banner = document.getElementById('incoming-expiry-banner');
+  if (banner) {
+    banner.innerHTML = `<span>📅</span><span>ของเข้าวันนี้ (${formatKeyDMY(getTodayKey())}) — แต่ละรายการมีอายุไม่เท่ากัน <b>วันที่ต้องทิ้งแสดงไว้ท้ายแต่ละรายการ</b></span>`;
+  }
   document.getElementById('incoming-items-list').innerHTML = incomingItems.map((item, i) => {
     if (entered.includes(item.name)) {
       return `
@@ -953,6 +987,7 @@ function renderIncomingItems() {
           <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
           <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
           <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
+          <div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKeyFor(item.name))}</div>
         </div>
       </div>`;
   }).join('');
@@ -1038,7 +1073,15 @@ async function saveIncoming() {
     if (checkbox && checkbox.checked) {
       const qtyEl  = document.querySelector(`.incoming-qty[data-index="${i}"]`);
       const noteEl = document.querySelector(`.incoming-note[data-index="${i}"]`);
-      items.push({ name: item.name, qty: parseInt(qtyEl ? qtyEl.value : 0) || 0, unit: item.unit, note: noteEl ? noteEl.value : '' });
+      items.push({
+        name: item.name,
+        qty: parseInt(qtyEl ? qtyEl.value : 0) || 0,
+        unit: item.unit,
+        note: noteEl ? noteEl.value : '',
+        inDate: getTodayKey(),                     // วันที่ของเข้า (yyyy-mm-dd)
+        expiryDays: getItemExpiryDays(item.name),  // อายุ (วัน นับรวมวันของเข้า)
+        expireDate: getExpireDateKeyFor(item.name) // วันที่ต้องเคลียร์ทิ้ง (yyyy-mm-dd)
+      });
       savedNames.push(item.name);
     }
   });
