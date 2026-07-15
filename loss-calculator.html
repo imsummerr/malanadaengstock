@@ -537,18 +537,21 @@ async function calculate() {
 
     console.log('[Loss Calc] details:', details.length, 'items, totalLost:', totalQtyLost);
 
-    // ── ยอดขายจริง + จำนวนถุง Delivery ในช่วงเดียวกัน ──
-    // Delivery ใช้ของแต่ไม่มีเงินเข้า จึงหักมูลค่าถุง delivery ออกก่อนเทียบ
-    let weekSales = 0, salesDays = 0, deliveryBags = 0;
+    // ── ยอดขายจริง + รายการหักในช่วงเดียวกัน ──
+    // Delivery/น้ำจิ้มแถม ใช้ของแต่ไม่มีเงินเข้า, ส่วนลดทำให้เงินเข้าน้อยกว่ามูลค่าของ
+    let weekSales = 0, salesDays = 0, deliveryBags = 0, weekDiscount = 0, freeSauce = 0;
     salesData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
       if (!inWindow(toDateStr(rowDate))) return;
       weekSales    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
       deliveryBags += rowDeliveryBags(row);
+      weekDiscount += parseFloat(row['ส่วนลด (บาท)']) || 0;
+      freeSauce    += parseFloat(row['น้ำจิ้มแถม (ชิ้น)']) || 0;
       salesDays++;
     });
-    const deliveryValue = deliveryBags * unitValue;
+    const deliveryValue  = deliveryBags * unitValue;
+    const freeSauceValue = freeSauce * unitValue;
     console.log('[Loss Calc] weekSales:', weekSales, 'from', salesDays, 'records');
 
     const debugInfo = {
@@ -559,7 +562,8 @@ async function calculate() {
       incomingItems: Object.keys(incomingTotals).length
     };
 
-    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays, deliveryBags, deliveryValue);
+    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays,
+      { deliveryBags, deliveryValue, discount: weekDiscount, freeSauce, freeSauceValue });
 
     // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
     const allCheckDates = [...new Set(weeklyData
@@ -588,7 +592,8 @@ async function calculate() {
 // ============================================================
 let lastDetails = [];
 
-function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, deliveryBags, deliveryValue) {
+function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, deduct) {
+  deduct = deduct || {};
   lastDetails = details;
 
   document.getElementById('empty-state').classList.add('hidden');
@@ -608,8 +613,9 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
         💵 ไม่พบข้อมูลยอดขายในสัปดาห์นี้ — บันทึกยอดขายรายวันใน index.html เพื่อเทียบกับมูลค่าของที่ใช้ไป
       </div>`;
   } else {
-    // Delivery ใช้ของแต่ไม่มีเงินเข้า — หักมูลค่าถุง delivery ออกจากมูลค่าที่ต้องได้เงิน
-    const expectValue = totalValue - (deliveryValue || 0);
+    // หักรายการที่ใช้ของ/ลดเงินแต่ไม่มีเงินเข้า: Delivery, ส่วนลด, น้ำจิ้มแถม
+    const totalDeduct = (deduct.deliveryValue || 0) + (deduct.discount || 0) + (deduct.freeSauceValue || 0);
+    const expectValue = totalValue - totalDeduct;
     const diff = weekSales - expectValue;
     let verdict, boxCls;
     if (diff >= 0) {
@@ -619,13 +625,17 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
       verdict = `⚠️ ยอดขายน้อยกว่าที่ควรได้ <strong>${fmt(-diff)} บาท</strong> — เงิน/ของอาจหายไป`;
       boxCls  = 'bg-red-50 border-red-200 text-red-800';
     }
-    const deliveryLine = (deliveryBags > 0)
-      ? `<p class="text-xs opacity-80 mb-2">🛵 หัก Delivery ${fmt(deliveryBags)} ถุง = ${fmt(deliveryValue)} บาท (ใช้ของแต่ไม่มีเงินเข้า) → ที่ต้องได้เงิน = ${fmt(totalValue)} − ${fmt(deliveryValue)} = ${fmt(expectValue)} บาท</p>`
+    const deductParts = [];
+    if (deduct.deliveryBags > 0) deductParts.push(`🛵 Delivery ${fmt(deduct.deliveryBags)} ถุง = ${fmt(deduct.deliveryValue)} บาท`);
+    if (deduct.discount > 0)     deductParts.push(`🏷️ ส่วนลด ${fmt(deduct.discount)} บาท`);
+    if (deduct.freeSauce > 0)    deductParts.push(`🥫 น้ำจิ้มแถม ${fmt(deduct.freeSauce)} ชิ้น = ${fmt(deduct.freeSauceValue)} บาท`);
+    const deductLine = deductParts.length
+      ? `<p class="text-xs opacity-80 mb-2">หักรายการไม่มีเงินเข้า: ${deductParts.join(' + ')} → ที่ต้องได้เงิน = ${fmt(totalValue)} − ${fmt(totalDeduct)} = ${fmt(expectValue)} บาท</p>`
       : '';
     cmpEl.innerHTML = `
       <div class="border rounded-xl p-4 ${boxCls}">
         <p class="font-semibold text-sm mb-2">💵 เทียบกับยอดขายจริง (${salesDays} วันในสัปดาห์นี้)</p>
-        ${deliveryLine}
+        ${deductLine}
         <div class="grid grid-cols-3 gap-2 text-center text-sm mb-2">
           <div><div class="font-bold">${fmt(weekSales)}</div><div class="text-xs opacity-70">ยอดขายจริง (บาท)</div></div>
           <div><div class="font-bold">${fmt(expectValue)}</div><div class="text-xs opacity-70">มูลค่าที่ต้องได้เงิน (บาท)</div></div>

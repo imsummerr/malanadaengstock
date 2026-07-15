@@ -388,6 +388,17 @@
             <p id="delivery-total-bags" class="text-sm font-semibold text-purple-700"></p>
           </div>
 
+          <!-- ===== ส่วนลด / ของแถม ===== -->
+          <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-3">
+            <p class="text-sm font-semibold text-amber-800">🏷️ ส่วนลด / ของแถมวันนี้</p>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">ส่วนลดรวม (บาท)</label>
+              <input type="number" min="0" id="sales-discount" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+              <p class="text-xs text-gray-400 mt-1">เช่น โปรซื้อ 10 ลด 5 บาท — รวมส่วนลดทั้งวันเป็นบาท</p></div>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">น้ำจิ้มที่แถม (ชิ้น)</label>
+              <input type="number" min="0" id="sales-free-sauce" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl text-lg" placeholder="0">
+              <p class="text-xs text-gray-400 mt-1">จำนวนน้ำจิ้มที่แถมลูกค้าทั้งวัน (ไม่ได้เงิน)</p></div>
+          </div>
+
           <div><label class="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
             <textarea id="sales-note" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" rows="2" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea></div>
         </div>
@@ -844,6 +855,8 @@ function proceedToForm() {
     document.getElementById('expenses').value = '';
     document.getElementById('sales-note').value = '';
     document.getElementById('delivery-add').value = '';
+    document.getElementById('sales-discount').value = '';
+    document.getElementById('sales-free-sauce').value = '';
     renderDeliveryMenus();
   }
   showPage(pageMap[currentForm]);
@@ -1068,9 +1081,12 @@ async function saveSales() {
   document.getElementById('sales-validation-msg').classList.add('hidden');
   // ── ข้อมูล Delivery: นับเป็นจำนวนถุงที่ใช้ ไม่มีเงินเข้า (ไม่บังคับกรอก) ──
   const dlv = getDeliveryData();
+  const discount  = parseFloat(document.getElementById('sales-discount').value) || 0;
+  const freeSauce = parseInt(document.getElementById('sales-free-sauce').value) || 0;
   const success = await saveRecord('sales', {
     totalSales, transferAmount, cashAmount, expenses,
     deliveryBags: dlv.bags, deliveryMenus: dlv.menusText, deliveryAdd: dlv.addBags,
+    discount, freeSauce,
     note: document.getElementById('sales-note').value
   });
   if (success) markSalesEnteredToday();
