@@ -240,22 +240,36 @@ function groupByBranch_(items, formatFn) {
 }
 
 /**
- * ส่งข้อความผ่าน LINE Messaging API (push message)
- * ต้องตั้ง Script Properties: LINE_CHANNEL_ACCESS_TOKEN และ LINE_TARGET_ID
+ * ส่งข้อความผ่าน LINE Messaging API
+ * ต้องตั้ง Script Properties: LINE_CHANNEL_ACCESS_TOKEN
+ *
+ * ปลายทางเลือกได้ 2 แบบ:
+ *  - ไม่ตั้ง LINE_TARGET_ID → broadcast: ส่งหา "ทุกคนที่แอดบอทเป็นเพื่อน"
+ *    (ง่ายสุด ไม่ต้องหา ID ไม่ต้องใช้ webhook)
+ *  - ตั้ง LINE_TARGET_ID → push: ส่งเข้าแชทเดียว (U... = แชทส่วนตัว, C... = กลุ่ม)
  */
 function sendLinePush_(text) {
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
   var to    = props.getProperty('LINE_TARGET_ID');
-  if (!token || !to) {
-    throw new Error('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN / LINE_TARGET_ID ใน Script Properties (ดู README.md)');
+  if (!token) {
+    throw new Error('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties (ดู README.md)');
   }
 
-  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+  var url, body;
+  if (to) {
+    url  = 'https://api.line.me/v2/bot/message/push';
+    body = { to: to, messages: [{ type: 'text', text: text }] };
+  } else {
+    url  = 'https://api.line.me/v2/bot/message/broadcast';
+    body = { messages: [{ type: 'text', text: text }] };
+  }
+
+  var res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + token },
-    payload: JSON.stringify({ to: to, messages: [{ type: 'text', text: text }] }),
+    payload: JSON.stringify(body),
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) {
