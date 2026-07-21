@@ -6,7 +6,8 @@
  *     ถ้ามีของเข้าใหม่ จะแจ้ง LINE ทันทีว่าเข้าอะไรบ้าง
  *     พร้อมวันที่ควรทิ้งของแต่ละรายการ
  *  2) ของครบกำหนดทิ้ง — ทุกวันตอน 1 ทุ่ม (19:00 น.)
- *     แจ้งว่าวันนี้ของรายการไหนต้องเอาออก/ทิ้งแล้ว
+ *     แจ้งเฉพาะของที่ครบกำหนดทิ้ง "วันนี้" เท่านั้น (เลยกำหนดแล้วไม่แจ้ง)
+ *     ของแห้ง/มาม่า/ของใช้ (ดู hasExpiry_) ไม่แจ้งวันหมดอายุ
  *
  * อายุของแต่ละรายการดู ITEM_EXPIRY_DAYS ด้านล่าง
  * นับรวมวันที่ของเข้า เช่น เข้า 1/7 อยู่ได้ 5 วัน → ต้องทิ้ง 5/7
@@ -26,11 +27,25 @@ var ITEM_EXPIRY_DAYS = {
   'รากบัว': 30, 'ต็อก': 30, 'แป้งต็อก': 30,
   // ไม่เกิน 14 วัน
   'ปูอัด': 14, 'ไส้กรอกหนังกรอบ': 14, 'ไส้กรอกชมพู': 14,
+  'ปูอัดชีส': 14, 'เต้าหู้หมู': 14,
   // ไม่เกิน 7 วัน
   'เต้าหู้ชีส': 7, 'ชีสหลายสี': 7, 'กุ้งพันสาหร่าย': 7,
   'ไส้กรอกพันเบคอน': 7, 'ฟองเต้าหู้สามเหลี่ยม': 7
 };
 function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
+
+// ── รายการที่ "ไม่ต้อง" แจ้งเตือนวันหมดอายุ (ของแห้ง/มาม่า/ของใช้ อยู่ได้นาน) ──
+var NO_EXPIRY_EXACT = {
+  'ฟองเต้าหู้': 1, 'สาหร่าย': 1, 'นม': 1, 'ถ้วย': 1, 'ช้อน': 1,
+  'น้ำดำ': 1, 'น้ำกระดูกหมู': 1
+};
+function hasExpiry_(name) {
+  var n = String(name || '').trim();
+  if (NO_EXPIRY_EXACT[n]) return false;
+  // ตระกูลบะหมี่กึ่งสำเร็จรูป/เส้น ทุกรส (มาม่า ยำยำ ควิซ เส้น บะหมี่)
+  if (/มาม่า|ยำยำ|ควิซ|เส้น|บะหมี่/.test(n)) return false;
+  return true;
+}
 
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
 
@@ -46,7 +61,6 @@ function getBranchTarget_(branch) {
   return BRANCH_LINE_GROUPS[String(branch || '').trim()] || '';
 }
 var TZ = 'Asia/Bangkok';
-var OVERDUE_LOOKBACK_DAYS = 7;             // แจ้งของที่เลยกำหนดย้อนหลังไม่เกินกี่วัน
 var NOTIFY_HOUR = 19;                      // แจ้งของครบกำหนดทิ้งตอนกี่โมง (19 = 1 ทุ่ม)
 var INCOMING_POLL_MINUTES = 5;             // เช็คของเข้าใหม่ทุกกี่นาที (ใช้ได้: 1, 5, 10, 15, 30)
 var PROP_LAST_ROW = 'LAST_NOTIFIED_INCOMING_ROW'; // ตำแหน่งแถวล่าสุดที่แจ้งไปแล้ว
@@ -91,17 +105,21 @@ function checkNewIncoming() {
     var name = String(row[colName] || '').trim();
     if (!name) continue;
     var inDate = (colDate !== -1 ? parseThaiDate_(row[colDate]) : null) || new Date();
-    var days = getItemExpiryDays_(name);
-    var expire = new Date(inDate.getTime());
-    expire.setDate(expire.getDate() + days - 1);
+    var hasExp = hasExpiry_(name);
+    var expireStr = '';
+    if (hasExp) {
+      var days = getItemExpiryDays_(name);
+      var expire = new Date(inDate.getTime());
+      expire.setDate(expire.getDate() + days - 1);
+      expireStr = thaiDMY_(expire);
+    }
     items.push({
       name:       name,
       qty:        colQty     !== -1 ? row[colQty] : '',
       unit:       colUnit    !== -1 ? String(row[colUnit] || '')    : '',
       branch:     colBranch  !== -1 ? String(row[colBranch] || '')  : '',
       checker:    colChecker !== -1 ? String(row[colChecker] || '') : '',
-      expiryDays: days,
-      expireStr:  thaiDMY_(expire)
+      expireStr:  expireStr
     });
   }
 
@@ -135,7 +153,7 @@ function buildIncomingMessage_(items) {
     byBranch[b].forEach(function(it) {
       lines.push('• ' + it.name +
         (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') +
-        ' → ทิ้ง ' + it.expireStr);
+        (it.expireStr ? ' → ทิ้ง ' + it.expireStr : ''));
     });
   });
   return lines.join('\n');
@@ -150,7 +168,7 @@ function buildIncomingMessage_(items) {
  */
 function notifyExpiringItems() {
   var result = getItemsToDiscard_();
-  if (result.today.length === 0 && result.overdue.length === 0) {
+  if (result.today.length === 0) {
     Logger.log('วันนี้ไม่มีของต้องทิ้ง — ไม่ส่งแจ้งเตือน');
     return;
   }
@@ -159,17 +177,12 @@ function notifyExpiringItems() {
   var branches = {};
   result.today.forEach(function(it) {
     var b = String(it.branch || '').trim();
-    (branches[b] = branches[b] || { today: [], overdue: [] }).today.push(it);
-  });
-  result.overdue.forEach(function(it) {
-    var b = String(it.branch || '').trim();
-    (branches[b] = branches[b] || { today: [], overdue: [] }).overdue.push(it);
+    (branches[b] = branches[b] || { today: [] }).today.push(it);
   });
 
   Object.keys(branches).forEach(function(b) {
     var msg = buildMessage_({
       today:    branches[b].today,
-      overdue:  branches[b].overdue,
       todayKey: result.todayKey
     });
     sendLine_(msg, getBranchTarget_(b));
@@ -208,6 +221,7 @@ function getItemsToDiscard_() {
 
     var name = String(row[colName] || '').trim();
     if (!name) continue;
+    if (!hasExpiry_(name)) continue; // ของแห้ง/มาม่า/ของใช้ — ไม่แจ้งวันหมดอายุ
 
     // อยู่ได้ N วัน นับรวมวันของเข้า → วันที่ต้องทิ้ง = วันเข้า + (N-1)
     var expiryDays = getItemExpiryDays_(name);
@@ -215,25 +229,15 @@ function getItemsToDiscard_() {
     expire.setDate(expire.getDate() + expiryDays - 1);
     var expireKey = dateKey_(expire);
 
-    var item = {
-      name:       name,
-      qty:        colQty    !== -1 ? row[colQty]    : '',
-      unit:       colUnit   !== -1 ? String(row[colUnit] || '')   : '',
-      branch:     colBranch !== -1 ? String(row[colBranch] || '') : '',
-      inDate:     thaiDMY_(inDate),
-      expiryDays: expiryDays,
-      expireKey:  expireKey
-    };
-
+    // แจ้งเฉพาะของที่ครบกำหนดทิ้ง "วันนี้" เท่านั้น (เลยกำหนดแล้วไม่ต้องแจ้ง)
     if (expireKey === tKey) {
-      today.push(item);
-    } else if (expireKey < tKey) {
-      // เลยกำหนดแล้ว — แจ้งเฉพาะที่เลยมาไม่นาน (กัน spam ข้อมูลเก่า)
-      var daysOver = Math.round((keyToDate_(tKey) - keyToDate_(expireKey)) / 86400000);
-      if (daysOver <= OVERDUE_LOOKBACK_DAYS) {
-        item.daysOver = daysOver;
-        overdue.push(item);
-      }
+      today.push({
+        name:   name,
+        qty:    colQty    !== -1 ? row[colQty]    : '',
+        unit:   colUnit   !== -1 ? String(row[colUnit] || '')   : '',
+        branch: colBranch !== -1 ? String(row[colBranch] || '') : '',
+        inDate: thaiDMY_(inDate)
+      });
     }
   }
   return { today: today, overdue: overdue, todayKey: tKey };
@@ -250,14 +254,6 @@ function buildMessage_(result) {
     lines.push('🗑️ ของที่ต้องทิ้ง "วันนี้":');
     lines = lines.concat(groupByBranch_(result.today, function(it) {
       return '• ' + it.name + (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') + ' (เข้า ' + it.inDate + ')';
-    }));
-  }
-
-  if (result.overdue.length) {
-    lines.push('');
-    lines.push('⚠️ เลยกำหนดทิ้งแล้ว:');
-    lines = lines.concat(groupByBranch_(result.overdue, function(it) {
-      return '• ' + it.name + (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') + ' (เลยมา ' + it.daysOver + ' วัน)';
     }));
   }
 
@@ -390,7 +386,6 @@ function testNotifyNow() {
 function previewItems() {
   var result = getItemsToDiscard_();
   Logger.log('ต้องทิ้งวันนี้: ' + JSON.stringify(result.today, null, 2));
-  Logger.log('เลยกำหนด: ' + JSON.stringify(result.overdue, null, 2));
 }
 
 // ============================================================
