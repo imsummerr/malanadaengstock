@@ -42,8 +42,8 @@ var NO_EXPIRY_EXACT = {
 function hasExpiry_(name) {
   var n = String(name || '').trim();
   if (NO_EXPIRY_EXACT[n]) return false;
-  // ตระกูลบะหมี่กึ่งสำเร็จรูป/เส้น ทุกรส (มาม่า ยำยำ ควิซ เส้น บะหมี่)
-  if (/มาม่า|ยำยำ|ควิซ|เส้น|บะหมี่/.test(n)) return false;
+  // ตระกูลบะหมี่กึ่งสำเร็จรูป/เส้น/น้ำจิ้ม ทุกรส (เก็บได้นาน ไม่ต้องแจ้งหมดอายุ)
+  if (/มาม่า|ยำยำ|ควิซ|เส้น|บะหมี่|น้ำจิ้ม/.test(n)) return false;
   return true;
 }
 
