@@ -104,7 +104,7 @@
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-600 mb-1">วันที่เช็คสต็อก (วันอาทิตย์) <span class="text-red-500">*</span></label>
+          <label class="block text-sm font-medium text-gray-600 mb-1">วันที่เช็คสต็อก <span class="text-red-500">*</span></label>
           <input type="date" id="stock-date" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl">
         </div>
         <div>
@@ -225,14 +225,11 @@ function showLoginPage() {
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  // default วันที่เป็นวันอาทิตย์ล่าสุด (ใช้ local date ป้องกัน UTC offset ทำให้วันเลื่อน)
+  // default วันที่เป็นวันนี้ (เช็คสต็อกเป็นวันไหนก็ได้ ไม่บังคับวันอาทิตย์)
   const today = new Date();
-  const day   = today.getDay(); // 0 = อาทิตย์
-  const lastSunday = new Date(today);
-  lastSunday.setDate(today.getDate() - day);
-  const sy = lastSunday.getFullYear();
-  const sm = String(lastSunday.getMonth() + 1).padStart(2, '0');
-  const sd = String(lastSunday.getDate()).padStart(2, '0');
+  const sy = today.getFullYear();
+  const sm = String(today.getMonth() + 1).padStart(2, '0');
+  const sd = String(today.getDate()).padStart(2, '0');
   document.getElementById('stock-date').value = `${sy}-${sm}-${sd}`;
 
   // ตั้งสาขาเริ่มต้นเป็นสาขาของผู้ใช้ที่ login (เลือกสาขาอื่นได้ภายหลัง)
