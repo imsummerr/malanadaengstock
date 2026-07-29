@@ -522,13 +522,20 @@ const ITEM_EXPIRY_DAYS = {
   'รากบัว': 30, 'ต็อก': 30, 'แป้งต็อก': 30,
   // ไม่เกิน 14 วัน
   'ปูอัด': 14, 'ไส้กรอกหนังกรอบ': 14, 'ไส้กรอกชมพู': 14,
+  'ปูอัดชีส': 14, 'เต้าหู้หมู': 14,
   // ไม่เกิน 7 วัน
   'เต้าหู้ชีส': 7, 'ชีสหลายสี': 7, 'กุ้งพันสาหร่าย': 7,
   'ไส้กรอกพันเบคอน': 7, 'ฟองเต้าหู้สามเหลี่ยม': 7
 };
-// รายการที่ไม่ต้องคิดวันหมดอายุ / ไม่แจ้งเตือนของหมดอายุ
-const NO_EXPIRY_ITEMS = ['น้ำจิ้มสุกี้', 'น้ำจิ้มงา'];
-function hasExpiry(name) { return NO_EXPIRY_ITEMS.indexOf(name) === -1; }
+// รายการที่ "ไม่ต้อง" คิดวันหมดอายุ (ของแห้ง/มาม่า/น้ำจิ้ม/ของใช้ อยู่ได้นาน)
+// ต้องตรงกับ hasExpiry_ ใน google-apps-script/line-expiry-alert.gs
+const NO_EXPIRY_EXACT = ['ฟองเต้าหู้', 'สาหร่าย', 'นม', 'ถ้วย', 'ช้อน', 'น้ำดำ', 'น้ำกระดูกหมู'];
+function hasExpiry(name) {
+  const n = String(name || '').trim();
+  if (NO_EXPIRY_EXACT.indexOf(n) !== -1) return false;
+  if (/มาม่า|ยำยำ|ควิซ|เส้น|บะหมี่|น้ำจิ้ม/.test(n)) return false;
+  return true;
+}
 function getItemExpiryDays(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
 
 // ============================================================
@@ -658,7 +665,8 @@ const freshItems = [
   { name: 'ปูอัด', unit: 'ถุง' }, { name: 'ต็อก', unit: 'ถุง' },
   { name: 'หอย', unit: 'ถุง' }, { name: 'เนื้อแดง', unit: 'ถุง' },
   { name: 'เต้าหู้หลอด', unit: 'ถุง' }, { name: 'ปูอัดชีส', unit: 'ถุง' },
-  { name: 'โบโลน่า', unit: 'ถุง' }, { name: 'ตีนไก่', unit: 'ถุง' }
+  { name: 'โบโลน่า', unit: 'ถุง' }, { name: 'ตีนไก่', unit: 'ถุง' },
+  { name: 'ปูอัดยาว', unit: 'ถุง' }, { name: 'เต้าหู้ปลาแผ่น', unit: 'ถุง' }
 ];
 const stickItems = [
   { name: 'เต้าหู้ชีส', unit: 'ไม้' }, { name: 'ชีสหลายสี', unit: 'ไม้' },
