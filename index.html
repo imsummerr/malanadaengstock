@@ -526,6 +526,9 @@ const ITEM_EXPIRY_DAYS = {
   'เต้าหู้ชีส': 7, 'ชีสหลายสี': 7, 'กุ้งพันสาหร่าย': 7,
   'ไส้กรอกพันเบคอน': 7, 'ฟองเต้าหู้สามเหลี่ยม': 7
 };
+// รายการที่ไม่ต้องคิดวันหมดอายุ / ไม่แจ้งเตือนของหมดอายุ
+const NO_EXPIRY_ITEMS = ['น้ำจิ้มสุกี้', 'น้ำจิ้มงา'];
+function hasExpiry(name) { return NO_EXPIRY_ITEMS.indexOf(name) === -1; }
 function getItemExpiryDays(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
 
 // ============================================================
@@ -989,7 +992,7 @@ function renderIncomingItems() {
           <input type="number" min="0" class="incoming-qty w-full p-2 border border-gray-200 rounded-lg text-center" data-index="${i}" placeholder="จำนวน">
           <div class="flex items-center justify-center text-gray-500 text-sm">${item.unit}</div>
           <input type="text" class="incoming-note w-full p-2 border border-gray-200 rounded-lg text-sm" data-index="${i}" placeholder="หมายเหตุ">
-          <div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKeyFor(item.name))}</div>
+          ${hasExpiry(item.name) ? `<div class="col-span-3 text-xs text-amber-600 flex items-center gap-1">🗓️ ต้องเคลียร์ทิ้งภายใน ${formatKeyDMY(getExpireDateKeyFor(item.name))}</div>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -1080,9 +1083,9 @@ async function saveIncoming() {
         qty: parseInt(qtyEl ? qtyEl.value : 0) || 0,
         unit: item.unit,
         note: noteEl ? noteEl.value : '',
-        inDate: getTodayKey(),                     // วันที่ของเข้า (yyyy-mm-dd)
-        expiryDays: getItemExpiryDays(item.name),  // อายุ (วัน นับรวมวันของเข้า)
-        expireDate: getExpireDateKeyFor(item.name) // วันที่ต้องเคลียร์ทิ้ง (yyyy-mm-dd)
+        inDate: getTodayKey(),                                              // วันที่ของเข้า (yyyy-mm-dd)
+        expiryDays: hasExpiry(item.name) ? getItemExpiryDays(item.name) : '', // อายุ (วัน นับรวมวันของเข้า)
+        expireDate: hasExpiry(item.name) ? getExpireDateKeyFor(item.name) : '' // วันที่ต้องเคลียร์ทิ้ง (yyyy-mm-dd)
       });
       savedNames.push(item.name);
     }

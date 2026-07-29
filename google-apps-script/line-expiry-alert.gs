@@ -32,6 +32,12 @@ var ITEM_EXPIRY_DAYS = {
 };
 function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
 
+// รายการที่ไม่ต้องคิดวันหมดอายุ — ไม่แจ้งเตือนทั้งตอนของเข้าและตอนครบกำหนดทิ้ง
+var NO_EXPIRY_ITEMS = ['น้ำจิ้มสุกี้', 'น้ำจิ้มงา'];
+function hasExpiry_(name) {
+  return NO_EXPIRY_ITEMS.indexOf(String(name || '').trim()) === -1;
+}
+
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
 
 // ── กลุ่ม LINE ของแต่ละสาขา ──
@@ -90,6 +96,7 @@ function checkNewIncoming() {
     var row = values[r];
     var name = String(row[colName] || '').trim();
     if (!name) continue;
+    if (!hasExpiry_(name)) continue; // รายการที่ไม่คิดวันหมดอายุ
     var inDate = (colDate !== -1 ? parseThaiDate_(row[colDate]) : null) || new Date();
     var days = getItemExpiryDays_(name);
     var expire = new Date(inDate.getTime());
@@ -208,6 +215,7 @@ function getItemsToDiscard_() {
 
     var name = String(row[colName] || '').trim();
     if (!name) continue;
+    if (!hasExpiry_(name)) continue; // รายการที่ไม่คิดวันหมดอายุ
 
     // อยู่ได้ N วัน นับรวมวันของเข้า → วันที่ต้องทิ้ง = วันเข้า + (N-1)
     var expiryDays = getItemExpiryDays_(name);
