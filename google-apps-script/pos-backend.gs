@@ -22,7 +22,8 @@ var MAMA_PRICES   = [10, 15, 20, 35, 45];
 var STICK_PRICES  = [10, 15];
 
 var DELIVERY_HEADERS = [
-  'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน', 'ข้อมูล', 'order_id'
+  'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน',
+  'ของเพิ่ม', 'ข้อมูล', 'order_id'
 ];
 
 var ORDER_HEADERS = [
@@ -299,6 +300,7 @@ function handleDelivery_(body) {
       o.staff || session.name || '',
       o.summary || '',
       Number(o.itemCount) || 0,
+      Number(o.addonCount) || 0,
       JSON.stringify(o.items || []),
       o.orderId || ''
     ]);
@@ -417,6 +419,7 @@ function addDeliveryStats_(stats, from, to, branch) {
 
     stats.deliveryOrders++;
     stats.deliveryItemCount += num_(r[idx['รวมจำนวน']]);
+    stats.deliveryAddons += num_(r[idx['ของเพิ่ม']]);
     try {
       JSON.parse(r[idx['ข้อมูล']] || '[]').forEach(function (it) {
         addTo_(stats.deliveryItems, it.name, Number(it.qty) || 0);
@@ -428,7 +431,7 @@ function addDeliveryStats_(stats, from, to, branch) {
 function emptyStats_() {
   return {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
-    deliveryOrders: 0, deliveryItemCount: 0, deliveryItems: {},
+    deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };

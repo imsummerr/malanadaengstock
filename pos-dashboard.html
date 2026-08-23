@@ -398,7 +398,8 @@ function render() {
     ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢', ''],
     ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', ''],
     ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', ''],
-    ['ออเดอร์เดลิเวอรี่', Number(stats.deliveryOrders || 0).toLocaleString('th-TH'), 'ออเดอร์', '🛵', '']
+    ['ออเดอร์เดลิเวอรี่', Number(stats.deliveryOrders || 0).toLocaleString('th-TH'), 'ออเดอร์', '🛵', ''],
+    ['ของเพิ่มที่ลูกค้าแอด', Number(stats.deliveryAddons || 0).toLocaleString('th-TH'), 'อย่าง', '➕', '']
   ].map(([label, value, unit, icon, extra]) => `
     <div class="card kpi${extra}">
       <div class="label">${icon} ${label}</div>
@@ -670,6 +671,7 @@ function demoStats() {
     sauceCups: Math.round(orders * 0.9),
     deliveryOrders: Math.round(orders * 0.18),
     deliveryItemCount: Math.round(orders * 0.28),
+    deliveryAddons: Math.round(orders * 0.21),
     deliveryItems: share({ 'หม่าล่ารวม': .09, 'หม่าล่าหน้าแดง': .07, 'อุด้ง': .06, 'หม่าล่าทะเล': .05 }, orders),
     avgTicket: Math.round(revenue / orders * 100) / 100,
     soup:   share({ 'กระดูกหมูหม่าล่า': .32, 'น้ำใส': .24, 'หม่าล่านม': .16, 'กระดูกหมูดั้งเดิม': .12, 'น้ำดำหม่าล่า': .08, 'น้ำดำ': .06, 'ไม่เอาซุป': .02 }, orders),
