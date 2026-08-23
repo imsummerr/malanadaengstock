@@ -157,6 +157,7 @@
       </div>
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
+      <button onclick="startDemo()" class="key btn-ghost" style="width:100%;padding:12px;font-size:14px;">🧪 ดูตัวอย่างหน้าสรุปยอด</button>
       <a href="pos.html" class="link">← กลับไปหน้าคิดเงิน</a>
     </div>
   </div>
@@ -186,6 +187,10 @@
         <select id="f-branch" class="inp" onchange="loadStats()"><option value="">ทุกสาขา</option></select>
         <button onclick="loadStats()" class="key mini-btn">🔄</button>
       </div>
+    </div>
+
+    <div id="demo-bar" class="hidden" style="background:#ffe8ea;color:var(--red-dark);text-align:center;font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:12px;margin-bottom:14px;">
+      🧪 โหมดทดลอง — ตัวเลขและกราฟทั้งหมดเป็นข้อมูลตัวอย่าง ไม่ใช่ยอดขายจริง
     </div>
 
     <div id="loading" class="loading-box hidden"><div class="spinner"></div><div style="margin-top:10px;">กำลังโหลดข้อมูล...</div></div>
@@ -328,6 +333,12 @@ async function loadStats() {
   document.getElementById('content').classList.add('hidden');
 
   try {
+    if (isDemo()) {
+      stats = demoStats();
+      render();
+      document.getElementById('content').classList.remove('hidden');
+      return;
+    }
     if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (ปุ่ม ⚙️)');
     const url = apiUrl() + '?action=posStats&token=' + encodeURIComponent(auth.token)
       + '&from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to)
@@ -569,10 +580,12 @@ async function doLogin() {
 
 function doLogout() {
   const token = sessionStorage.getItem('pos_token');
+  const demo  = isDemo();
   sessionStorage.removeItem('pos_token');
   sessionStorage.removeItem('pos_name');
   sessionStorage.removeItem('pos_branch');
-  if (token && apiUrl()) {
+  sessionStorage.removeItem('pos_demo');
+  if (!demo && token && apiUrl()) {
     fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
   }
@@ -585,7 +598,61 @@ function showApp() {
   readAuth();
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
-  setRange('today');
+  document.getElementById('demo-bar').classList.toggle('hidden', !isDemo());
+  setRange(isDemo() ? '30' : 'today');
+}
+
+/* ════════════════════════════════════════════════
+   โหมดทดลอง — ข้อมูลตัวอย่างไว้ดูหน้าตาก่อนติดตั้งจริง
+   ════════════════════════════════════════════════ */
+function isDemo() { return sessionStorage.getItem('pos_demo') === '1'; }
+
+function startDemo() {
+  sessionStorage.setItem('pos_demo', '1');
+  sessionStorage.setItem('pos_token', 'DEMO');
+  sessionStorage.setItem('pos_name', sessionStorage.getItem('pos_name') || 'ทดลอง');
+  sessionStorage.setItem('pos_branch', sessionStorage.getItem('pos_branch') || 'แบริ่ง');
+  showApp();
+}
+
+// สุ่มแบบคงที่ (seed) เพื่อให้ตัวเลขไม่กระโดดทุกครั้งที่กดโหลด
+function demoRand(seed) { const x = Math.sin(seed * 9781) * 10000; return x - Math.floor(x); }
+
+function demoStats() {
+  const today = bkkToday();
+  const byDate = [];
+  const days = range.key === 'today' ? 1 : (range.key === '7' ? 7 : 30);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = shiftDays(today, -i);
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    const orders = Math.round(28 + demoRand(i + 1) * 22 + (weekend ? 18 : 0));
+    const avg = 96 + Math.round(demoRand(i + 7) * 34);
+    byDate.push({ date: fmtDate(d), orders: orders, revenue: orders * avg, sticks: orders * (8 + Math.round(demoRand(i + 3) * 4)) });
+  }
+  const orders  = byDate.reduce(function (s, r) { return s + r.orders; }, 0);
+  const revenue = byDate.reduce(function (s, r) { return s + r.revenue; }, 0);
+  const sticks  = byDate.reduce(function (s, r) { return s + r.sticks; }, 0);
+  const share = (obj, total) => {
+    const out = {}, keys = Object.keys(obj);
+    keys.forEach(k => out[k] = Math.round(total * obj[k]));
+    return out;
+  };
+  return {
+    orders: orders,
+    revenue: revenue,
+    sticks: sticks,
+    mama: Math.round(orders * 0.35),
+    discount: Math.round(sticks / 10) * 5,
+    avgTicket: Math.round(revenue / orders * 100) / 100,
+    soup:   share({ 'กระดูกหมูหม่าล่า': .32, 'น้ำใส': .24, 'หม่าล่านม': .16, 'กระดูกหมูดั้งเดิม': .12, 'น้ำดำหม่าล่า': .08, 'น้ำดำ': .06, 'ไม่เอาซุป': .02 }, orders),
+    spice:  share({ 'เผ็ดกลาง': .40, 'เผ็ดน้อย': .26, 'ไม่เผ็ด': .18, 'เผ็ดมาก': .13, 'เผ็ดพิเศษ': .03 }, orders),
+    sauce:  share({ 'งา': .57, 'สุกี้': .33, 'ไม่เอาน้ำจิ้ม': .10 }, orders),
+    method: share({ 'สแกน/โอนผ่านธนาคาร': .52, 'เงินสด': .40, 'ไทยช่วยไทย': .08 }, orders),
+    methodRevenue: share({ 'สแกน/โอนผ่านธนาคาร': .54, 'เงินสด': .38, 'ไทยช่วยไทย': .08 }, revenue),
+    branch: {},
+    byDate: byDate,
+    branches: Object.keys({ 'ตลาดทรัพย์พัฒนา': 1, 'แบริ่ง': 1 })
+  };
 }
 
 readAuth();

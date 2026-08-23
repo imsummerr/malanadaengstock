@@ -175,6 +175,13 @@
     .login-error { background: var(--red-soft); border: 1px solid #fecdd3; color: var(--red-dark); border-radius: 10px;
                    padding: 11px 14px; font-size: 13.5px; text-align: center; }
 
+    .demo-box { border-top: 1px dashed #d5d5da; padding-top: 14px; margin-top: 2px; }
+
+    .demo-badge { background: #fff; color: var(--ink); font-size: 12px; font-weight: 800; padding: 6px 10px;
+                  border-radius: 999px; white-space: nowrap; }
+    .demo-bar { background: #ffe8ea; color: var(--red-dark); text-align: center; font-size: 12.5px;
+                font-weight: 700; padding: 7px 12px; }
+
     /* ── Modal ตั้งค่า ── */
     .modal { position: fixed; inset: 0; z-index: 50; background: rgba(13,13,15,.6); overflow-y: auto; padding: 16px; }
     .modal-card { background: #fff; border-radius: 20px; padding: 20px; max-width: 440px; margin: 24px auto; }
@@ -209,6 +216,23 @@
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
       <button onclick="openSettings()" class="key link-btn">⚙️ ตั้งค่าระบบ / QR รับเงิน</button>
+
+      <div class="demo-box">
+        <button onclick="toggleDemoPanel()" id="demo-toggle" class="key btn-ghost" style="width:100%;padding:12px;font-size:14px;">
+          🧪 ลองใช้ดูก่อน — ไม่ต้อง login
+        </button>
+        <div id="demo-panel" class="hidden" style="margin-top:12px;">
+          <label class="set-label">สาขา</label>
+          <select id="demo-branch" class="login-input" style="margin-bottom:10px;"></select>
+          <label class="set-label">ชื่อพนักงาน</label>
+          <input id="demo-name" class="login-input" value="ทดลอง" style="margin-bottom:12px;">
+          <button onclick="startDemo()" class="key btn-dark" style="width:100%;padding:12px;font-size:14.5px;">เริ่มโหมดทดลอง →</button>
+          <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.5;">
+            กดเล่นได้ทุกหน้า คิดเงิน · ส่วนลด · เลือกวิธีจ่าย · หน้าสรุปยอด<br>
+            <b>ยอดขายจะไม่ถูกบันทึกที่ไหนทั้งนั้น</b> และหน้าสรุปยอดจะเป็นข้อมูลตัวอย่าง
+          </p>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -223,12 +247,15 @@
         <div class="title">POS <span style="color:#ff6b78;">หม่าล่าหน้าแดง</span></div>
         <div class="sub"><span id="hdr-branch">—</span> · <span id="hdr-name">—</span></div>
       </div>
+      <span id="demo-badge" class="demo-badge hidden">🧪 โหมดทดลอง</span>
       <span id="pending-badge" class="pending hidden">⏳ รอส่ง <span id="pending-count">0</span></span>
       <a href="pos-dashboard.html" class="key chip-link">📊 สรุปยอด</a>
       <button onclick="openSettings()" class="key icon-btn" title="ตั้งค่า">⚙️</button>
       <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
   </div>
+
+  <div id="demo-bar" class="demo-bar hidden">🧪 กำลังลองใช้อยู่ — ยอดขายไม่ถูกบันทึก · กด ⏻ เพื่อออก</div>
 
   <!-- ═══ หน้า 1: เครื่องคิดเลข ═══ -->
   <div id="screen-cart" class="screen active">
@@ -1019,7 +1046,9 @@ function goQR() {
     }
   } else {
     holder.classList.add('hidden');
-    err.innerHTML = 'ยังไม่ได้ตั้งค่าพร้อมเพย์ของสาขา <b>' + (branch || '-') + '</b><br>กดปุ่ม ⚙️ ด้านบนเพื่อใส่เบอร์พร้อมเพย์';
+    err.innerHTML = isDemo()
+      ? 'ยังไม่ได้ใส่เบอร์พร้อมเพย์ — กด ⚙️ ด้านบนแล้วใส่เบอร์ของร้าน<br>QR พร้อมยอดเงินจะขึ้นจริงทันที (ส่วนนี้ไม่ต้องใช้ Apps Script)'
+      : 'ยังไม่ได้ตั้งค่าพร้อมเพย์ของสาขา <b>' + (branch || '-') + '</b><br>กดปุ่ม ⚙️ ด้านบนเพื่อใส่เบอร์พร้อมเพย์';
     err.classList.remove('hidden');
   }
   showScreen('qr');
@@ -1071,6 +1100,15 @@ function startCountdown() {
 
 async function saveOrder(record) {
   const sync = document.getElementById('success-sync');
+
+  // โหมดทดลอง — ไม่ส่งข้อมูลไปไหน และไม่เก็บเข้าคิวรอส่ง
+  if (isDemo()) {
+    document.getElementById('success-order').textContent = 'ทดลอง';
+    sync.textContent = '🧪 โหมดทดลอง — บิลนี้ไม่ได้บันทึกลง Google Sheets';
+    sync.className = 'sync warn';
+    return;
+  }
+
   try {
     const json = await postApi({ action: 'posOrder', token: auth.token, order: record });
     if (json && json.success) {
@@ -1101,7 +1139,7 @@ function queuePending(record) { const l = getPending(); l.push(record); setPendi
 
 async function flushPending() {
   const list = getPending();
-  if (!list.length || !auth.token) return;
+  if (!list.length || !auth.token || isDemo()) return;
   const remain = [];
   for (const rec of list) {
     try {
@@ -1179,10 +1217,12 @@ async function doLogin() {
 
 function doLogout() {
   const token = sessionStorage.getItem('pos_token');
+  const demo  = isDemo();
   sessionStorage.removeItem('pos_token');
   sessionStorage.removeItem('pos_name');
   sessionStorage.removeItem('pos_branch');
-  if (token && apiUrl()) {
+  sessionStorage.removeItem('pos_demo');
+  if (!demo && token && apiUrl()) {
     fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
   }
@@ -1197,9 +1237,36 @@ function showApp() {
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('hdr-branch').textContent = auth.branch || '—';
   document.getElementById('hdr-name').textContent = auth.name || '—';
+  document.getElementById('demo-badge').classList.toggle('hidden', !isDemo());
+  document.getElementById('demo-bar').classList.toggle('hidden', !isDemo());
   setPending(getPending());
   flushPending();
   newOrder();
+}
+
+/* ════════════════════════════════════════════════════════════
+   โหมดทดลอง — กดเล่นได้ทั้งระบบโดยไม่ต้องตั้ง Apps Script
+   ════════════════════════════════════════════════════════════ */
+function isDemo() { return sessionStorage.getItem('pos_demo') === '1'; }
+
+function toggleDemoPanel() {
+  const panel = document.getElementById('demo-panel');
+  const sel = document.getElementById('demo-branch');
+  if (!sel.options.length) {
+    Object.keys(settings.branches).forEach(b => sel.add(new Option(b, b)));
+  }
+  panel.classList.toggle('hidden');
+  document.getElementById('demo-toggle').textContent =
+    panel.classList.contains('hidden') ? '🧪 ลองใช้ดูก่อน — ไม่ต้อง login' : '▲ ซ่อน';
+}
+
+function startDemo() {
+  sessionStorage.setItem('pos_demo', '1');
+  sessionStorage.setItem('pos_token', 'DEMO');
+  sessionStorage.setItem('pos_name', document.getElementById('demo-name').value.trim() || 'ทดลอง');
+  sessionStorage.setItem('pos_branch', document.getElementById('demo-branch').value || '');
+  showApp();
+  toast('เริ่มโหมดทดลองแล้ว — ยอดขายจะไม่ถูกบันทึก');
 }
 
 /* ════════════════════════════════════════════════════════════
