@@ -233,8 +233,8 @@
             <div id="chart-method"></div>
           </div>
           <div class="card chart-card">
-            <h2>น้ำจิ้มที่ให้ไป</h2>
-            <p class="sub">เรียงจากมากไปน้อย (จำนวนถ้วย)</p>
+            <h2>น้ำจิ้ม</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-sauce"></div>
           </div>
         </div>
@@ -399,7 +399,7 @@ function render() {
   drawRanked('chart-soup',   stats.soup,   'ออเดอร์');
   drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
   drawRanked('chart-method', stats.method, 'ออเดอร์', stats.methodRevenue);
-  drawRanked('chart-sauce',  stats.sauce,  'ถ้วย');
+  drawRanked('chart-sauce',  stats.sauce,  'ออเดอร์');
   drawTable(stats.byDate);
 }
 
@@ -650,11 +650,11 @@ function demoStats() {
     sticks: sticks,
     mama: Math.round(orders * 0.35),
     discount: Math.round(sticks / 10) * 5,
-    sauceCups: Math.round(orders * 1.13),
+    sauceCups: Math.round(orders * 0.9),
     avgTicket: Math.round(revenue / orders * 100) / 100,
     soup:   share({ 'กระดูกหมูหม่าล่า': .32, 'น้ำใส': .24, 'หม่าล่านม': .16, 'กระดูกหมูดั้งเดิม': .12, 'น้ำดำหม่าล่า': .08, 'น้ำดำ': .06, 'ไม่เอาซุป': .02 }, orders),
     spice:  share({ 'เผ็ดกลาง': .40, 'เผ็ดน้อย': .26, 'ไม่เผ็ด': .18, 'เผ็ดมาก': .13, 'เผ็ดพิเศษ': .03 }, orders),
-    sauce:  share({ 'งา': .72, 'สุกี้': .41 }, orders),   // ถ้วยต่อออเดอร์โดยเฉลี่ย
+    sauce:  share({ 'น้ำจิ้มงา': .57, 'น้ำจิ้มสุกี้': .33, 'ไม่เอาน้ำจิ้ม': .10 }, orders),
     method: share({ 'สแกน/โอนผ่านธนาคาร': .52, 'เงินสด': .40, 'ไทยช่วยไทย': .08 }, orders),
     methodRevenue: share({ 'สแกน/โอนผ่านธนาคาร': .54, 'เงินสด': .38, 'ไทยช่วยไทย': .08 }, revenue),
     branch: {},

@@ -25,12 +25,9 @@ var ORDER_HEADERS = [
   'ไม้ 10฿', 'ไม้ 15฿', 'รวมไม้', 'ยอดไม้',
   'มาม่า 10฿', 'มาม่า 15฿', 'มาม่า 20฿', 'มาม่า 35฿', 'มาม่า 45฿', 'รวมมาม่า', 'ยอดมาม่า',
   'ยอดรวม', 'ส่วนลด', 'ยอดสุทธิ',
-  'น้ำซุป', 'ความเผ็ด',
-  'น้ำจิ้มงา', 'น้ำจิ้มสุกี้', 'รวมน้ำจิ้ม',
+  'น้ำซุป', 'ความเผ็ด', 'น้ำจิ้ม', 'จำนวนน้ำจิ้ม',
   'วิธีชำระเงิน', 'order_id'
 ];
-
-var SAUCES = ['งา', 'สุกี้'];   // น้ำจิ้มที่แถมให้ นับเป็นถ้วย
 
 // ══════════════════════════════════════════════════════════════
 //  ติดตั้งครั้งแรก — รันฟังก์ชันนี้ 1 ครั้ง
@@ -233,8 +230,6 @@ function handleOrder_(body) {
     var mamaQty = {}; MAMA_PRICES.forEach(function (p) { mamaQty[p] = 0; });
     (o.mama || []).forEach(function (m) { mamaQty[m.price] = Number(m.qty) || 0; });
 
-    var sauceQty = {}; SAUCES.forEach(function (n) { sauceQty[n] = 0; });
-    (o.sauce || []).forEach(function (x) { sauceQty[x.name] = Number(x.qty) || 0; });
 
     var row = [
       Utilities.formatDate(now, TZ, 'yyyy-MM-dd'),
@@ -248,9 +243,8 @@ function handleOrder_(body) {
     MAMA_PRICES.forEach(function (p) { row.push(mamaQty[p]); });
     row.push(Number(o.mamaCount) || 0, Number(o.mamaAmount) || 0);
     row.push(Number(o.subtotal) || 0, Number(o.discount) || 0, Number(o.total) || 0);
-    row.push(o.soup || '', o.spice || '');
-    SAUCES.forEach(function (n) { row.push(sauceQty[n]); });
-    row.push(Number(o.sauceCount) || 0, o.method || '', o.orderId || '');
+    row.push(o.soup || '', o.spice || '', o.sauce || '', Number(o.sauceCount) || 0,
+             o.method || '', o.orderId || '');
 
     var orderNo = nextOrderNo_(sheet, row[0]);
     row[2] = orderNo;
@@ -327,13 +321,8 @@ function handleStats_(p) {
     bump_(stats.soup,   r[idx['น้ำซุป']]);
     bump_(stats.spice,  r[idx['ความเผ็ด']]);
     bump_(stats.method, r[idx['วิธีชำระเงิน']]);
-
-    // น้ำจิ้มนับเป็น "ถ้วยที่ให้ไป" ไม่ใช่จำนวนออเดอร์
-    SAUCES.forEach(function (name) {
-      var qty = num_(r[idx['น้ำจิ้ม' + name]]);
-      if (qty > 0) addTo_(stats.sauce, name, qty);
-      stats.sauceCups += qty;
-    });
+    bump_(stats.sauce,  r[idx['น้ำจิ้ม']]);
+    stats.sauceCups += num_(r[idx['จำนวนน้ำจิ้ม']]);   // รวมว่าให้น้ำจิ้มไปกี่ถ้วย
     bump_(stats.branch, r[idx['สาขา']]);
     addTo_(stats.methodRevenue, r[idx['วิธีชำระเงิน']], total);
 

@@ -294,8 +294,8 @@
         <div class="chips" id="soup-chips"></div>
         <h3 style="margin-top:16px;">🌶️ ระดับความเผ็ด</h3>
         <div class="chips" id="spice-chips"></div>
-        <h3 style="margin-top:16px;">🥣 น้ำจิ้ม <span style="font-weight:400;color:var(--muted);font-size:12px;">— ให้ไปกี่ถ้วย</span></h3>
-        <div class="grid-mama" id="sauce-grid"></div>
+        <h3 style="margin-top:16px;">🥣 น้ำจิ้ม</h3>
+        <div class="chips" id="sauce-chips"></div>
       </div>
     </div>
 
@@ -847,7 +847,7 @@ const DISCOUNT = { perSticks: 10, baht: 5 };
 
 const SOUPS  = ['น้ำใส', 'กระดูกหมูดั้งเดิม', 'กระดูกหมูหม่าล่า', 'หม่าล่านม', 'น้ำดำ', 'น้ำดำหม่าล่า', 'ไม่เอาซุป'];
 const SPICES = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดกลาง', 'เผ็ดมาก', 'เผ็ดพิเศษ'];
-const SAUCES = ['งา', 'สุกี้'];   // นับเป็นถ้วยที่ให้ลูกค้าไป (0 = ไม่เอา)
+const SAUCES = ['น้ำจิ้มงา', 'น้ำจิ้มสุกี้', 'ไม่เอาน้ำจิ้ม'];
 
 /* ════════════════════════════════════════════════════════════
    ค่าที่เก็บในเครื่อง (localStorage)
@@ -870,18 +870,17 @@ function apiUrl() { return (settings.apiUrl || '').trim(); }
    สถานะออเดอร์
    ════════════════════════════════════════════════════════════ */
 const order = {
-  sticks: {}, mama: {}, sauce: {},
-  soup: 'น้ำใส', spice: 'เผ็ดกลาง', method: ''
+  sticks: {}, mama: {},
+  soup: 'น้ำใส', spice: 'เผ็ดกลาง', sauce: 'น้ำจิ้มงา', method: ''
 };
 STICK_PRICES.forEach(p => order.sticks[p] = 0);
 MAMA_PRICES.forEach(p => order.mama[p] = 0);
-SAUCES.forEach(name => order.sauce[name] = 0);
 
 function totals() {
   let stickCount = 0, stickAmount = 0, mamaCount = 0, mamaAmount = 0, sauceCount = 0;
   STICK_PRICES.forEach(p => { stickCount += order.sticks[p]; stickAmount += order.sticks[p] * p; });
   MAMA_PRICES.forEach(p => { mamaCount += order.mama[p]; mamaAmount += order.mama[p] * p; });
-  SAUCES.forEach(n => { sauceCount += order.sauce[n]; });   // น้ำจิ้มแถมฟรี นับอย่างเดียวไม่คิดเงิน
+  sauceCount = (order.sauce && order.sauce !== 'ไม่เอาน้ำจิ้ม') ? 1 : 0;   // แถมฟรี นับไว้ดูต้นทุน
 
   // นับเฉพาะจำนวนไม้ — มาม่าไม่นับเข้าส่วนลด
   const discountUnits = Math.floor(stickCount / DISCOUNT.perSticks);
@@ -922,14 +921,7 @@ function renderMamaGrid() {
   document.getElementById('mama-grid').innerHTML =
     MAMA_PRICES.map(p => qtyCard('mama', p, `มาม่า <span>${p}฿</span>`, '0 ฿')).join('');
 }
-function renderSauceGrid() {
-  document.getElementById('sauce-grid').innerHTML =
-    SAUCES.map(n => qtyCard('sauce', n, `น้ำจิ้ม<span>${n}</span>`, '0 ถ้วย')).join('');
-}
-
-function store(kind) {
-  return kind === 'stick' ? order.sticks : (kind === 'mama' ? order.mama : order.sauce);
-}
+function store(kind) { return kind === 'stick' ? order.sticks : order.mama; }
 
 function bump(kind, key, delta) {
   const s = store(kind);
@@ -954,7 +946,7 @@ function renderChips(containerId, options, field) {
     <button onclick="pick('${field}','${o}')" data-opt="${o}" class="chip key">${o}</button>`).join('');
 }
 function refreshChips() {
-  [['soup-chips', 'soup'], ['spice-chips', 'spice']].forEach(([id, field]) => {
+  [['soup-chips', 'soup'], ['spice-chips', 'spice'], ['sauce-chips', 'sauce']].forEach(([id, field]) => {
     document.querySelectorAll('#' + id + ' .chip').forEach(el => el.classList.toggle('on', el.dataset.opt === order[field]));
   });
 }
@@ -964,13 +956,11 @@ function pick(field, value) { order[field] = value; refreshChips(); }
 function refresh() {
   const t = totals();
 
-  [['stick', STICK_PRICES], ['mama', MAMA_PRICES], ['sauce', SAUCES]].forEach(([kind, keys]) => {
+  [['stick', STICK_PRICES], ['mama', MAMA_PRICES]].forEach(([kind, keys]) => {
     keys.forEach(k => {
       const qty = store(kind)[k];
       const id = kind + '-' + k;
-      document.getElementById('sub-' + id).textContent = kind === 'sauce'
-        ? qty + ' ถ้วย'
-        : (qty * Number(k)).toLocaleString('th-TH') + ' ฿';
+      document.getElementById('sub-' + id).textContent = (qty * Number(k)).toLocaleString('th-TH') + ' ฿';
       document.getElementById('qty-' + id).classList.toggle('has', qty > 0);
       document.getElementById('card-' + id).classList.toggle('on', qty > 0);
     });
@@ -1008,13 +998,12 @@ function refresh() {
 function clearOrder() {
   STICK_PRICES.forEach(p => { order.sticks[p] = 0; document.getElementById('qty-stick-' + p).value = 0; });
   MAMA_PRICES.forEach(p => { order.mama[p] = 0; document.getElementById('qty-mama-' + p).value = 0; });
-  SAUCES.forEach(n => { order.sauce[n] = 0; document.getElementById('qty-sauce-' + n).value = 0; });
   refresh();
 }
 
 function newOrder() {
   clearOrder();
-  order.soup = 'น้ำใส'; order.spice = 'เผ็ดกลาง'; order.method = '';
+  order.soup = 'น้ำใส'; order.spice = 'เผ็ดกลาง'; order.sauce = 'น้ำจิ้มงา'; order.method = '';
   refreshChips();
   clearInterval(countdownTimer);
   showScreen('cart');
@@ -1036,7 +1025,6 @@ function goPayment() {
   const parts = [];
   if (t.stickCount) parts.push(t.stickCount + ' ไม้');
   if (t.mamaCount) parts.push('มาม่า ' + t.mamaCount + ' ห่อ');
-  if (t.sauceCount) parts.push('น้ำจิ้ม ' + t.sauceCount + ' ถ้วย');
   if (t.discount) parts.push('ลด ' + t.discount + ' ฿');
   document.getElementById('pay-summary').textContent = parts.join(' · ');
   showScreen('pay');
@@ -1133,8 +1121,7 @@ function confirmPaid() {
     mamaCount: t.mamaCount, mamaAmount: t.mamaAmount,
     subtotal: t.subtotal, discount: t.discount, total: t.total,
     soup: order.soup, spice: order.spice, method: order.method,
-    sauce: SAUCES.map(n => ({ name: n, qty: order.sauce[n] })),
-    sauceCount: t.sauceCount
+    sauce: order.sauce, sauceCount: t.sauceCount
   };
 
   document.getElementById('success-total').textContent = t.total.toLocaleString('th-TH') + ' ฿';
@@ -1599,7 +1586,7 @@ renderStickGrid();
 renderMamaGrid();
 renderChips('soup-chips', SOUPS, 'soup');
 renderChips('spice-chips', SPICES, 'spice');
-renderSauceGrid();
+renderChips('sauce-chips', SAUCES, 'sauce');
 refreshChips();
 refresh();
 
