@@ -416,7 +416,11 @@
     <input id="set-api" class="login-input" placeholder="https://script.google.com/macros/s/.../exec">
     <p style="font-size:12px;color:var(--muted);margin:6px 0 16px;">ใช้สำหรับ login และเก็บข้อมูลลง Google Sheets</p>
 
-    <div style="border-top:1px solid var(--line);padding-top:16px;">
+    <div id="set-qr-locked" class="qr-status warn hidden" style="margin-bottom:4px;">
+      🔒 การตั้งค่า <b>QR รับเงิน</b> ต้องเข้าสู่ระบบด้วยบัญชี<b>เจ้าของร้าน</b>ก่อน
+    </div>
+
+    <div id="set-qr-block" style="border-top:1px solid var(--line);padding-top:16px;">
       <h3 style="font-size:14.5px;font-weight:800;margin:0 0 6px;">QR รับเงินของแต่ละสาขา</h3>
       <p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.6;">
         อัปโหลดรูป QR พร้อมเพย์ของสาขานั้นได้เลย ระบบจะอ่านรูปแล้วสร้าง QR ใหม่ที่<b>ใส่ยอดเงินให้อัตโนมัติ</b>ทุกบิล
@@ -1333,7 +1337,13 @@ let draftBranches = null;   // สำเนาการตั้งค่าร�
 function openSettings() {
   draftBranches = JSON.parse(JSON.stringify(settings.branches));
   document.getElementById('set-api').value = settings.apiUrl || '';
-  renderBranchSettings();
+
+  // แก้ QR รับเงินได้เฉพาะเจ้าของร้านที่ login แล้ว (หน้า login ตั้งได้แค่ URL ระบบ)
+  var canEditQr = !!auth.token && isOwner();
+  document.getElementById('set-qr-block').classList.toggle('hidden', !canEditQr);
+  document.getElementById('set-qr-locked').classList.toggle('hidden', canEditQr);
+  if (canEditQr) renderBranchSettings();
+
   document.getElementById('settings').classList.remove('hidden');
 }
 

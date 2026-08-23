@@ -265,12 +265,15 @@ function apiUrl() {
   return (s.apiUrl || DEFAULT_API_URL || '').trim();
 }
 
-const auth = { token: '', name: '', branch: '' };
+const auth = { token: '', name: '', branch: '', role: 'staff' };
 function readAuth() {
   auth.token  = sessionStorage.getItem('pos_token')  || '';
   auth.name   = sessionStorage.getItem('pos_name')   || '';
   auth.branch = sessionStorage.getItem('pos_branch') || '';
+  auth.role   = sessionStorage.getItem('pos_role')   || 'staff';
 }
+
+function isOwner() { return auth.role === 'owner' || isDemo(); }
 
 let stats = null;
 let range = { key: 'today', from: '', to: '' };
@@ -334,6 +337,12 @@ async function loadStats() {
   document.getElementById('content').classList.add('hidden');
 
   try {
+    if (!isOwner()) {
+      document.getElementById('error-box').innerHTML =
+        '🔒 <b>หน้านี้สำหรับเจ้าของร้านเท่านั้น</b><br>บัญชีพนักงานใช้ได้เฉพาะหน้าคิดเงิน';
+      document.getElementById('error-box').classList.remove('hidden');
+      return;
+    }
     if (isDemo()) {
       stats = demoStats();
       render();
@@ -572,6 +581,7 @@ async function doLogin() {
       sessionStorage.setItem('pos_token', data.token);
       sessionStorage.setItem('pos_name', data.name);
       sessionStorage.setItem('pos_branch', data.branch);
+      sessionStorage.setItem('pos_role', data.role === 'owner' ? 'owner' : 'staff');
       showApp();
     } else {
       errEl.textContent = data.message || 'Login ไม่สำเร็จ';
