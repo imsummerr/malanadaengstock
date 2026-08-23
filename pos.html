@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>POS หม่าล่าหน้าแดง</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { box-sizing: border-box; }
+    .fade-in { animation: fadeIn 0.25s ease-out; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .pop { animation: pop 0.3s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes pop { from { transform:scale(0.85); opacity:0; } to { transform:scale(1); opacity:1; } }
+    .spinner { border:3px solid #f3f3f3; border-top:3px solid #ef4444; border-radius:50%; width:24px; height:24px; animation:spin 0.8s linear infinite; display:inline-block; }
+    .login-spinner { border:2px solid rgba(255,255,255,0.3); border-top:2px solid white; border-radius:50%;
+      width:18px; height:18px; animation:spin 0.8s linear infinite; display:inline-block; vertical-align:middle; margin-right:6px; }
+    @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+
+    /* ปุ่มกดแบบเครื่องคิดเลข — กดแล้วยุบลงเล็กน้อย */
+    .key { transition: transform .08s ease, box-shadow .12s ease, background .12s ease; user-select:none; }
+    .key:active { transform: scale(0.94); }
+
+    .chip { transition: all .15s ease; border:2px solid #e5e7eb; background:#fff; }
+    .chip:active { transform: scale(0.96); }
+    .chip.on { border-color:#dc2626; background:#fef2f2; color:#b91c1c; font-weight:600;
+               box-shadow:0 2px 8px rgba(220,38,38,0.18); }
+
+    #login-page { min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,#fef2f2 0%,#fff7ed 50%,#fefce8 100%); padding:1rem; }
+    .login-card { background:white; border-radius:1.5rem; padding:2.5rem 2rem; width:100%; max-width:380px;
+      box-shadow:0 20px 60px rgba(239,68,68,0.15), 0 4px 20px rgba(0,0,0,0.08); }
+    .login-input { width:100%; padding:0.875rem 1rem; border:2px solid #e5e7eb; border-radius:0.75rem;
+      font-size:1rem; font-family:'Sarabun',sans-serif; transition:all 0.2s; box-sizing:border-box; }
+    .login-input:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.1); }
+    .login-btn { width:100%; padding:0.875rem; background:linear-gradient(135deg,#ef4444,#dc2626); color:white;
+      border:none; border-radius:0.75rem; font-size:1rem; font-weight:600; font-family:'Sarabun',sans-serif;
+      cursor:pointer; transition:all 0.2s; box-shadow:0 4px 12px rgba(239,68,68,0.4); }
+    .login-btn:hover:not(:disabled) { transform:translateY(-1px); }
+    .login-btn:disabled { opacity:0.7; cursor:not-allowed; }
+
+    .screen { display:none; }
+    .screen.active { display:block; }
+
+    /* ตัวเลขให้อ่านง่ายแบบหน้าปัดเครื่องคิดเลข */
+    .digits { font-variant-numeric: tabular-nums; letter-spacing:-0.5px; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 min-h-screen">
+
+<!-- ══════════ หน้า Login ══════════ -->
+<div id="login-page">
+  <div class="login-card fade-in">
+    <div style="text-align:center; margin-bottom:1.75rem;">
+      <div style="width:72px;height:72px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:1.25rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;box-shadow:0 8px 24px rgba(239,68,68,0.35);">
+        <span style="font-size:2rem;">🧮</span>
+      </div>
+      <h1 style="font-size:1.4rem;font-weight:700;color:#1f2937;margin:0 0 0.25rem;">POS หม่าล่าหน้าแดง</h1>
+      <p style="font-size:0.875rem;color:#9ca3af;margin:0;">คิดเงินหน้าร้าน — กรุณาเข้าสู่ระบบ</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div>
+        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Username</label>
+        <input type="text" id="login-username" class="login-input" placeholder="กรอก username" autocomplete="username"
+          onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+      </div>
+      <div>
+        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Password</label>
+        <input type="password" id="login-password" class="login-input" placeholder="กรอก password" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <div id="login-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:0.5rem;padding:0.75rem 1rem;color:#dc2626;font-size:0.875rem;text-align:center;"></div>
+      <button onclick="doLogin()" id="login-btn" class="login-btn">เข้าสู่ระบบ</button>
+      <button onclick="openSettings()" style="background:none;border:none;color:#9ca3af;font-size:0.8rem;cursor:pointer;font-family:'Sarabun',sans-serif;">⚙️ ตั้งค่าระบบ / QR รับเงิน</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ แอปหลัก ══════════ -->
+<div id="app" style="display:none;">
+
+  <!-- Header -->
+  <div class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-red-100">
+    <div class="max-w-3xl mx-auto px-4 py-2.5 flex items-center gap-3">
+      <div class="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow shrink-0">
+        <span class="text-xl">🧮</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="font-bold text-gray-800 leading-tight truncate"><span class="sm:hidden">POS หม่าล่า</span><span class="hidden sm:inline">POS หม่าล่าหน้าแดง</span></div>
+        <div class="text-xs text-gray-500 truncate">
+          <span id="hdr-branch">—</span> · <span id="hdr-name">—</span>
+        </div>
+      </div>
+      <span id="pending-badge" class="hidden text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-medium whitespace-nowrap">⏳ รอส่ง <span id="pending-count">0</span></span>
+      <a href="pos-dashboard.html" class="key text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-2 rounded-lg whitespace-nowrap">📊 สรุปยอด</a>
+      <button onclick="openSettings()" class="key text-gray-400 hover:text-gray-600 px-1.5 py-1 text-lg">⚙️</button>
+      <button onclick="doLogout()" class="key text-gray-400 hover:text-red-500 px-1.5 py-1 text-lg" title="ออกจากระบบ">⏻</button>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าที่ 1: เครื่องคิดเลข ═══ -->
+  <div id="screen-cart" class="screen active">
+    <div class="max-w-3xl mx-auto px-4 pt-4 pb-44">
+
+      <!-- ไม้หม่าล่า -->
+      <div class="mb-4">
+        <div class="flex items-baseline justify-between mb-2">
+          <h2 class="font-bold text-gray-800">🍢 ไม้หม่าล่า</h2>
+          <span class="text-sm text-gray-500">รวม <b id="stick-count" class="text-red-600 digits">0</b> ไม้</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3" id="stick-grid"></div>
+        <div id="discount-hint" class="hidden mt-2 text-center text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl py-2 px-3"></div>
+      </div>
+
+      <!-- มาม่า -->
+      <div class="mb-4">
+        <div class="flex items-baseline justify-between mb-2">
+          <h2 class="font-bold text-gray-800">🍜 มาม่า</h2>
+          <span class="text-sm text-gray-500">รวม <b id="mama-count" class="text-red-600 digits">0</b> ห่อ</span>
+        </div>
+        <div class="grid grid-cols-3 sm:grid-cols-5 gap-2" id="mama-grid"></div>
+      </div>
+
+      <!-- ตัวเลือก -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-4">
+        <div class="mb-4">
+          <h3 class="font-semibold text-gray-700 mb-2 text-sm">🍲 น้ำซุป</h3>
+          <div class="flex flex-wrap gap-2" id="soup-chips"></div>
+        </div>
+        <div class="mb-4">
+          <h3 class="font-semibold text-gray-700 mb-2 text-sm">🌶️ ระดับความเผ็ด</h3>
+          <div class="flex flex-wrap gap-2" id="spice-chips"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold text-gray-700 mb-2 text-sm">🥣 น้ำจิ้ม</h3>
+          <div class="flex flex-wrap gap-2" id="sauce-chips"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- แถบสรุป + ปุ่มชำระเงิน (ติดล่างจอ) -->
+    <div class="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+      <div class="max-w-3xl mx-auto px-4 py-3">
+        <div class="flex justify-between text-sm text-gray-500 mb-0.5">
+          <span>ยอดรวม</span><span class="digits" id="sum-subtotal">0 ฿</span>
+        </div>
+        <div id="sum-discount-row" class="hidden flex justify-between text-sm text-emerald-600 mb-0.5">
+          <span id="sum-discount-label">ส่วนลด</span><span class="digits" id="sum-discount">-0 ฿</span>
+        </div>
+        <div class="flex items-end justify-between gap-3 mt-1">
+          <div>
+            <div class="text-xs text-gray-400">ยอดสุทธิ</div>
+            <div class="text-4xl font-bold text-gray-900 digits leading-none" id="sum-total">0<span class="text-2xl font-semibold text-gray-400"> ฿</span></div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="clearOrder()" class="key px-4 py-3.5 rounded-xl bg-gray-100 text-gray-600 font-semibold">ล้าง</button>
+            <button onclick="goPayment()" id="btn-pay" class="key px-6 py-3.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-bold shadow-lg shadow-red-500/30 disabled:opacity-40 disabled:shadow-none">
+              ชำระเงิน →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าที่ 2: เลือกวิธีชำระเงิน ═══ -->
+  <div id="screen-pay" class="screen">
+    <div class="max-w-lg mx-auto px-4 py-6 fade-in">
+      <button onclick="showScreen('cart')" class="key text-gray-500 mb-4 text-sm">← กลับไปแก้ออเดอร์</button>
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 text-center mb-5">
+        <div class="text-sm text-gray-400 mb-1">ยอดที่ต้องชำระ</div>
+        <div class="text-6xl font-bold text-gray-900 digits" id="pay-total">0<span class="text-3xl text-gray-400"> ฿</span></div>
+        <div class="text-sm text-gray-500 mt-2" id="pay-summary"></div>
+      </div>
+      <h2 class="font-bold text-gray-700 mb-3 text-center">ลูกค้าจ่ายแบบไหน?</h2>
+      <div class="space-y-3">
+        <button onclick="choosePayment('เงินสด')" class="key w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-emerald-400 shadow-sm text-left">
+          <span class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-2xl shrink-0">💵</span>
+          <span><span class="block font-bold text-gray-800 text-lg">1. เงินสด</span>
+                <span class="block text-xs text-gray-400">รับเงินสดหน้าร้าน</span></span>
+        </button>
+        <button onclick="choosePayment('สแกน/โอนผ่านธนาคาร')" class="key w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-blue-400 shadow-sm text-left">
+          <span class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-2xl shrink-0">📱</span>
+          <span><span class="block font-bold text-gray-800 text-lg">2. สแกน / โอนผ่านธนาคาร</span>
+                <span class="block text-xs text-gray-400">แสดง QR พร้อมยอดเงินให้ลูกค้าสแกน</span></span>
+        </button>
+        <button onclick="choosePayment('ไทยช่วยไทย')" class="key w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-amber-400 shadow-sm text-left">
+          <span class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-2xl shrink-0">🇹🇭</span>
+          <span><span class="block font-bold text-gray-800 text-lg">3. ไทยช่วยไทย</span>
+                <span class="block text-xs text-gray-400">โครงการคนละครึ่ง / ไทยช่วยไทย</span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าที่ 3: ยืนยันยอดก่อนขึ้น QR ═══ -->
+  <div id="screen-amount" class="screen">
+    <div class="max-w-lg mx-auto px-4 py-6 fade-in">
+      <button onclick="showScreen('pay')" class="key text-gray-500 mb-4 text-sm">← เปลี่ยนวิธีจ่าย</button>
+      <div class="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 text-center">
+        <span class="inline-block w-14 h-14 rounded-2xl bg-blue-50 text-3xl leading-[3.5rem] mb-3">📱</span>
+        <h2 class="font-bold text-gray-800 text-lg mb-6">สแกน / โอนผ่านธนาคาร</h2>
+        <div class="text-sm text-gray-400">จำนวนเงินที่ลูกค้าต้องจ่าย</div>
+        <div class="text-6xl font-bold text-blue-600 digits my-2" id="amount-total">0<span class="text-3xl text-blue-300"> ฿</span></div>
+        <div class="text-xs text-gray-400 mb-6">สาขา <span id="amount-branch">—</span></div>
+        <button onclick="goQR()" class="key w-full py-4 rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold text-lg shadow-lg shadow-blue-500/30">
+          ถัดไป — แสดง QR →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าที่ 4: QR รับเงิน ═══ -->
+  <div id="screen-qr" class="screen">
+    <div class="max-w-md mx-auto px-4 py-5 fade-in">
+      <button onclick="showScreen('amount')" class="key text-gray-500 mb-3 text-sm">← ย้อนกลับ</button>
+      <div class="bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center py-3">
+          <div class="font-bold" id="qr-shop">หม่าล่าหน้าแดง</div>
+          <div class="text-xs opacity-80">สาขา <span id="qr-branch">—</span> · พร้อมเพย์</div>
+        </div>
+        <div class="p-5 text-center">
+          <div id="qr-holder" class="inline-block p-3 bg-white rounded-2xl border-2 border-gray-100">
+            <canvas id="qr-canvas" class="block w-full max-w-[280px] h-auto" style="image-rendering:pixelated;"></canvas>
+          </div>
+          <img id="qr-image" class="hidden mx-auto max-w-[280px] rounded-2xl border-2 border-gray-100" alt="QR รับเงิน">
+          <div id="qr-error" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3 my-2"></div>
+          <div class="mt-3 text-sm text-gray-400">ยอดที่ต้องจ่าย</div>
+          <div class="text-5xl font-bold text-gray-900 digits" id="qr-total">0<span class="text-2xl text-gray-400"> ฿</span></div>
+          <p class="text-xs text-gray-400 mt-2">สแกนแล้วยอดเงินจะขึ้นให้อัตโนมัติ ลูกค้ากดจ่ายได้เลย</p>
+        </div>
+        <div class="p-4 pt-0">
+          <button onclick="confirmPaid()" class="key w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-lg shadow-lg shadow-emerald-500/30">
+            ✓ เงินเข้าแล้ว
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าที่ 5: จ่ายเงินสำเร็จ ═══ -->
+  <div id="screen-success" class="screen">
+    <div class="max-w-md mx-auto px-4 py-10 text-center">
+      <div class="pop w-28 h-28 mx-auto rounded-full bg-emerald-500 flex items-center justify-center shadow-2xl shadow-emerald-500/40 mb-5">
+        <span class="text-6xl text-white">✓</span>
+      </div>
+      <h2 class="text-3xl font-bold text-emerald-700 mb-1">จ่ายเงินสำเร็จ</h2>
+      <p class="text-gray-500 mb-6">มีเงินเข้าแล้ว</p>
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-left mb-6">
+        <div class="flex justify-between py-1"><span class="text-gray-500">ยอดที่รับ</span><b class="digits text-xl" id="success-total">0 ฿</b></div>
+        <div class="flex justify-between py-1"><span class="text-gray-500">วิธีจ่าย</span><b id="success-method">—</b></div>
+        <div class="flex justify-between py-1"><span class="text-gray-500">เลขที่ออเดอร์</span><b id="success-order" class="digits">—</b></div>
+        <div id="success-sync" class="text-xs mt-2 pt-2 border-t border-gray-100 text-gray-400">กำลังบันทึกลง Google Sheets...</div>
+      </div>
+      <button onclick="newOrder()" class="key w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 to-red-600 text-white font-bold text-lg shadow-lg shadow-red-500/30">
+        เริ่มออเดอร์ใหม่ (<span id="success-countdown">5</span>)
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ Keypad ══════════ -->
+<div id="keypad" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" onclick="if(event.target===this) closeKeypad()">
+  <div class="bg-white w-full sm:max-w-xs rounded-t-3xl sm:rounded-3xl p-4 fade-in">
+    <div class="text-center mb-3">
+      <div class="text-sm text-gray-400" id="keypad-label">จำนวน</div>
+      <div class="text-5xl font-bold text-gray-900 digits" id="keypad-value">0</div>
+    </div>
+    <div class="grid grid-cols-3 gap-2" id="keypad-keys"></div>
+    <div class="grid grid-cols-2 gap-2 mt-2">
+      <button onclick="closeKeypad()" class="key py-3.5 rounded-xl bg-gray-100 text-gray-600 font-semibold">ยกเลิก</button>
+      <button onclick="applyKeypad()" class="key py-3.5 rounded-xl bg-red-500 text-white font-bold">ตกลง</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ ตั้งค่า ══════════ -->
+<div id="settings" class="hidden fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4" onclick="if(event.target===this) closeSettings()">
+  <div class="bg-white max-w-md mx-auto rounded-3xl p-5 my-6 fade-in">
+    <h2 class="font-bold text-lg text-gray-800 mb-1">⚙️ ตั้งค่าระบบ</h2>
+    <p class="text-xs text-gray-400 mb-4">ค่าที่ตั้งไว้จะเก็บอยู่ในเครื่องนี้เท่านั้น</p>
+
+    <label class="block text-sm font-medium text-gray-700 mb-1">URL ของ Google Apps Script</label>
+    <input id="set-api" class="login-input mb-1" placeholder="https://script.google.com/macros/s/.../exec">
+    <p class="text-xs text-gray-400 mb-4">ใช้สำหรับ login และเก็บข้อมูลลง Google Sheets</p>
+
+    <div class="border-t border-gray-100 pt-4">
+      <h3 class="font-semibold text-gray-700 mb-2">QR รับเงินของแต่ละสาขา</h3>
+      <p class="text-xs text-gray-400 mb-3">ใส่พร้อมเพย์ของสาขานั้น (เบอร์มือถือ / เลขบัตรประชาชน / เลขผู้เสียภาษี) ระบบจะสร้าง QR พร้อมยอดเงินให้อัตโนมัติ</p>
+      <div id="set-branches" class="space-y-4"></div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mt-5">
+      <button onclick="closeSettings()" class="key py-3 rounded-xl bg-gray-100 text-gray-600 font-semibold">ปิด</button>
+      <button onclick="saveSettings()" class="key py-3 rounded-xl bg-red-500 text-white font-bold">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-xl shadow-lg text-white font-medium text-sm"></div>
+
+<script>
+/* QR Code generator แบบ standalone (byte mode, version 1-40)
+   ไม่ต้องพึ่ง CDN / internet — ใช้งานได้ตลอดแม้เน็ตร้านหลุด */
+var QRCodeGen = (function () {
+  'use strict';
+
+  // ตาราง ECC block ตามมาตรฐาน ISO/IEC 18004
+  // แต่ละ version คั่นด้วย "/" · ระดับ (L|M|Q|H) คั่นด้วย "|" · group คั่นด้วย ";" · แต่ละ group = blocks,totalCW,dataCW
+  var ECC_RAW = '1,26,19|1,26,16|1,26,13|1,26,9/1,44,34|1,44,28|1,44,22|1,44,16/1,70,55|1,70,44|2,35,17|2,35,13/1,100,80|2,50,32|2,50,24|4,25,9/1,134,108|2,67,43|2,33,15;2,34,16|2,33,11;2,34,12/2,86,68|4,43,27|4,43,19|4,43,15/2,98,78|4,49,31|2,32,14;4,33,15|4,39,13;1,40,14/2,121,97|2,60,38;2,61,39|4,40,18;2,41,19|4,40,14;2,41,15/2,146,116|3,58,36;2,59,37|4,36,16;4,37,17|4,36,12;4,37,13/2,86,68;2,87,69|4,69,43;1,70,44|6,43,19;2,44,20|6,43,15;2,44,16/4,101,81|1,80,50;4,81,51|4,50,22;4,51,23|3,36,12;8,37,13/2,116,92;2,117,93|6,58,36;2,59,37|4,46,20;6,47,21|7,42,14;4,43,15/4,133,107|8,59,37;1,60,38|8,44,20;4,45,21|12,33,11;4,34,12/3,145,115;1,146,116|4,64,40;5,65,41|11,36,16;5,37,17|11,36,12;5,37,13/5,109,87;1,110,88|5,65,41;5,66,42|5,54,24;7,55,25|11,36,12;7,37,13/5,122,98;1,123,99|7,73,45;3,74,46|15,43,19;2,44,20|3,45,15;13,46,16/1,135,107;5,136,108|10,74,46;1,75,47|1,50,22;15,51,23|2,42,14;17,43,15/5,150,120;1,151,121|9,69,43;4,70,44|17,50,22;1,51,23|2,42,14;19,43,15/3,141,113;4,142,114|3,70,44;11,71,45|17,47,21;4,48,22|9,39,13;16,40,14/3,135,107;5,136,108|3,67,41;13,68,42|15,54,24;5,55,25|15,43,15;10,44,16/4,144,116;4,145,117|17,68,42|17,50,22;6,51,23|19,46,16;6,47,17/2,139,111;7,140,112|17,74,46|7,54,24;16,55,25|34,37,13/4,151,121;5,152,122|4,75,47;14,76,48|11,54,24;14,55,25|16,45,15;14,46,16/6,147,117;4,148,118|6,73,45;14,74,46|11,54,24;16,55,25|30,46,16;2,47,17/8,132,106;4,133,107|8,75,47;13,76,48|7,54,24;22,55,25|22,45,15;13,46,16/10,142,114;2,143,115|19,74,46;4,75,47|28,50,22;6,51,23|33,46,16;4,47,17/8,152,122;4,153,123|22,73,45;3,74,46|8,53,23;26,54,24|12,45,15;28,46,16/3,147,117;10,148,118|3,73,45;23,74,46|4,54,24;31,55,25|11,45,15;31,46,16/7,146,116;7,147,117|21,73,45;7,74,46|1,53,23;37,54,24|19,45,15;26,46,16/5,145,115;10,146,116|19,75,47;10,76,48|15,54,24;25,55,25|23,45,15;25,46,16/13,145,115;3,146,116|2,74,46;29,75,47|42,54,24;1,55,25|23,45,15;28,46,16/17,145,115|10,74,46;23,75,47|10,54,24;35,55,25|19,45,15;35,46,16/17,145,115;1,146,116|14,74,46;21,75,47|29,54,24;19,55,25|11,45,15;46,46,16/13,145,115;6,146,116|14,74,46;23,75,47|44,54,24;7,55,25|59,46,16;1,47,17/12,151,121;7,152,122|12,75,47;26,76,48|39,54,24;14,55,25|22,45,15;41,46,16/6,151,121;14,152,122|6,75,47;34,76,48|46,54,24;10,55,25|2,45,15;64,46,16/17,152,122;4,153,123|29,74,46;14,75,47|49,54,24;10,55,25|24,45,15;46,46,16/4,152,122;18,153,123|13,74,46;32,75,47|48,54,24;14,55,25|42,45,15;32,46,16/20,147,117;4,148,118|40,75,47;7,76,48|43,54,24;22,55,25|10,45,15;67,46,16/19,148,118;6,149,119|18,75,47;31,76,48|34,54,24;34,55,25|20,45,15;61,46,16';
+  var ECC = ECC_RAW.split('/').map(function (v) {
+    return v.split('|').map(function (lvl) {
+      return lvl.split(';').map(function (g) { return g.split(',').map(Number); });
+    });
+  });
+  var LEVELS = { L: 0, M: 1, Q: 2, H: 3 };
+  var LEVEL_BITS = { L: 1, M: 0, Q: 3, H: 2 };
+
+  // ── GF(256) ──
+  var EXP = new Array(512), LOG = new Array(256);
+  (function () {
+    var x = 1;
+    for (var i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+    for (var j = 255; j < 512; j++) EXP[j] = EXP[j - 255];
+  })();
+  function gmul(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; }
+
+  function genPoly(degree) {
+    var poly = [1];
+    for (var i = 0; i < degree; i++) {
+      var np = [];
+      for (var k = 0; k <= poly.length; k++) np.push(0);
+      for (var j = 0; j < poly.length; j++) {
+        np[j] ^= poly[j];
+        np[j + 1] ^= gmul(poly[j], EXP[i]);
+      }
+      poly = np;
+    }
+    return poly;
+  }
+
+  function ecCodewords(data, ecLen) {
+    var gen = genPoly(ecLen), res = [], i;
+    for (i = 0; i < ecLen; i++) res.push(0);
+    for (i = 0; i < data.length; i++) {
+      var factor = data[i] ^ res[0];
+      res.shift(); res.push(0);
+      for (var j = 0; j < ecLen; j++) res[j] ^= gmul(gen[j + 1], factor);
+    }
+    return res;
+  }
+
+  function alignmentPositions(version) {
+    if (version === 1) return [];
+    var size = 17 + 4 * version;
+    var n = Math.floor(version / 7) + 2;
+    var step = (version === 32) ? 26 : Math.ceil((version * 4 + 4) / (n * 2 - 2)) * 2;
+    var res = [6], pos = size - 7;
+    while (res.length < n) { res.splice(1, 0, pos); pos -= step; }
+    return res;
+  }
+
+  function dataCapacity(version, level) {
+    return ECC[version - 1][LEVELS[level]].reduce(function (sum, g) { return sum + g[0] * g[2]; }, 0);
+  }
+
+  function toBytes(str) {
+    var out = [], i, c;
+    for (i = 0; i < str.length; i++) {
+      c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      else if (c < 0xd800 || c >= 0xe000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      else {
+        var cp = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(++i) & 0x3ff));
+        out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+      }
+    }
+    return out;
+  }
+
+  function buildCodewords(bytes, version, level) {
+    var ccBits = version <= 9 ? 8 : 16;
+    var bits = [];
+    function push(value, len) { for (var i = len - 1; i >= 0; i--) bits.push((value >> i) & 1); }
+    push(4, 4);
+    push(bytes.length, ccBits);
+    for (var i = 0; i < bytes.length; i++) push(bytes[i], 8);
+
+    var capBits = dataCapacity(version, level) * 8;
+    push(0, Math.min(4, capBits - bits.length));
+    while (bits.length % 8 !== 0) bits.push(0);
+    var pad = [0xec, 0x11], p = 0;
+    while (bits.length < capBits) push(pad[p++ % 2], 8);
+
+    var cw = [];
+    for (var b = 0; b < bits.length; b += 8) {
+      var v = 0;
+      for (var k = 0; k < 8; k++) v = (v << 1) | bits[b + k];
+      cw.push(v);
+    }
+    return cw;
+  }
+
+  function interleave(codewords, version, level) {
+    var groups = ECC[version - 1][LEVELS[level]];
+    var dataBlocks = [], ecBlocks = [], offset = 0, maxData = 0, ecLen = 0;
+    groups.forEach(function (g) {
+      for (var b = 0; b < g[0]; b++) {
+        var block = codewords.slice(offset, offset + g[2]);
+        offset += g[2];
+        ecLen = g[1] - g[2];
+        maxData = Math.max(maxData, g[2]);
+        dataBlocks.push(block);
+        ecBlocks.push(ecCodewords(block, ecLen));
+      }
+    });
+    var result = [], i, j;
+    for (i = 0; i < maxData; i++)
+      for (j = 0; j < dataBlocks.length; j++)
+        if (i < dataBlocks[j].length) result.push(dataBlocks[j][i]);
+    for (i = 0; i < ecLen; i++)
+      for (j = 0; j < ecBlocks.length; j++) result.push(ecBlocks[j][i]);
+    return result;
+  }
+
+  function formatBits(level, mask) {
+    var data = (LEVEL_BITS[level] << 3) | mask, rem = data;
+    for (var i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+    return ((data << 10) | rem) ^ 0x5412;
+  }
+
+  function versionBits(version) {
+    var rem = version;
+    for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >> 11) * 0x1f25);
+    return (version << 12) | rem;
+  }
+
+  function buildMatrix(version) {
+    var size = 17 + 4 * version, m = [], reserved = [], r, c, i;
+    for (r = 0; r < size; r++) {
+      m.push([]); reserved.push([]);
+      for (c = 0; c < size; c++) { m[r].push(0); reserved[r].push(0); }
+    }
+    function setF(row, col, val) {
+      if (row < 0 || col < 0 || row >= size || col >= size) return;
+      m[row][col] = val; reserved[row][col] = 1;
+    }
+    [[0, 0], [0, size - 7], [size - 7, 0]].forEach(function (p) {
+      for (var rr = -1; rr <= 7; rr++) for (var cc = -1; cc <= 7; cc++) {
+        var inRing = (rr === 0 || rr === 6 || cc === 0 || cc === 6) && rr >= 0 && rr <= 6 && cc >= 0 && cc <= 6;
+        var inCore = rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4;
+        setF(p[0] + rr, p[1] + cc, (inRing || inCore) ? 1 : 0);
+      }
+    });
+    for (i = 8; i < size - 8; i++) { setF(6, i, (i % 2 === 0) ? 1 : 0); setF(i, 6, (i % 2 === 0) ? 1 : 0); }
+    var pos = alignmentPositions(version);
+    pos.forEach(function (pr) {
+      pos.forEach(function (pc) {
+        if ((pr === 6 && pc === 6) || (pr === 6 && pc === size - 7) || (pr === size - 7 && pc === 6)) return;
+        for (var rr = -2; rr <= 2; rr++) for (var cc = -2; cc <= 2; cc++) {
+          var d = Math.max(Math.abs(rr), Math.abs(cc));
+          setF(pr + rr, pc + cc, (d !== 1) ? 1 : 0);
+        }
+      });
+    });
+    for (i = 0; i <= 8; i++) { if (i === 6) continue; setF(8, i, 0); setF(i, 8, 0); }
+    for (i = 0; i < 8; i++) { setF(8, size - 1 - i, 0); setF(size - 1 - i, 8, 0); }
+    setF(size - 8, 8, 1);
+    if (version >= 7) {
+      for (i = 0; i < 18; i++) {
+        var a = Math.floor(i / 3), b = i % 3;
+        setF(size - 11 + b, a, 0); setF(a, size - 11 + b, 0);
+      }
+    }
+    return { modules: m, reserved: reserved, size: size };
+  }
+
+  function placeData(mx, codewords) {
+    var size = mx.size, m = mx.modules, res = mx.reserved;
+    var bitIdx = 0, upward = true;
+    for (var right = size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (var v = 0; v < size; v++) {
+        var row = upward ? size - 1 - v : v;
+        for (var k = 0; k < 2; k++) {
+          var col = right - k;
+          if (res[row][col]) continue;
+          var bit = 0;
+          if (bitIdx < codewords.length * 8) bit = (codewords[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1;
+          m[row][col] = bit; bitIdx++;
+        }
+      }
+      upward = !upward;
+    }
+  }
+
+  function maskFn(mask, r, c) {
+    switch (mask) {
+      case 0: return (r + c) % 2 === 0;
+      case 1: return r % 2 === 0;
+      case 2: return c % 3 === 0;
+      case 3: return (r + c) % 3 === 0;
+      case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0;
+      case 5: return (r * c) % 2 + (r * c) % 3 === 0;
+      case 6: return ((r * c) % 2 + (r * c) % 3) % 2 === 0;
+      case 7: return ((r + c) % 2 + (r * c) % 3) % 2 === 0;
+    }
+    return false;
+  }
+
+  function applyMask(mx, mask) {
+    for (var r = 0; r < mx.size; r++)
+      for (var c = 0; c < mx.size; c++)
+        if (!mx.reserved[r][c] && maskFn(mask, r, c)) mx.modules[r][c] ^= 1;
+  }
+
+  function drawFormat(mx, level, mask) {
+    var bits = formatBits(level, mask), size = mx.size, m = mx.modules, i;
+    function bit(n) { return (bits >> n) & 1; }
+    for (i = 0; i <= 5; i++) m[i][8] = bit(i);
+    m[7][8] = bit(6); m[8][8] = bit(7); m[8][7] = bit(8);
+    for (i = 9; i < 15; i++) m[8][14 - i] = bit(i);
+    for (i = 0; i < 8; i++) m[8][size - 1 - i] = bit(i);
+    for (i = 8; i < 15; i++) m[size - 15 + i][8] = bit(i);
+    m[size - 8][8] = 1;
+  }
+
+  function drawVersion(mx, version) {
+    if (version < 7) return;
+    var bits = versionBits(version), size = mx.size;
+    for (var i = 0; i < 18; i++) {
+      var b = (bits >> i) & 1, a = Math.floor(i / 3), d = i % 3;
+      mx.modules[size - 11 + d][a] = b;
+      mx.modules[a][size - 11 + d] = b;
+    }
+  }
+
+  function penalty(m) {
+    var size = m.length, score = 0, r, c;
+    for (r = 0; r < size; r++) {
+      var runRow = 1, runCol = 1;
+      for (c = 1; c < size; c++) {
+        if (m[r][c] === m[r][c - 1]) { runRow++; if (runRow === 5) score += 3; else if (runRow > 5) score++; }
+        else runRow = 1;
+        if (m[c][r] === m[c - 1][r]) { runCol++; if (runCol === 5) score += 3; else if (runCol > 5) score++; }
+        else runCol = 1;
+      }
+    }
+    for (r = 0; r < size - 1; r++)
+      for (c = 0; c < size - 1; c++) {
+        var v = m[r][c];
+        if (v === m[r][c + 1] && v === m[r + 1][c] && v === m[r + 1][c + 1]) score += 3;
+      }
+    var pat = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+    var patRev = pat.slice().reverse();
+    function run(get, start, p) {
+      for (var k = 0; k < 11; k++) if (get(start + k) !== p[k]) return false;
+      return true;
+    }
+    for (r = 0; r < size; r++) {
+      var rowGet = (function (rr) { return function (x) { return m[rr][x]; }; })(r);
+      var colGet = (function (cc) { return function (x) { return m[x][cc]; }; })(r);
+      for (c = 0; c <= size - 11; c++) {
+        if (run(rowGet, c, pat) || run(rowGet, c, patRev)) score += 40;
+        if (run(colGet, c, pat) || run(colGet, c, patRev)) score += 40;
+      }
+    }
+    var dark = 0;
+    for (r = 0; r < size; r++) for (c = 0; c < size; c++) dark += m[r][c];
+    var pct = dark * 100 / (size * size);
+    score += Math.floor(Math.abs(pct - 50) / 5) * 10;
+    return score;
+  }
+
+  function copyMatrix(mx) {
+    return {
+      size: mx.size, reserved: mx.reserved,
+      modules: mx.modules.map(function (row) { return row.slice(); })
+    };
+  }
+
+  /** คืนค่าเป็น array 2 มิติของ module (0/1) */
+  function encode(text, opts) {
+    opts = opts || {};
+    var level = opts.level || 'M';
+    var bytes = toBytes(text);
+    var version = opts.version || 0;
+    if (!version) {
+      for (var v = 1; v <= 40; v++) {
+        var ccBits = v <= 9 ? 8 : 16;
+        if (4 + ccBits + bytes.length * 8 <= dataCapacity(v, level) * 8) { version = v; break; }
+      }
+      if (!version) throw new Error('ข้อมูลยาวเกินกว่าที่ QR code รองรับ');
+    }
+    var codewords = interleave(buildCodewords(bytes, version, level), version, level);
+    var base = buildMatrix(version);
+    placeData(base, codewords);
+    drawVersion(base, version);
+
+    var best = null, bestScore = Infinity;
+    var masks = (opts.mask === undefined || opts.mask === null) ? [0, 1, 2, 3, 4, 5, 6, 7] : [opts.mask];
+    masks.forEach(function (mask) {
+      var cand = copyMatrix(base);
+      applyMask(cand, mask);
+      drawFormat(cand, level, mask);
+      var s = penalty(cand.modules);
+      if (s < bestScore) { bestScore = s; best = cand; }
+    });
+    return best.modules;
+  }
+
+  /** วาด QR ลงบน <canvas> */
+  function renderCanvas(canvas, text, opts) {
+    opts = opts || {};
+    var modules = encode(text, opts);
+    var quiet = opts.quiet === undefined ? 4 : opts.quiet;
+    var count = modules.length + quiet * 2;
+    var scale = Math.max(2, Math.floor((opts.size || 360) / count));
+    var px = count * scale;
+    canvas.width = px; canvas.height = px;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = opts.light || '#ffffff';
+    ctx.fillRect(0, 0, px, px);
+    ctx.fillStyle = opts.dark || '#000000';
+    for (var r = 0; r < modules.length; r++)
+      for (var c = 0; c < modules.length; c++)
+        if (modules[r][c]) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+    return modules.length;
+  }
+
+  return { encode: encode, renderCanvas: renderCanvas };
+})();
+</script>
+
+<script>
+/* สร้าง payload พร้อมเพย์ (EMVCo) สำหรับ QR รับเงินที่ระบุจำนวนเงินมาให้แล้ว */
+var PromptPay = (function () {
+  'use strict';
+
+  function tlv(id, value) {
+    return id + String(value.length).padStart(2, '0') + value;
+  }
+
+  function sanitize(id) { return String(id).replace(/[^0-9]/g, ''); }
+
+  function formatTarget(id) {
+    var digits = sanitize(id);
+    if (digits.length >= 13) return digits;
+    return ('0000000000000' + digits.replace(/^0/, '66')).slice(-13);
+  }
+
+  function crc16(str) {
+    var crc = 0xffff;
+    for (var i = 0; i < str.length; i++) {
+      crc ^= str.charCodeAt(i) << 8;
+      for (var j = 0; j < 8; j++) {
+        crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+
+  /**
+   * @param {string} id  เบอร์มือถือ / เลขบัตรประชาชน / เลขผู้เสียภาษี / e-wallet id
+   * @param {number} amount  จำนวนเงิน (บาท) — ใส่แล้วลูกค้าไม่ต้องพิมพ์เอง
+   */
+  function payload(id, amount) {
+    var digits = sanitize(id);
+    var accountTag = digits.length >= 15 ? '03' : (digits.length >= 13 ? '02' : '01');
+    var merchant = tlv('00', 'A000000677010111') + tlv(accountTag, formatTarget(id));
+    var data =
+      tlv('00', '01') +
+      tlv('01', amount ? '12' : '11') +
+      tlv('29', merchant) +
+      tlv('58', 'TH') +
+      tlv('53', '764') +
+      (amount ? tlv('54', Number(amount).toFixed(2)) : '');
+    var withCrcTag = data + '6304';
+    return withCrcTag + crc16(withCrcTag);
+  }
+
+  return { payload: payload, crc16: crc16, formatTarget: formatTarget };
+})();
+</script>
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   ตั้งค่าเริ่มต้น — แก้ตรงนี้ได้เลย (หรือแก้ผ่านปุ่ม ⚙️ ในแอป)
+   ════════════════════════════════════════════════════════════ */
+
+// URL ของ Web app (Apps Script) — ดูวิธีติดตั้งใน google-apps-script/POS-README.md
+const DEFAULT_API_URL = '';
+
+// พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
+const DEFAULT_BRANCH_QR = {
+  'ตลาดทรัพย์พัฒนา': { promptpayId: '', shopName: 'หม่าล่าหน้าแดง', qrImage: '' },
+  'แบริ่ง':          { promptpayId: '', shopName: 'หม่าล่าหน้าแดง', qrImage: '' }
+};
+
+const STICK_PRICES = [10, 15];               // ราคาไม้ (บาท/ไม้)
+const MAMA_PRICES  = [10, 15, 20, 35, 45];   // ราคามาม่า (บาท/ห่อ)
+
+// ส่วนลด: ครบทุก ๆ 10 ไม้ ลด 5 บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
+const DISCOUNT = { perSticks: 10, baht: 5 };
+
+const SOUPS  = ['น้ำใส', 'กระดูกหมูดั้งเดิม', 'กระดูกหมูหม่าล่า', 'หม่าล่านม', 'น้ำดำ', 'น้ำดำหม่าล่า', 'ไม่เอาซุป'];
+const SPICES = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดกลาง', 'เผ็ดมาก', 'เผ็ดพิเศษ'];
+const SAUCES = ['งา', 'สุกี้', 'ไม่เอาน้ำจิ้ม'];
+
+/* ════════════════════════════════════════════════════════════
+   ค่าที่เก็บในเครื่อง (localStorage)
+   ════════════════════════════════════════════════════════════ */
+const LS = {
+  settings: 'pos_settings',
+  pending:  'pos_pending_orders'
+};
+
+function loadSettings() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS.settings) || '{}'); } catch (e) {}
+  const branches = {};
+  Object.keys(DEFAULT_BRANCH_QR).forEach(b => branches[b] = Object.assign({}, DEFAULT_BRANCH_QR[b]));
+  Object.keys(saved.branches || {}).forEach(b => branches[b] = Object.assign(branches[b] || { shopName: 'หม่าล่าหน้าแดง' }, saved.branches[b]));
+  return { apiUrl: saved.apiUrl || DEFAULT_API_URL, branches };
+}
+let settings = loadSettings();
+function apiUrl() { return (settings.apiUrl || '').trim(); }
+
+/* ════════════════════════════════════════════════════════════
+   สถานะออเดอร์
+   ════════════════════════════════════════════════════════════ */
+const order = {
+  sticks: {},   // ราคาไม้ -> จำนวน
+  mama:   {},   // ราคามาม่า -> จำนวน
+  soup:   'น้ำใส',
+  spice:  'เผ็ดกลาง',
+  sauce:  'งา',
+  method: ''
+};
+STICK_PRICES.forEach(p => order.sticks[p] = 0);
+MAMA_PRICES.forEach(p => order.mama[p] = 0);
+
+function totals() {
+  let stickCount = 0, stickAmount = 0, mamaCount = 0, mamaAmount = 0;
+  STICK_PRICES.forEach(p => { stickCount += order.sticks[p]; stickAmount += order.sticks[p] * p; });
+  MAMA_PRICES.forEach(p => { mamaCount += order.mama[p]; mamaAmount += order.mama[p] * p; });
+
+  // นับเฉพาะจำนวนไม้ — มาม่าไม่นับเข้าส่วนลด
+  const discountUnits = Math.floor(stickCount / DISCOUNT.perSticks);
+  const discount = discountUnits * DISCOUNT.baht;
+  const subtotal = stickAmount + mamaAmount;
+  return {
+    stickCount, stickAmount, mamaCount, mamaAmount,
+    subtotal, discountUnits, discount,
+    total: Math.max(0, subtotal - discount)
+  };
+}
+
+/* ════════════════════════════════════════════════════════════
+   วาดหน้าเครื่องคิดเลข
+   ════════════════════════════════════════════════════════════ */
+function renderStickGrid() {
+  document.getElementById('stick-grid').innerHTML = STICK_PRICES.map(p => `
+    <div class="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-sm font-semibold text-gray-500">ไม้ละ ${p}฿</span>
+        <span class="text-xs text-gray-400 digits" id="stick-sub-${p}">0 ฿</span>
+      </div>
+      <button onclick="openKeypad('stick',${p})" class="key w-full text-center text-5xl font-bold text-gray-900 digits py-1 rounded-xl hover:bg-gray-50" id="stick-num-${p}">0</button>
+      <div class="grid grid-cols-4 gap-1.5 mt-2">
+        <button onclick="addStick(${p},-1)" class="key py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold text-lg">−</button>
+        <button onclick="addStick(${p},1)" class="key py-2.5 rounded-lg bg-red-500 text-white font-bold text-lg">+</button>
+        <button onclick="addStick(${p},5)" class="key py-2.5 rounded-lg bg-red-50 text-red-600 font-semibold text-sm">+5</button>
+        <button onclick="addStick(${p},10)" class="key py-2.5 rounded-lg bg-red-50 text-red-600 font-semibold text-sm">+10</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderMamaGrid() {
+  document.getElementById('mama-grid').innerHTML = MAMA_PRICES.map(p => `
+    <div class="bg-white rounded-2xl p-2 shadow-sm border border-gray-100 text-center">
+      <button onclick="addMama(${p},1)" class="key w-full rounded-xl py-2 hover:bg-orange-50">
+        <div class="text-xs text-gray-400">มาม่า</div>
+        <div class="text-2xl font-bold text-gray-800 digits">${p}<span class="text-sm text-gray-400">฿</span></div>
+      </button>
+      <div class="flex items-center gap-1 mt-1">
+        <button onclick="addMama(${p},-1)" class="key flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 font-bold">−</button>
+        <button onclick="openKeypad('mama',${p})" class="key w-9 py-2 rounded-lg bg-orange-50 text-orange-700 font-bold digits" id="mama-num-${p}">0</button>
+        <button onclick="addMama(${p},1)" class="key flex-1 py-2 rounded-lg bg-orange-500 text-white font-bold">+</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderChips(containerId, options, field) {
+  document.getElementById(containerId).innerHTML = options.map(o => `
+    <button onclick="pick('${field}','${o}')" data-opt="${o}"
+      class="chip key px-3.5 py-2 rounded-xl text-sm text-gray-600">${o}</button>`).join('');
+}
+
+function refreshChips() {
+  [['soup-chips', 'soup'], ['spice-chips', 'spice'], ['sauce-chips', 'sauce']].forEach(([id, field]) => {
+    document.querySelectorAll('#' + id + ' .chip').forEach(el => {
+      el.classList.toggle('on', el.dataset.opt === order[field]);
+    });
+  });
+}
+
+function pick(field, value) { order[field] = value; refreshChips(); }
+
+function addStick(price, delta) {
+  order.sticks[price] = Math.max(0, order.sticks[price] + delta);
+  refresh();
+}
+function addMama(price, delta) {
+  order.mama[price] = Math.max(0, order.mama[price] + delta);
+  refresh();
+}
+
+function refresh() {
+  const t = totals();
+  STICK_PRICES.forEach(p => {
+    document.getElementById('stick-num-' + p).textContent = order.sticks[p];
+    document.getElementById('stick-sub-' + p).textContent = (order.sticks[p] * p).toLocaleString('th-TH') + ' ฿';
+  });
+  MAMA_PRICES.forEach(p => {
+    const el = document.getElementById('mama-num-' + p);
+    el.textContent = order.mama[p];
+    el.classList.toggle('bg-orange-500', order.mama[p] > 0);
+    el.classList.toggle('text-white', order.mama[p] > 0);
+  });
+
+  document.getElementById('stick-count').textContent = t.stickCount;
+  document.getElementById('mama-count').textContent = t.mamaCount;
+  document.getElementById('sum-subtotal').textContent = t.subtotal.toLocaleString('th-TH') + ' ฿';
+  document.getElementById('sum-total').innerHTML = t.total.toLocaleString('th-TH') + '<span class="text-2xl font-semibold text-gray-400"> ฿</span>';
+
+  const dRow = document.getElementById('sum-discount-row');
+  if (t.discount > 0) {
+    dRow.classList.remove('hidden');
+    dRow.classList.add('flex');
+    document.getElementById('sum-discount-label').textContent =
+      'ส่วนลด ' + DISCOUNT.perSticks + ' ไม้' + (t.discountUnits > 1 ? ' × ' + t.discountUnits : '');
+    document.getElementById('sum-discount').textContent = '-' + t.discount.toLocaleString('th-TH') + ' ฿';
+  } else {
+    dRow.classList.add('hidden');
+    dRow.classList.remove('flex');
+  }
+
+  // บอกให้รู้ว่าอีกกี่ไม้ถึงจะได้ส่วนลดเพิ่ม
+  const hint = document.getElementById('discount-hint');
+  const need = (DISCOUNT.perSticks - (t.stickCount % DISCOUNT.perSticks)) % DISCOUNT.perSticks;
+  if (t.stickCount > 0 && need > 0) {
+    hint.textContent = 'อีก ' + need + ' ไม้ ลดเพิ่ม ' + DISCOUNT.baht + ' บาท';
+    hint.className = 'mt-2 text-center text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-xl py-2 px-3';
+  } else if (t.discount > 0) {
+    hint.textContent = '✓ ครบ ' + t.discountUnits * DISCOUNT.perSticks + ' ไม้ — ลดให้ ' + t.discount + ' บาท';
+    hint.className = 'mt-2 text-center text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl py-2 px-3';
+  } else {
+    hint.className = 'hidden';
+  }
+
+  document.getElementById('btn-pay').disabled = t.total <= 0;
+}
+
+function clearOrder() {
+  STICK_PRICES.forEach(p => order.sticks[p] = 0);
+  MAMA_PRICES.forEach(p => order.mama[p] = 0);
+  refresh();
+}
+
+function newOrder() {
+  clearOrder();
+  order.soup = 'น้ำใส'; order.spice = 'เผ็ดกลาง'; order.sauce = 'งา'; order.method = '';
+  refreshChips();
+  clearInterval(countdownTimer);
+  showScreen('cart');
+}
+
+/* ════════════════════════════════════════════════════════════
+   Keypad
+   ════════════════════════════════════════════════════════════ */
+let keypadTarget = null, keypadBuffer = '';
+
+document.getElementById('keypad-keys').innerHTML =
+  ['1','2','3','4','5','6','7','8','9','C','0','⌫'].map(k => `
+    <button onclick="keypadPress('${k}')" class="key py-4 rounded-xl text-2xl font-bold ${k === 'C' || k === '⌫' ? 'bg-gray-100 text-gray-500' : 'bg-gray-50 text-gray-800'}">${k}</button>`).join('');
+
+function openKeypad(kind, price) {
+  keypadTarget = { kind, price };
+  keypadBuffer = '';
+  document.getElementById('keypad-label').textContent =
+    kind === 'stick' ? ('จำนวนไม้ (ไม้ละ ' + price + '฿)') : ('จำนวนมาม่า ' + price + '฿');
+  document.getElementById('keypad-value').textContent = (kind === 'stick' ? order.sticks : order.mama)[price];
+  document.getElementById('keypad').classList.remove('hidden');
+}
+function keypadPress(k) {
+  if (k === 'C') keypadBuffer = '';
+  else if (k === '⌫') keypadBuffer = keypadBuffer.slice(0, -1);
+  else if (keypadBuffer.length < 4) keypadBuffer += k;
+  document.getElementById('keypad-value').textContent = keypadBuffer === '' ? '0' : String(parseInt(keypadBuffer, 10));
+}
+function applyKeypad() {
+  if (keypadTarget) {
+    const v = keypadBuffer === '' ? 0 : parseInt(keypadBuffer, 10);
+    if (keypadTarget.kind === 'stick') order.sticks[keypadTarget.price] = v;
+    else order.mama[keypadTarget.price] = v;
+    refresh();
+  }
+  closeKeypad();
+}
+function closeKeypad() {
+  keypadTarget = null;
+  document.getElementById('keypad').classList.add('hidden');
+}
+
+/* ════════════════════════════════════════════════════════════
+   สลับหน้า
+   ════════════════════════════════════════════════════════════ */
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function goPayment() {
+  const t = totals();
+  if (t.total <= 0) return;
+  document.getElementById('pay-total').innerHTML = t.total.toLocaleString('th-TH') + '<span class="text-3xl text-gray-400"> ฿</span>';
+  const parts = [];
+  if (t.stickCount) parts.push(t.stickCount + ' ไม้');
+  if (t.mamaCount) parts.push('มาม่า ' + t.mamaCount + ' ห่อ');
+  if (t.discount) parts.push('ลด ' + t.discount + ' ฿');
+  document.getElementById('pay-summary').textContent = parts.join(' · ');
+  showScreen('pay');
+}
+
+function choosePayment(method) {
+  order.method = method;
+  if (method === 'สแกน/โอนผ่านธนาคาร') {
+    const t = totals();
+    document.getElementById('amount-total').innerHTML = t.total.toLocaleString('th-TH') + '<span class="text-3xl text-blue-300"> ฿</span>';
+    document.getElementById('amount-branch').textContent = auth.branch || '—';
+    showScreen('amount');
+  } else {
+    confirmPaid();   // เงินสด / ไทยช่วยไทย — กดแล้วขึ้นว่ามีเงินเข้าเลย
+  }
+}
+
+/* ── QR รับเงินของสาขา ── */
+function goQR() {
+  const t = totals();
+  const branch = auth.branch || '';
+  const conf = settings.branches[branch] || {};
+  document.getElementById('qr-shop').textContent = conf.shopName || 'หม่าล่าหน้าแดง';
+  document.getElementById('qr-branch').textContent = branch || '—';
+  document.getElementById('qr-total').innerHTML = t.total.toLocaleString('th-TH') + '<span class="text-2xl text-gray-400"> ฿</span>';
+
+  const err = document.getElementById('qr-error');
+  const holder = document.getElementById('qr-holder');
+  const img = document.getElementById('qr-image');
+  err.classList.add('hidden'); holder.classList.remove('hidden'); img.classList.add('hidden');
+
+  if (conf.qrImage) {
+    // สาขาที่ใช้ QR ของธนาคาร/ร้านค้าเป็นรูปภาพ (ลูกค้าต้องพิมพ์ยอดเอง)
+    img.src = conf.qrImage;
+    img.classList.remove('hidden');
+    holder.classList.add('hidden');
+  } else if (conf.promptpayId) {
+    try {
+      const payload = PromptPay.payload(conf.promptpayId, t.total);
+      QRCodeGen.renderCanvas(document.getElementById('qr-canvas'), payload, { level: 'M', size: 560, quiet: 3 });
+    } catch (e) {
+      holder.classList.add('hidden');
+      err.textContent = 'สร้าง QR ไม่สำเร็จ: ' + e.message;
+      err.classList.remove('hidden');
+    }
+  } else {
+    holder.classList.add('hidden');
+    err.innerHTML = 'ยังไม่ได้ตั้งค่าพร้อมเพย์ของสาขา <b>' + (branch || '-') + '</b><br>กดปุ่ม ⚙️ ด้านบนเพื่อใส่เบอร์พร้อมเพย์';
+    err.classList.remove('hidden');
+  }
+  showScreen('qr');
+}
+
+/* ════════════════════════════════════════════════════════════
+   บันทึกการขาย
+   ════════════════════════════════════════════════════════════ */
+let countdownTimer = null;
+
+function confirmPaid() {
+  const t = totals();
+  const now = new Date();
+  const record = {
+    orderId:   'POS' + now.getTime(),
+    datetime:  now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false }),
+    date:      isoDate(now),
+    branch:    auth.branch || '',
+    staff:     auth.name || '',
+    sticks:    STICK_PRICES.map(p => ({ price: p, qty: order.sticks[p] })),
+    stickCount: t.stickCount,
+    stickAmount: t.stickAmount,
+    mama:      MAMA_PRICES.map(p => ({ price: p, qty: order.mama[p] })),
+    mamaCount: t.mamaCount,
+    mamaAmount: t.mamaAmount,
+    subtotal:  t.subtotal,
+    discount:  t.discount,
+    total:     t.total,
+    soup:      order.soup,
+    spice:     order.spice,
+    sauce:     order.sauce,
+    method:    order.method
+  };
+
+  document.getElementById('success-total').textContent = t.total.toLocaleString('th-TH') + ' ฿';
+  document.getElementById('success-method').textContent = order.method;
+  document.getElementById('success-order').textContent = '—';
+  document.getElementById('success-sync').textContent = 'กำลังบันทึกลง Google Sheets...';
+  document.getElementById('success-sync').className = 'text-xs mt-2 pt-2 border-t border-gray-100 text-gray-400';
+  showScreen('success');
+  startCountdown();
+  saveOrder(record);
+}
+
+function startCountdown() {
+  let left = 5;
+  document.getElementById('success-countdown').textContent = left;
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    left--;
+    document.getElementById('success-countdown').textContent = left;
+    if (left <= 0) { clearInterval(countdownTimer); newOrder(); }
+  }, 1000);
+}
+
+async function saveOrder(record) {
+  const sync = document.getElementById('success-sync');
+  try {
+    const json = await postApi({ action: 'posOrder', token: auth.token, order: record });
+    if (json && json.success) {
+      document.getElementById('success-order').textContent = json.orderNo || record.orderId;
+      sync.textContent = '✓ บันทึกลง Google Sheets แล้ว';
+      sync.className = 'text-xs mt-2 pt-2 border-t border-gray-100 text-emerald-600';
+      flushPending();
+      return;
+    }
+    throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
+  } catch (e) {
+    queuePending(record);
+    sync.textContent = '⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเน็ตกลับมา';
+    sync.className = 'text-xs mt-2 pt-2 border-t border-gray-100 text-amber-600';
+  }
+}
+
+/* ── คิวออเดอร์ที่ยังส่งไม่ขึ้น (เน็ตหลุด) ── */
+function getPending() {
+  try { return JSON.parse(localStorage.getItem(LS.pending) || '[]'); } catch (e) { return []; }
+}
+function setPending(list) {
+  localStorage.setItem(LS.pending, JSON.stringify(list));
+  const n = list.length;
+  document.getElementById('pending-badge').classList.toggle('hidden', n === 0);
+  document.getElementById('pending-count').textContent = n;
+}
+function queuePending(record) { const l = getPending(); l.push(record); setPending(l); }
+
+async function flushPending() {
+  const list = getPending();
+  if (!list.length || !auth.token) return;
+  const remain = [];
+  for (const rec of list) {
+    try {
+      const json = await postApi({ action: 'posOrder', token: auth.token, order: rec });
+      if (!json || !json.success) remain.push(rec);
+    } catch (e) { remain.push(rec); }
+  }
+  setPending(remain);
+  if (list.length && !remain.length) toast('ส่งออเดอร์ที่ค้างไว้ ' + list.length + ' รายการขึ้น Sheets แล้ว', 'ok');
+}
+
+/* ════════════════════════════════════════════════════════════
+   เชื่อมต่อ Apps Script
+   ════════════════════════════════════════════════════════════ */
+async function postApi(body) {
+  if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Google Apps Script');
+  const res = await fetch(apiUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(body)
+  });
+  const json = await res.json();
+  if (json && json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
+  return json;
+}
+
+/* ════════════════════════════════════════════════════════════
+   Login
+   ════════════════════════════════════════════════════════════ */
+const auth = { token: '', name: '', branch: '' };
+
+function readAuth() {
+  auth.token  = sessionStorage.getItem('pos_token')  || '';
+  auth.name   = sessionStorage.getItem('pos_name')   || '';
+  auth.branch = sessionStorage.getItem('pos_branch') || '';
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  errEl.style.display = 'none';
+
+  if (!apiUrl()) {
+    errEl.textContent = 'ยังไม่ได้ตั้งค่า URL ของ Apps Script — กด ⚙️ ด้านล่าง';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!username || !password) {
+    errEl.textContent = 'กรุณากรอก Username และ Password';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="login-spinner"></span> กำลังตรวจสอบ...';
+  try {
+    const data = await postApi({ action: 'login', username, password });
+    if (data.success) {
+      sessionStorage.setItem('pos_token', data.token);
+      sessionStorage.setItem('pos_name', data.name);
+      sessionStorage.setItem('pos_branch', data.branch);
+      showApp();
+    } else {
+      errEl.textContent = data.message || 'Login ไม่สำเร็จ';
+      errEl.style.display = 'block';
+      document.getElementById('login-password').value = '';
+    }
+  } catch (e) {
+    errEl.textContent = 'เชื่อมต่อ Server ไม่ได้: ' + e.message;
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'เข้าสู่ระบบ';
+}
+
+function doLogout() {
+  const token = sessionStorage.getItem('pos_token');
+  sessionStorage.removeItem('pos_token');
+  sessionStorage.removeItem('pos_name');
+  sessionStorage.removeItem('pos_branch');
+  if (token && apiUrl()) {
+    fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
+  }
+  readAuth();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+}
+
+function showApp() {
+  readAuth();
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('hdr-branch').textContent = auth.branch || '—';
+  document.getElementById('hdr-name').textContent = auth.name || '—';
+  setPending(getPending());
+  flushPending();
+  newOrder();
+}
+
+/* ════════════════════════════════════════════════════════════
+   ตั้งค่า
+   ════════════════════════════════════════════════════════════ */
+function openSettings() {
+  document.getElementById('set-api').value = settings.apiUrl || '';
+  const branches = Object.keys(settings.branches);
+  document.getElementById('set-branches').innerHTML = branches.map((b, i) => `
+    <div class="border border-gray-100 rounded-xl p-3 bg-gray-50">
+      <div class="font-semibold text-gray-700 text-sm mb-2">📍 ${b}</div>
+      <label class="block text-xs text-gray-500 mb-1">พร้อมเพย์ (เบอร์ / เลขบัตร / เลขผู้เสียภาษี)</label>
+      <input class="login-input mb-2 set-pp" data-branch="${b}" value="${settings.branches[b].promptpayId || ''}" placeholder="08xxxxxxxx" inputmode="numeric">
+      <label class="block text-xs text-gray-500 mb-1">ชื่อร้านที่แสดงบนหน้า QR</label>
+      <input class="login-input mb-2 set-shop" data-branch="${b}" value="${settings.branches[b].shopName || ''}" placeholder="หม่าล่าหน้าแดง">
+      <label class="block text-xs text-gray-500 mb-1">หรือใช้รูป QR ของสาขา (ใส่ลิงก์รูป — ลูกค้าต้องพิมพ์ยอดเอง)</label>
+      <input class="login-input set-img" data-branch="${b}" value="${settings.branches[b].qrImage || ''}" placeholder="https://...">
+    </div>`).join('');
+  document.getElementById('settings').classList.remove('hidden');
+}
+
+function saveSettings() {
+  const branches = {};
+  document.querySelectorAll('.set-pp').forEach(el => {
+    const b = el.dataset.branch;
+    branches[b] = branches[b] || {};
+    branches[b].promptpayId = el.value.trim();
+  });
+  document.querySelectorAll('.set-shop').forEach(el => {
+    const b = el.dataset.branch;
+    branches[b] = branches[b] || {};
+    branches[b].shopName = el.value.trim();
+  });
+  document.querySelectorAll('.set-img').forEach(el => {
+    const b = el.dataset.branch;
+    branches[b] = branches[b] || {};
+    branches[b].qrImage = el.value.trim();
+  });
+  localStorage.setItem(LS.settings, JSON.stringify({
+    apiUrl: document.getElementById('set-api').value.trim(),
+    branches
+  }));
+  settings = loadSettings();
+  closeSettings();
+  toast('บันทึกการตั้งค่าแล้ว', 'ok');
+}
+
+function closeSettings() { document.getElementById('settings').classList.add('hidden'); }
+
+/* ════════════════════════════════════════════════════════════
+   Utils
+   ════════════════════════════════════════════════════════════ */
+function isoDate(d) {
+  const bkk = new Date(d.getTime() + (d.getTimezoneOffset() + 420) * 60000);
+  return bkk.getFullYear() + '-' + String(bkk.getMonth() + 1).padStart(2, '0') + '-' + String(bkk.getDate()).padStart(2, '0');
+}
+
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-xl shadow-lg text-white font-medium text-sm ' +
+    (kind === 'ok' ? 'bg-emerald-500' : kind === 'warn' ? 'bg-amber-500' : 'bg-gray-800');
+  setTimeout(() => el.classList.add('hidden'), 2600);
+  el.classList.remove('hidden');
+}
+
+/* ════════════════════════════════════════════════════════════
+   เริ่มทำงาน
+   ════════════════════════════════════════════════════════════ */
+renderStickGrid();
+renderMamaGrid();
+renderChips('soup-chips', SOUPS, 'soup');
+renderChips('spice-chips', SPICES, 'spice');
+renderChips('sauce-chips', SAUCES, 'sauce');
+refreshChips();
+refresh();
+
+readAuth();
+if (auth.token) showApp();
+else document.getElementById('login-page').style.display = 'flex';
+
+window.addEventListener('online', flushPending);
+</script>
+</body>
+</html>

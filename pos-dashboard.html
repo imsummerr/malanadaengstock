@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>สรุปยอดขาย — POS หม่าล่าหน้าแดง</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    body { box-sizing: border-box; }
+    .fade-in { animation: fadeIn 0.25s ease-out; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .spinner { border:3px solid #f3f3f3; border-top:3px solid #ef4444; border-radius:50%; width:24px; height:24px; animation:spin 0.8s linear infinite; display:inline-block; }
+    .login-spinner { border:2px solid rgba(255,255,255,0.3); border-top:2px solid white; border-radius:50%;
+      width:18px; height:18px; animation:spin 0.8s linear infinite; display:inline-block; vertical-align:middle; margin-right:6px; }
+    @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+
+    #login-page { min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,#fef2f2 0%,#fff7ed 50%,#fefce8 100%); padding:1rem; }
+    .login-card { background:white; border-radius:1.5rem; padding:2.5rem 2rem; width:100%; max-width:380px;
+      box-shadow:0 20px 60px rgba(239,68,68,0.15), 0 4px 20px rgba(0,0,0,0.08); }
+    .login-input { width:100%; padding:0.875rem 1rem; border:2px solid #e5e7eb; border-radius:0.75rem;
+      font-size:1rem; font-family:'Sarabun',sans-serif; transition:all 0.2s; box-sizing:border-box; }
+    .login-input:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.1); }
+    .login-btn { width:100%; padding:0.875rem; background:linear-gradient(135deg,#ef4444,#dc2626); color:white;
+      border:none; border-radius:0.75rem; font-size:1rem; font-weight:600; font-family:'Sarabun',sans-serif;
+      cursor:pointer; box-shadow:0 4px 12px rgba(239,68,68,0.4); }
+    .login-btn:disabled { opacity:0.7; cursor:not-allowed; }
+
+    /* ── สีของกราฟ (ผ่านการตรวจ contrast / ตาบอดสีแล้ว) ── */
+    .viz {
+      --surface:      #ffffff;
+      --grid:         #ececeb;
+      --axis:         #d5d5d3;
+      --text-primary: #1f2937;
+      --text-muted:   #8a8a86;
+      --revenue:      #2a78d6;   /* น้ำเงิน — ยอดขาย */
+      --soup:         #1baf7a;   /* เขียวอมฟ้า — น้ำซุป */
+      --spice:        #eb6834;   /* ส้ม — ความเผ็ด */
+      --payment:      #4a3aa7;   /* ม่วง — วิธีจ่าย */
+    }
+    .bar { transition: opacity .12s ease; }
+    .bar:hover { opacity: .82; }
+    .tick { font-size: 11px; fill: var(--text-muted); }
+    .val  { font-size: 12px; fill: var(--text-primary); font-weight: 600; }
+    .cat  { font-size: 12.5px; fill: var(--text-primary); }
+    #tip { pointer-events:none; }
+    .seg { display:none; }
+    .seg.on { display:block; }
+    .tabbtn.on { background:#dc2626; color:#fff; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 min-h-screen">
+
+<!-- ══════════ Login ══════════ -->
+<div id="login-page">
+  <div class="login-card fade-in">
+    <div style="text-align:center;margin-bottom:1.75rem;">
+      <div style="width:72px;height:72px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:1.25rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;box-shadow:0 8px 24px rgba(239,68,68,0.35);">
+        <span style="font-size:2rem;">📊</span>
+      </div>
+      <h1 style="font-size:1.4rem;font-weight:700;color:#1f2937;margin:0 0 0.25rem;">สรุปยอดขาย</h1>
+      <p style="font-size:0.875rem;color:#9ca3af;margin:0;">POS หม่าล่าหน้าแดง</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div>
+        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Username</label>
+        <input type="text" id="login-username" class="login-input" placeholder="กรอก username"
+          onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+      </div>
+      <div>
+        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Password</label>
+        <input type="password" id="login-password" class="login-input" placeholder="กรอก password"
+          onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <div id="login-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:0.5rem;padding:0.75rem 1rem;color:#dc2626;font-size:0.875rem;text-align:center;"></div>
+      <button onclick="doLogin()" id="login-btn" class="login-btn">เข้าสู่ระบบ</button>
+      <a href="pos.html" style="text-align:center;color:#9ca3af;font-size:0.8rem;text-decoration:none;">← กลับไปหน้าคิดเงิน</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ Dashboard ══════════ -->
+<div id="app" style="display:none;">
+  <div class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-red-100">
+    <div class="max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-3">
+      <div class="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow shrink-0">
+        <span class="text-xl">📊</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="font-bold text-gray-800 leading-tight">สรุปยอดขาย</div>
+        <div class="text-xs text-gray-500 truncate" id="hdr-sub">—</div>
+      </div>
+      <a href="pos.html" class="text-xs bg-red-500 text-white px-3 py-2 rounded-lg font-medium whitespace-nowrap">🧮 คิดเงิน</a>
+      <button onclick="doLogout()" class="text-gray-400 hover:text-red-500 px-1.5 py-1 text-lg" title="ออกจากระบบ">⏻</button>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-4 py-4">
+
+    <!-- ตัวกรอง -->
+    <div class="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 mb-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap gap-1.5" id="range-tabs"></div>
+        <div class="flex items-center gap-1.5 ml-auto">
+          <input type="date" id="f-from" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="customRange()">
+          <span class="text-gray-400 text-sm">ถึง</span>
+          <input type="date" id="f-to" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="customRange()">
+          <select id="f-branch" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="loadStats()">
+            <option value="">ทุกสาขา</option>
+          </select>
+          <button onclick="loadStats()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">🔄</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading" class="hidden text-center py-16"><div class="spinner mx-auto mb-3"></div><p class="text-gray-500">กำลังโหลดข้อมูล...</p></div>
+    <div id="error-box" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-center mb-4"></div>
+
+    <div id="content" class="hidden">
+      <!-- KPI -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4" id="kpi"></div>
+
+      <div id="empty" class="hidden bg-white rounded-2xl p-10 text-center text-gray-400 border border-gray-100 shadow-sm">
+        ยังไม่มีออเดอร์ในช่วงเวลานี้
+      </div>
+
+      <div id="charts" class="viz space-y-4">
+        <!-- ยอดขายรายวัน -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div class="flex items-baseline justify-between mb-1">
+            <h2 class="font-bold text-gray-800">ยอดขายรายวัน</h2>
+            <span class="text-xs text-gray-400">หน่วย: บาท</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background:var(--revenue)"></span> ยอดขายสุทธิ
+          </div>
+          <div id="chart-daily"></div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+          <!-- น้ำซุป -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h2 class="font-bold text-gray-800 mb-0.5">น้ำซุปที่ลูกค้าสั่งมากที่สุด</h2>
+            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+            <div id="chart-soup"></div>
+          </div>
+          <!-- ความเผ็ด -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h2 class="font-bold text-gray-800 mb-0.5">ระดับความเผ็ด</h2>
+            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+            <div id="chart-spice"></div>
+          </div>
+          <!-- วิธีจ่าย -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h2 class="font-bold text-gray-800 mb-0.5">วิธีชำระเงิน</h2>
+            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+            <div id="chart-method"></div>
+          </div>
+          <!-- น้ำจิ้ม -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h2 class="font-bold text-gray-800 mb-0.5">น้ำจิ้ม</h2>
+            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+            <div id="chart-sauce"></div>
+          </div>
+        </div>
+
+        <!-- ตาราง -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div class="flex items-baseline justify-between mb-3">
+            <h2 class="font-bold text-gray-800">ตารางสรุปรายวัน</h2>
+            <button onclick="downloadCsv()" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">⬇ ดาวน์โหลด CSV</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm" id="daily-table"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tip" class="hidden fixed z-50 bg-gray-900 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-lg"></div>
+
+<script>
+/* ════════════════════════════════════════════════
+   ตั้งค่า — ใช้ URL เดียวกับหน้า pos.html
+   ════════════════════════════════════════════════ */
+const DEFAULT_API_URL = '';
+
+function apiUrl() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('pos_settings') || '{}'); } catch (e) {}
+  return (s.apiUrl || DEFAULT_API_URL || '').trim();
+}
+
+const auth = { token: '', name: '', branch: '' };
+function readAuth() {
+  auth.token  = sessionStorage.getItem('pos_token')  || '';
+  auth.name   = sessionStorage.getItem('pos_name')   || '';
+  auth.branch = sessionStorage.getItem('pos_branch') || '';
+}
+
+let stats = null;
+let range = { key: 'today', from: '', to: '' };
+
+/* ════════════════════════════════════════════════
+   ช่วงเวลา
+   ════════════════════════════════════════════════ */
+const RANGES = [
+  { key: 'today', label: 'วันนี้' },
+  { key: '7',     label: '7 วันล่าสุด' },
+  { key: '30',    label: '30 วันล่าสุด' },
+  { key: 'month', label: 'เดือนนี้' },
+  { key: 'all',   label: 'ทั้งหมด' }
+];
+
+function bkkToday() {
+  const d = new Date();
+  const bkk = new Date(d.getTime() + (d.getTimezoneOffset() + 420) * 60000);
+  return bkk;
+}
+function fmtDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function shiftDays(d, n) { const x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
+
+function setRange(key) {
+  range.key = key;
+  const today = bkkToday();
+  if (key === 'today')      { range.from = fmtDate(today); range.to = fmtDate(today); }
+  else if (key === '7')     { range.from = fmtDate(shiftDays(today, -6)); range.to = fmtDate(today); }
+  else if (key === '30')    { range.from = fmtDate(shiftDays(today, -29)); range.to = fmtDate(today); }
+  else if (key === 'month') { range.from = fmtDate(new Date(today.getFullYear(), today.getMonth(), 1)); range.to = fmtDate(today); }
+  else if (key === 'all')   { range.from = '2000-01-01'; range.to = '2999-12-31'; }
+  document.getElementById('f-from').value = range.from === '2000-01-01' ? '' : range.from;
+  document.getElementById('f-to').value   = range.to === '2999-12-31' ? '' : range.to;
+  renderRangeTabs();
+  loadStats();
+}
+
+function customRange() {
+  const f = document.getElementById('f-from').value;
+  const t = document.getElementById('f-to').value;
+  if (!f || !t) return;
+  range = { key: 'custom', from: f, to: t };
+  renderRangeTabs();
+  loadStats();
+}
+
+function renderRangeTabs() {
+  document.getElementById('range-tabs').innerHTML = RANGES.map(r => `
+    <button onclick="setRange('${r.key}')"
+      class="tabbtn text-sm px-3 py-1.5 rounded-lg border border-gray-200 ${range.key === r.key ? 'on' : 'bg-white text-gray-600'}">${r.label}</button>`).join('');
+}
+
+/* ════════════════════════════════════════════════
+   โหลดข้อมูล
+   ════════════════════════════════════════════════ */
+async function loadStats() {
+  if (!auth.token) return;
+  const box = document.getElementById('error-box');
+  box.classList.add('hidden');
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('content').classList.add('hidden');
+
+  try {
+    if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (ปุ่ม ⚙️)');
+    const url = apiUrl() + '?action=posStats&token=' + encodeURIComponent(auth.token)
+      + '&from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to)
+      + '&branch=' + encodeURIComponent(document.getElementById('f-branch').value);
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.code === 401) { doLogout(); return; }
+    if (!json.success) throw new Error(json.message || 'โหลดข้อมูลไม่สำเร็จ');
+    stats = json.data;
+    render();
+    document.getElementById('content').classList.remove('hidden');
+  } catch (e) {
+    box.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + e.message;
+    box.classList.remove('hidden');
+  } finally {
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+/* ════════════════════════════════════════════════
+   วาดหน้า
+   ════════════════════════════════════════════════ */
+const baht = n => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+function render() {
+  // เติมรายชื่อสาขาในตัวกรอง (ครั้งเดียว)
+  const sel = document.getElementById('f-branch');
+  if (sel.options.length <= 1 && (stats.branches || []).length) {
+    stats.branches.forEach(b => sel.add(new Option(b, b)));
+  }
+  document.getElementById('hdr-sub').textContent =
+    (range.key === 'all' ? 'ทั้งหมด' : range.from + ' ถึง ' + range.to) + ' · ' + auth.name;
+
+  document.getElementById('kpi').innerHTML = [
+    ['ออเดอร์', stats.orders.toLocaleString('th-TH'), 'บิล', '🧾'],
+    ['ยอดขายสุทธิ', baht(stats.revenue), 'บาท', '💰'],
+    ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈'],
+    ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢'],
+    ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁']
+  ].map(([label, value, unit, icon]) => `
+    <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100">
+      <div class="text-xs text-gray-400 mb-1">${icon} ${label}</div>
+      <div class="text-2xl font-bold text-gray-900 leading-none">${value}<span class="text-xs font-medium text-gray-400"> ${unit}</span></div>
+    </div>`).join('');
+
+  const isEmpty = !stats.orders;
+  document.getElementById('empty').classList.toggle('hidden', !isEmpty);
+  document.getElementById('charts').classList.toggle('hidden', isEmpty);
+  if (isEmpty) return;
+
+  drawDaily(stats.byDate);
+  drawRanked('chart-soup',   stats.soup,   'var(--soup)',    'ออเดอร์');
+  drawRanked('chart-spice',  stats.spice,  'var(--spice)',   'ออเดอร์');
+  drawRanked('chart-method', stats.method, 'var(--payment)', 'ออเดอร์', stats.methodRevenue);
+  drawRanked('chart-sauce',  stats.sauce,  'var(--revenue)', 'ออเดอร์');
+  drawTable(stats.byDate);
+}
+
+/* ── กราฟแท่งแนวตั้ง: ยอดขายรายวัน ── */
+function drawDaily(rows) {
+  const el = document.getElementById('chart-daily');
+  if (!rows.length) { el.innerHTML = '<p class="text-gray-400 text-sm py-6 text-center">ไม่มีข้อมูล</p>'; return; }
+
+  const W = 760, H = 240, padL = 52, padR = 12, padT = 14, padB = 34;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const max = Math.max.apply(null, rows.map(r => r.revenue)) || 1;
+  const niceMax = niceCeil(max);
+  const slot = innerW / rows.length;
+  const bw = Math.max(4, Math.min(46, slot - 8));   // แท่งบาง เว้นช่องระหว่างแท่ง
+
+  let grid = '', bars = '', labels = '';
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = niceMax * i / ticks;
+    const y = padT + innerH - (v / niceMax) * innerH;
+    grid += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`
+         +  `<text class="tick" x="${padL - 8}" y="${y + 4}" text-anchor="end">${shortNum(v)}</text>`;
+  }
+  rows.forEach((r, i) => {
+    const h = (r.revenue / niceMax) * innerH;
+    const x = padL + slot * i + (slot - bw) / 2;
+    const y = padT + innerH - h;
+    bars += `<path class="bar" d="${roundedTopBar(x, y, bw, h, 4)}" fill="var(--revenue)"
+              data-tip="${r.date} · ${baht(r.revenue)} ฿ · ${r.orders} บิล"></path>`;
+    // แสดงวันที่แบบไม่ให้ทับกัน
+    const step = Math.ceil(rows.length / 12);
+    if (i % step === 0 || i === rows.length - 1) {
+      labels += `<text class="tick" x="${x + bw / 2}" y="${H - 12}" text-anchor="middle">${r.date.slice(5).replace('-', '/')}</text>`;
+    }
+  });
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" style="max-height:260px">
+    ${grid}${bars}
+    <line x1="${padL}" x2="${W - padR}" y1="${padT + innerH}" y2="${padT + innerH}" stroke="var(--axis)" stroke-width="1"/>
+    ${labels}
+  </svg>`;
+  attachTips(el);
+}
+
+/* ── กราฟแท่งแนวนอน เรียงมาก→น้อย ── */
+function drawRanked(elId, counts, color, unit, extraMoney) {
+  const el = document.getElementById(elId);
+  const rows = Object.keys(counts || {})
+    .map(k => ({ key: k, value: counts[k] }))
+    .sort((a, b) => b.value - a.value);
+  if (!rows.length) { el.innerHTML = '<p class="text-gray-400 text-sm py-6 text-center">ไม่มีข้อมูล</p>'; return; }
+
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  const max = rows[0].value || 1;
+  const rowH = 34, W = 540, labelW = 172, valueW = 78;
+  const H = rows.length * rowH + 6;
+  const barMax = W - labelW - valueW;
+
+  const body = rows.map((r, i) => {
+    const y = i * rowH + 6;
+    const w = Math.max(3, (r.value / max) * barMax);
+    const pct = total ? Math.round(r.value / total * 100) : 0;
+    const money = extraMoney && extraMoney[r.key] ? ' · ' + baht(extraMoney[r.key]) + ' ฿' : '';
+    return `
+      <text class="cat" x="0" y="${y + 15}">${escapeHtml(clip(r.key, 22))}</text>
+      <rect x="${labelW}" y="${y + 3}" width="${barMax}" height="17" rx="4" fill="var(--grid)"/>
+      <path class="bar" d="${roundedRightBar(labelW, y + 3, w, 17, 4)}" fill="${color}"
+        data-tip="${escapeHtml(r.key)} · ${r.value} ${unit} (${pct}%)${money}"></path>
+      <text class="val" x="${labelW + barMax + 8}" y="${y + 16}">${r.value.toLocaleString('th-TH')}
+        <tspan class="tick">(${pct}%)</tspan></text>`;
+  }).join('');
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto">${body}</svg>`;
+  attachTips(el);
+}
+
+function drawTable(rows) {
+  const t = document.getElementById('daily-table');
+  const sorted = rows.slice().sort((a, b) => b.date.localeCompare(a.date));
+  t.innerHTML = `
+    <thead><tr class="text-left text-gray-400 border-b border-gray-100">
+      <th class="py-2 pr-3 font-medium whitespace-nowrap">วันที่</th>
+      <th class="py-2 px-3 font-medium text-right">ออเดอร์</th>
+      <th class="py-2 px-3 font-medium text-right">ไม้</th>
+      <th class="py-2 px-3 font-medium text-right">ยอดขาย (฿)</th>
+      <th class="py-2 pl-3 font-medium text-right">เฉลี่ย/บิล (฿)</th>
+    </tr></thead>
+    <tbody>${sorted.map(r => `
+      <tr class="border-b border-gray-50">
+        <td class="py-2 pr-3 whitespace-nowrap">${r.date}</td>
+        <td class="py-2 px-3 text-right">${r.orders.toLocaleString('th-TH')}</td>
+        <td class="py-2 px-3 text-right">${r.sticks.toLocaleString('th-TH')}</td>
+        <td class="py-2 px-3 text-right font-semibold">${baht(r.revenue)}</td>
+        <td class="py-2 pl-3 text-right">${baht(r.orders ? r.revenue / r.orders : 0)}</td>
+      </tr>`).join('')}
+    </tbody>`;
+}
+
+function downloadCsv() {
+  if (!stats) return;
+  const lines = [['วันที่', 'ออเดอร์', 'ไม้', 'ยอดขาย', 'เฉลี่ยต่อบิล'].join(',')];
+  stats.byDate.forEach(r => lines.push([r.date, r.orders, r.sticks, r.revenue, r.orders ? (r.revenue / r.orders).toFixed(2) : 0].join(',')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ยอดขาย_' + range.from + '_ถึง_' + range.to + '.csv';
+  a.click();
+}
+
+/* ── helper ── */
+function roundedTopBar(x, y, w, h, r) {
+  if (h <= 0.5) return `M${x} ${y + h} h${w}`;
+  r = Math.min(r, w / 2, h);
+  return `M${x} ${y + h} V${y + r} q0 ${-r} ${r} ${-r} h${w - 2 * r} q${r} 0 ${r} ${r} V${y + h} Z`;
+}
+function roundedRightBar(x, y, w, h, r) {
+  r = Math.min(r, w, h / 2);
+  return `M${x} ${y} h${w - r} q${r} 0 ${r} ${r} v${h - 2 * r} q0 ${r} ${-r} ${r} h${-(w - r)} Z`;
+}
+function niceCeil(v) {
+  if (v <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  return Math.ceil(v / mag * 2) / 2 * mag;
+}
+function shortNum(v) {
+  if (v >= 1000000) return (v / 1000000).toFixed(v % 1000000 ? 1 : 0) + 'ล.';
+  if (v >= 1000) return (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'พ.';
+  return String(Math.round(v));
+}
+function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function attachTips(root) {
+  const tip = document.getElementById('tip');
+  root.querySelectorAll('[data-tip]').forEach(node => {
+    node.addEventListener('mouseenter', ev => {
+      tip.textContent = node.getAttribute('data-tip');
+      tip.classList.remove('hidden');
+      moveTip(ev);
+    });
+    node.addEventListener('mousemove', moveTip);
+    node.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+  });
+  function moveTip(ev) {
+    const tip = document.getElementById('tip');
+    tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, ev.clientX + 12) + 'px';
+    tip.style.top = Math.max(8, ev.clientY - 34) + 'px';
+  }
+}
+
+/* ════════════════════════════════════════════════
+   Login
+   ════════════════════════════════════════════════ */
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  errEl.style.display = 'none';
+
+  if (!apiUrl()) {
+    errEl.textContent = 'ยังไม่ได้ตั้งค่า URL ของ Apps Script — ตั้งค่าที่หน้าคิดเงินก่อน';
+    errEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="login-spinner"></span> กำลังตรวจสอบ...';
+  try {
+    const res = await fetch(apiUrl(), {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'login', username, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      sessionStorage.setItem('pos_token', data.token);
+      sessionStorage.setItem('pos_name', data.name);
+      sessionStorage.setItem('pos_branch', data.branch);
+      showApp();
+    } else {
+      errEl.textContent = data.message || 'Login ไม่สำเร็จ';
+      errEl.style.display = 'block';
+    }
+  } catch (e) {
+    errEl.textContent = 'เชื่อมต่อ Server ไม่ได้';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'เข้าสู่ระบบ';
+}
+
+function doLogout() {
+  const token = sessionStorage.getItem('pos_token');
+  sessionStorage.removeItem('pos_token');
+  sessionStorage.removeItem('pos_name');
+  sessionStorage.removeItem('pos_branch');
+  if (token && apiUrl()) {
+    fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
+  }
+  readAuth();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+}
+
+function showApp() {
+  readAuth();
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  setRange('today');
+}
+
+readAuth();
+renderRangeTabs();
+if (auth.token) showApp();
+else document.getElementById('login-page').style.display = 'flex';
+</script>
+</body>
+</html>
