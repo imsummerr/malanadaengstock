@@ -25,8 +25,12 @@ var ORDER_HEADERS = [
   'ไม้ 10฿', 'ไม้ 15฿', 'รวมไม้', 'ยอดไม้',
   'มาม่า 10฿', 'มาม่า 15฿', 'มาม่า 20฿', 'มาม่า 35฿', 'มาม่า 45฿', 'รวมมาม่า', 'ยอดมาม่า',
   'ยอดรวม', 'ส่วนลด', 'ยอดสุทธิ',
-  'น้ำซุป', 'ความเผ็ด', 'น้ำจิ้ม', 'วิธีชำระเงิน', 'order_id'
+  'น้ำซุป', 'ความเผ็ด',
+  'น้ำจิ้มงา', 'น้ำจิ้มสุกี้', 'รวมน้ำจิ้ม',
+  'วิธีชำระเงิน', 'order_id'
 ];
+
+var SAUCES = ['งา', 'สุกี้'];   // น้ำจิ้มที่แถมให้ นับเป็นถ้วย
 
 // ══════════════════════════════════════════════════════════════
 //  ติดตั้งครั้งแรก — รันฟังก์ชันนี้ 1 ครั้ง
@@ -44,17 +48,18 @@ function setupPos() {
 
   var users = getOrCreateSheet_(ss, SHEET_USERS);
   if (users.getLastRow() === 0) {
-    users.appendRow(['username', 'password', 'ชื่อ', 'สาขา', 'ใช้งาน']);
-    users.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+    users.appendRow(['username', 'password', 'ชื่อ', 'สาขา', 'ใช้งาน', 'สิทธิ์']);
+    users.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
     users.setFrozenRows(1);
-    users.appendRow(['admin', '1234', 'ผู้จัดการ', 'ตลาดทรัพย์พัฒนา', 'ใช่']);
-    users.appendRow(['baring', '1234', 'พนักงานแบริ่ง', 'แบริ่ง', 'ใช่']);
+    users.appendRow(['owner', '1234', 'เจ้าของร้าน', 'ตลาดทรัพย์พัฒนา', 'ใช่', 'เจ้าของ']);
+    users.appendRow(['staff1', '1234', 'พนักงานตลาดทรัพย์ฯ', 'ตลาดทรัพย์พัฒนา', 'ใช่', 'พนักงาน']);
+    users.appendRow(['staff2', '1234', 'พนักงานแบริ่ง', 'แบริ่ง', 'ใช่', 'พนักงาน']);
   }
 
   var sessions = getOrCreateSheet_(ss, SHEET_SESSIONS);
   if (sessions.getLastRow() === 0) {
-    sessions.appendRow(['token', 'username', 'ชื่อ', 'สาขา', 'เวลา login', 'ใช้งานล่าสุด']);
-    sessions.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#e5e7eb');
+    sessions.appendRow(['token', 'username', 'ชื่อ', 'สาขา', 'เวลา login', 'ใช้งานล่าสุด', 'สิทธิ์']);
+    sessions.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e5e7eb');
     sessions.setFrozenRows(1);
   }
 
@@ -124,12 +129,27 @@ function handleLogin_(body) {
 
     var token = Utilities.getUuid();
     var now = new Date();
+    var role = roleOf_(r[5]);
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SESSIONS)
-      .appendRow([token, r[0], r[2], r[3], now, now]);
+      .appendRow([token, r[0], r[2], r[3], now, now, role]);
     cleanOldSessions_();
-    return { success: true, token: token, name: String(r[2] || r[0]), branch: String(r[3] || '') };
+    return {
+      success: true, token: token,
+      name: String(r[2] || r[0]), branch: String(r[3] || ''), role: role
+    };
   }
   return { success: false, message: 'Username หรือ Password ไม่ถูกต้อง' };
+}
+
+/**
+ * สิทธิ์การใช้งาน — ใส่ในชีตผู้ใช้งานคอลัมน์ "สิทธิ์"
+ * "เจ้าของ" (หรือ owner/admin/แอดมิน) = เห็นปุ่มตั้งค่าและหน้าสรุปยอด
+ * ค่าอื่น ๆ หรือเว้นว่าง = พนักงาน คิดเงินได้อย่างเดียว
+ */
+function roleOf_(value) {
+  var v = String(value || '').trim().toLowerCase();
+  var owners = ['เจ้าของ', 'เจ้าของร้าน', 'owner', 'admin', 'แอดมิน', 'ผู้จัดการ', 'manager'];
+  return owners.indexOf(v) >= 0 ? 'owner' : 'staff';
 }
 
 /** รองรับทั้งรหัสผ่านธรรมดา และแบบเข้ารหัส (ใส่ในชีตเป็น sha256:<hex>) */
@@ -171,7 +191,10 @@ function checkToken_(token) {
     var created = new Date(rows[i][4]);
     if ((new Date() - created) > SESSION_HOURS * 3600 * 1000) { sheet.deleteRow(i + 1); return null; }
     sheet.getRange(i + 1, 6).setValue(new Date());
-    return { username: rows[i][1], name: rows[i][2], branch: rows[i][3] };
+    return {
+      username: rows[i][1], name: rows[i][2], branch: rows[i][3],
+      role: rows[i][6] === 'owner' ? 'owner' : 'staff'
+    };
   }
   return null;
 }
@@ -210,6 +233,9 @@ function handleOrder_(body) {
     var mamaQty = {}; MAMA_PRICES.forEach(function (p) { mamaQty[p] = 0; });
     (o.mama || []).forEach(function (m) { mamaQty[m.price] = Number(m.qty) || 0; });
 
+    var sauceQty = {}; SAUCES.forEach(function (n) { sauceQty[n] = 0; });
+    (o.sauce || []).forEach(function (x) { sauceQty[x.name] = Number(x.qty) || 0; });
+
     var row = [
       Utilities.formatDate(now, TZ, 'yyyy-MM-dd'),
       Utilities.formatDate(now, TZ, 'HH:mm:ss'),
@@ -222,7 +248,9 @@ function handleOrder_(body) {
     MAMA_PRICES.forEach(function (p) { row.push(mamaQty[p]); });
     row.push(Number(o.mamaCount) || 0, Number(o.mamaAmount) || 0);
     row.push(Number(o.subtotal) || 0, Number(o.discount) || 0, Number(o.total) || 0);
-    row.push(o.soup || '', o.spice || '', o.sauce || '', o.method || '', o.orderId || '');
+    row.push(o.soup || '', o.spice || '');
+    SAUCES.forEach(function (n) { row.push(sauceQty[n]); });
+    row.push(Number(o.sauceCount) || 0, o.method || '', o.orderId || '');
 
     var orderNo = nextOrderNo_(sheet, row[0]);
     row[2] = orderNo;
@@ -262,6 +290,9 @@ function findOrderRow_(sheet, orderId) {
 function handleStats_(p) {
   var session = checkToken_(p.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (session.role !== 'owner') {
+    return { success: false, code: 403, message: 'หน้าสรุปยอดสำหรับเจ้าของร้านเท่านั้น' };
+  }
 
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ORDERS);
   if (!sheet || sheet.getLastRow() < 2) return { success: true, data: emptyStats_() };
@@ -295,8 +326,14 @@ function handleStats_(p) {
 
     bump_(stats.soup,   r[idx['น้ำซุป']]);
     bump_(stats.spice,  r[idx['ความเผ็ด']]);
-    bump_(stats.sauce,  r[idx['น้ำจิ้ม']]);
     bump_(stats.method, r[idx['วิธีชำระเงิน']]);
+
+    // น้ำจิ้มนับเป็น "ถ้วยที่ให้ไป" ไม่ใช่จำนวนออเดอร์
+    SAUCES.forEach(function (name) {
+      var qty = num_(r[idx['น้ำจิ้ม' + name]]);
+      if (qty > 0) addTo_(stats.sauce, name, qty);
+      stats.sauceCups += qty;
+    });
     bump_(stats.branch, r[idx['สาขา']]);
     addTo_(stats.methodRevenue, r[idx['วิธีชำระเงิน']], total);
 
@@ -314,7 +351,7 @@ function handleStats_(p) {
 
 function emptyStats_() {
   return {
-    orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, avgTicket: 0,
+    orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };

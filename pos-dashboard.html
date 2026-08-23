@@ -72,7 +72,8 @@
 
     /* ── KPI ── */
     .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
-    @media (min-width: 760px) { .kpis { grid-template-columns: repeat(5, 1fr); } }
+    @media (min-width: 760px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 1000px) { .kpis { grid-template-columns: repeat(6, 1fr); } }
     .kpi { padding: 13px; }
     .kpi .label { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
     .kpi .value { font-size: 25px; font-weight: 800; line-height: 1; }
@@ -232,8 +233,8 @@
             <div id="chart-method"></div>
           </div>
           <div class="card chart-card">
-            <h2>น้ำจิ้ม</h2>
-            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+            <h2>น้ำจิ้มที่ให้ไป</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนถ้วย)</p>
             <div id="chart-sauce"></div>
           </div>
         </div>
@@ -346,6 +347,11 @@ async function loadStats() {
     const res = await fetch(url);
     const json = await res.json();
     if (json.code === 401) { doLogout(); return; }
+    if (json.code === 403) {
+      box.innerHTML = '🔒 <b>หน้านี้สำหรับเจ้าของร้านเท่านั้น</b><br>บัญชีพนักงานใช้ได้เฉพาะหน้าคิดเงิน';
+      box.classList.remove('hidden');
+      return;
+    }
     if (!json.success) throw new Error(json.message || 'โหลดข้อมูลไม่สำเร็จ');
     stats = json.data;
     render();
@@ -376,7 +382,8 @@ function render() {
     ['ยอดขายสุทธิ', baht(stats.revenue), 'บาท', '💰', ' hero'],
     ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈', ''],
     ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢', ''],
-    ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', '']
+    ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', ''],
+    ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', '']
   ].map(([label, value, unit, icon, extra]) => `
     <div class="card kpi${extra}">
       <div class="label">${icon} ${label}</div>
@@ -392,7 +399,7 @@ function render() {
   drawRanked('chart-soup',   stats.soup,   'ออเดอร์');
   drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
   drawRanked('chart-method', stats.method, 'ออเดอร์', stats.methodRevenue);
-  drawRanked('chart-sauce',  stats.sauce,  'ออเดอร์');
+  drawRanked('chart-sauce',  stats.sauce,  'ถ้วย');
   drawTable(stats.byDate);
 }
 
@@ -643,10 +650,11 @@ function demoStats() {
     sticks: sticks,
     mama: Math.round(orders * 0.35),
     discount: Math.round(sticks / 10) * 5,
+    sauceCups: Math.round(orders * 1.13),
     avgTicket: Math.round(revenue / orders * 100) / 100,
     soup:   share({ 'กระดูกหมูหม่าล่า': .32, 'น้ำใส': .24, 'หม่าล่านม': .16, 'กระดูกหมูดั้งเดิม': .12, 'น้ำดำหม่าล่า': .08, 'น้ำดำ': .06, 'ไม่เอาซุป': .02 }, orders),
     spice:  share({ 'เผ็ดกลาง': .40, 'เผ็ดน้อย': .26, 'ไม่เผ็ด': .18, 'เผ็ดมาก': .13, 'เผ็ดพิเศษ': .03 }, orders),
-    sauce:  share({ 'งา': .57, 'สุกี้': .33, 'ไม่เอาน้ำจิ้ม': .10 }, orders),
+    sauce:  share({ 'งา': .72, 'สุกี้': .41 }, orders),   // ถ้วยต่อออเดอร์โดยเฉลี่ย
     method: share({ 'สแกน/โอนผ่านธนาคาร': .52, 'เงินสด': .40, 'ไทยช่วยไทย': .08 }, orders),
     methodRevenue: share({ 'สแกน/โอนผ่านธนาคาร': .54, 'เงินสด': .38, 'ไทยช่วยไทย': .08 }, revenue),
     branch: {},
