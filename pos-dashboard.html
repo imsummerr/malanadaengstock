@@ -4,184 +4,248 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>สรุปยอดขาย — POS หม่าล่าหน้าแดง</title>
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Sarabun', sans-serif; }
-    body { box-sizing: border-box; }
-    .fade-in { animation: fadeIn 0.25s ease-out; }
-    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-    .spinner { border:3px solid #f3f3f3; border-top:3px solid #ef4444; border-radius:50%; width:24px; height:24px; animation:spin 0.8s linear infinite; display:inline-block; }
-    .login-spinner { border:2px solid rgba(255,255,255,0.3); border-top:2px solid white; border-radius:50%;
-      width:18px; height:18px; animation:spin 0.8s linear infinite; display:inline-block; vertical-align:middle; margin-right:6px; }
-    @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-
-    #login-page { min-height:100vh; display:flex; align-items:center; justify-content:center;
-      background:linear-gradient(135deg,#fef2f2 0%,#fff7ed 50%,#fefce8 100%); padding:1rem; }
-    .login-card { background:white; border-radius:1.5rem; padding:2.5rem 2rem; width:100%; max-width:380px;
-      box-shadow:0 20px 60px rgba(239,68,68,0.15), 0 4px 20px rgba(0,0,0,0.08); }
-    .login-input { width:100%; padding:0.875rem 1rem; border:2px solid #e5e7eb; border-radius:0.75rem;
-      font-size:1rem; font-family:'Sarabun',sans-serif; transition:all 0.2s; box-sizing:border-box; }
-    .login-input:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.1); }
-    .login-btn { width:100%; padding:0.875rem; background:linear-gradient(135deg,#ef4444,#dc2626); color:white;
-      border:none; border-radius:0.75rem; font-size:1rem; font-weight:600; font-family:'Sarabun',sans-serif;
-      cursor:pointer; box-shadow:0 4px 12px rgba(239,68,68,0.4); }
-    .login-btn:disabled { opacity:0.7; cursor:not-allowed; }
-
-    /* ── สีของกราฟ (ผ่านการตรวจ contrast / ตาบอดสีแล้ว) ── */
-    .viz {
-      --surface:      #ffffff;
-      --grid:         #ececeb;
-      --axis:         #d5d5d3;
-      --text-primary: #1f2937;
-      --text-muted:   #8a8a86;
-      --revenue:      #2a78d6;   /* น้ำเงิน — ยอดขาย */
-      --soup:         #1baf7a;   /* เขียวอมฟ้า — น้ำซุป */
-      --spice:        #eb6834;   /* ส้ม — ความเผ็ด */
-      --payment:      #4a3aa7;   /* ม่วง — วิธีจ่าย */
+    /* ══════════ โทนสี ดำ · แดง · ขาว ══════════ */
+    :root {
+      --ink:      #0d0d0f;
+      --ink-2:    #1c1c20;
+      --ink-soft: #4a4a52;
+      --muted:    #8e8e97;
+      --line:     #e7e7ea;
+      --paper:    #ffffff;
+      --bg:       #f3f3f4;
+      --red:      #e11d2f;
+      --red-dark: #b3121f;
+      --red-soft: #fff1f2;
+      --track:    #ececee;
+      --radius:   16px;
+      --shadow:   0 1px 2px rgba(13,13,15,.05), 0 8px 24px rgba(13,13,15,.06);
     }
+
+    * { box-sizing: border-box; font-family: 'Sarabun', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); min-height: 100vh; }
+    .digits { font-variant-numeric: tabular-nums; letter-spacing: -.4px; }
+    .hidden { display: none !important; }
+    .fade-in { animation: fadeIn .25s ease-out; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes spin { to { transform: rotate(360deg) } }
+    .spinner { width:26px; height:26px; border:3px solid var(--line); border-top-color: var(--red); border-radius:50%;
+               display:inline-block; animation:spin .8s linear infinite; }
+    .spinner-sm { width:18px; height:18px; border:2px solid #ffffff55; border-top-color:#fff; border-radius:50%;
+                  display:inline-block; vertical-align:-3px; margin-right:8px; animation:spin .8s linear infinite; }
+
+    button, input, select { font-family: inherit; }
+    .key { transition: transform .08s ease, background .15s ease, border-color .15s ease, color .15s ease; cursor: pointer; }
+    .key:active { transform: scale(.96); }
+    .btn-red { background: var(--red); color: #fff; border: none; font-weight: 700; border-radius: 12px; }
+    .btn-red:hover:not(:disabled) { background: var(--red-dark); }
+    .btn-red:disabled { opacity: .7; cursor: not-allowed; }
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+
+    /* ── หัวจอ ── */
+    .topbar { position: sticky; top: 0; z-index: 30; background: var(--ink); color: #fff; }
+    .topbar-inner { max-width: 1000px; margin: 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    .logo { width: 38px; height: 38px; border-radius: 11px; background: var(--red); display: grid; place-items: center; font-size: 19px; flex: none; }
+    .topbar .title { font-weight: 800; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar .sub { font-size: 12px; color: #a9a9b2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .icon-btn { background: #ffffff14; color: #fff; border: none; border-radius: 10px; padding: 9px 10px; font-size: 15px; line-height: 1; }
+    .icon-btn:hover { background: #ffffff26; }
+    .chip-link { background: var(--red); color: #fff; text-decoration: none; font-size: 12.5px; font-weight: 700;
+                 padding: 9px 12px; border-radius: 10px; white-space: nowrap; }
+    .chip-link:hover { background: var(--red-dark); }
+
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 14px; }
+
+    /* ── ตัวกรอง ── */
+    .filters { padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tabbtn { background: #fff; border: 1.5px solid var(--line); color: var(--ink-soft); border-radius: 10px;
+              padding: 8px 13px; font-size: 13.5px; font-weight: 600; }
+    .tabbtn:hover { border-color: var(--ink); }
+    .tabbtn.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .filter-right { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+    .inp { border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 9px; font-size: 13.5px; background: #fff; color: var(--ink); }
+    .inp:focus { outline: none; border-color: var(--red); }
+    .sep { color: var(--muted); font-size: 13px; }
+
+    /* ── KPI ── */
+    .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+    @media (min-width: 760px) { .kpis { grid-template-columns: repeat(5, 1fr); } }
+    .kpi { padding: 13px; }
+    .kpi .label { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .kpi .value { font-size: 25px; font-weight: 800; line-height: 1; }
+    .kpi .value small { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .kpi.hero { background: var(--ink); border-color: var(--ink); }
+    .kpi.hero .label { color: #a9a9b2; }
+    .kpi.hero .value { color: #fff; }
+    .kpi.hero .value small { color: #a9a9b2; }
+
+    /* ── การ์ดกราฟ ── */
+    .charts { display: flex; flex-direction: column; gap: 14px; }
+    .chart-card { padding: 16px; }
+    .chart-card h2 { font-size: 15.5px; font-weight: 800; margin: 0; }
+    .chart-card .sub { font-size: 12px; color: var(--muted); margin: 3px 0 12px; }
+    .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; background: var(--red); display: inline-block; }
+    .grid-2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 760px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+
     .bar { transition: opacity .12s ease; }
     .bar:hover { opacity: .82; }
-    .tick { font-size: 11px; fill: var(--text-muted); }
-    .val  { font-size: 12px; fill: var(--text-primary); font-weight: 600; }
-    .cat  { font-size: 12.5px; fill: var(--text-primary); }
-    #tip { pointer-events:none; }
-    .seg { display:none; }
-    .seg.on { display:block; }
-    .tabbtn.on { background:#dc2626; color:#fff; }
+    .tick { font-size: 11px; fill: var(--muted); }
+    .val  { font-size: 12px; fill: var(--ink); font-weight: 700; }
+    .cat  { font-size: 12.5px; fill: var(--ink); }
+    .empty-note { text-align: center; color: var(--muted); font-size: 13.5px; padding: 22px 0; }
+
+    /* ── ตาราง ── */
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th { text-align: right; font-weight: 600; color: var(--muted); padding: 8px 10px; border-bottom: 1.5px solid var(--line); white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    td { padding: 9px 10px; border-bottom: 1px solid #f2f2f4; text-align: right; white-space: nowrap; }
+    tbody tr:hover { background: #fafafb; }
+    td.money { font-weight: 700; }
+
+    .mini-btn { background: #fff; border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 11px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+    .mini-btn:hover { border-color: var(--ink); }
+
+    .alert { background: var(--red-soft); border: 1px solid #fecdd3; color: var(--red-dark); border-radius: 12px;
+             padding: 14px; text-align: center; font-size: 13.5px; margin-bottom: 14px; }
+    .loading-box { text-align: center; padding: 60px 0; color: var(--muted); font-size: 13.5px; }
+
+    /* ── Login ── */
+    #login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+                  background: radial-gradient(1200px 600px at 50% -10%, #2c2c33 0%, var(--ink) 58%); }
+    .login-card { background: #fff; border-radius: 22px; padding: 34px 26px; width: 100%; max-width: 380px;
+                  box-shadow: 0 30px 70px rgba(0,0,0,.45); }
+    .login-logo { width: 68px; height: 68px; border-radius: 19px; background: var(--red); display: grid; place-items: center;
+                  margin: 0 auto 14px; font-size: 30px; box-shadow: 0 10px 26px rgba(225,29,47,.4); }
+    .login-input { width: 100%; padding: 13px 14px; border: 2px solid var(--line); border-radius: 12px; font-size: 15px; }
+    .login-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(225,29,47,.13); }
+    .field-label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .login-error { background: var(--red-soft); border: 1px solid #fecdd3; color: var(--red-dark); border-radius: 10px;
+                   padding: 11px 14px; font-size: 13.5px; text-align: center; }
+    .link { color: var(--muted); font-size: 12.5px; text-decoration: none; text-align: center; display: block; }
+
+    #tip { position: fixed; z-index: 50; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600;
+           border-radius: 9px; padding: 7px 10px; pointer-events: none; box-shadow: var(--shadow); }
   </style>
 </head>
-<body class="bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 min-h-screen">
+<body>
 
 <!-- ══════════ Login ══════════ -->
 <div id="login-page">
   <div class="login-card fade-in">
-    <div style="text-align:center;margin-bottom:1.75rem;">
-      <div style="width:72px;height:72px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:1.25rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;box-shadow:0 8px 24px rgba(239,68,68,0.35);">
-        <span style="font-size:2rem;">📊</span>
-      </div>
-      <h1 style="font-size:1.4rem;font-weight:700;color:#1f2937;margin:0 0 0.25rem;">สรุปยอดขาย</h1>
-      <p style="font-size:0.875rem;color:#9ca3af;margin:0;">POS หม่าล่าหน้าแดง</p>
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="login-logo">📊</div>
+      <h1 style="font-size:22px;font-weight:800;margin:0 0 4px;">สรุปยอดขาย</h1>
+      <p style="font-size:13.5px;color:var(--muted);margin:0;">POS หม่าล่าหน้าแดง</p>
     </div>
-    <div style="display:flex;flex-direction:column;gap:1rem;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
       <div>
-        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Username</label>
+        <label class="field-label">Username</label>
         <input type="text" id="login-username" class="login-input" placeholder="กรอก username"
           onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
       </div>
       <div>
-        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:0.5rem;">Password</label>
+        <label class="field-label">Password</label>
         <input type="password" id="login-password" class="login-input" placeholder="กรอก password"
           onkeydown="if(event.key==='Enter') doLogin()">
       </div>
-      <div id="login-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:0.5rem;padding:0.75rem 1rem;color:#dc2626;font-size:0.875rem;text-align:center;"></div>
-      <button onclick="doLogin()" id="login-btn" class="login-btn">เข้าสู่ระบบ</button>
-      <a href="pos.html" style="text-align:center;color:#9ca3af;font-size:0.8rem;text-decoration:none;">← กลับไปหน้าคิดเงิน</a>
+      <div id="login-error" class="login-error hidden"></div>
+      <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
+      <a href="pos.html" class="link">← กลับไปหน้าคิดเงิน</a>
     </div>
   </div>
 </div>
 
 <!-- ══════════ Dashboard ══════════ -->
-<div id="app" style="display:none;">
-  <div class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-red-100">
-    <div class="max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-3">
-      <div class="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow shrink-0">
-        <span class="text-xl">📊</span>
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">📊</div>
+      <div style="min-width:0;flex:1;">
+        <div class="title">สรุปยอดขาย</div>
+        <div class="sub" id="hdr-sub">—</div>
       </div>
-      <div class="min-w-0 flex-1">
-        <div class="font-bold text-gray-800 leading-tight">สรุปยอดขาย</div>
-        <div class="text-xs text-gray-500 truncate" id="hdr-sub">—</div>
-      </div>
-      <a href="pos.html" class="text-xs bg-red-500 text-white px-3 py-2 rounded-lg font-medium whitespace-nowrap">🧮 คิดเงิน</a>
-      <button onclick="doLogout()" class="text-gray-400 hover:text-red-500 px-1.5 py-1 text-lg" title="ออกจากระบบ">⏻</button>
+      <a href="pos.html" class="key chip-link">🧮 คิดเงิน</a>
+      <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
   </div>
 
-  <div class="max-w-5xl mx-auto px-4 py-4">
-
-    <!-- ตัวกรอง -->
-    <div class="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 mb-4">
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex flex-wrap gap-1.5" id="range-tabs"></div>
-        <div class="flex items-center gap-1.5 ml-auto">
-          <input type="date" id="f-from" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="customRange()">
-          <span class="text-gray-400 text-sm">ถึง</span>
-          <input type="date" id="f-to" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="customRange()">
-          <select id="f-branch" class="text-sm border-2 border-gray-200 rounded-lg px-2 py-1.5" onchange="loadStats()">
-            <option value="">ทุกสาขา</option>
-          </select>
-          <button onclick="loadStats()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">🔄</button>
-        </div>
+  <div class="wrap">
+    <div class="card filters">
+      <div class="tabs" id="range-tabs"></div>
+      <div class="filter-right">
+        <input type="date" id="f-from" class="inp" onchange="customRange()">
+        <span class="sep">ถึง</span>
+        <input type="date" id="f-to" class="inp" onchange="customRange()">
+        <select id="f-branch" class="inp" onchange="loadStats()"><option value="">ทุกสาขา</option></select>
+        <button onclick="loadStats()" class="key mini-btn">🔄</button>
       </div>
     </div>
 
-    <div id="loading" class="hidden text-center py-16"><div class="spinner mx-auto mb-3"></div><p class="text-gray-500">กำลังโหลดข้อมูล...</p></div>
-    <div id="error-box" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-center mb-4"></div>
+    <div id="loading" class="loading-box hidden"><div class="spinner"></div><div style="margin-top:10px;">กำลังโหลดข้อมูล...</div></div>
+    <div id="error-box" class="alert hidden"></div>
 
     <div id="content" class="hidden">
-      <!-- KPI -->
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4" id="kpi"></div>
+      <div class="kpis" id="kpi"></div>
 
-      <div id="empty" class="hidden bg-white rounded-2xl p-10 text-center text-gray-400 border border-gray-100 shadow-sm">
+      <div id="empty" class="card hidden" style="padding:44px;text-align:center;color:var(--muted);">
         ยังไม่มีออเดอร์ในช่วงเวลานี้
       </div>
 
-      <div id="charts" class="viz space-y-4">
-        <!-- ยอดขายรายวัน -->
-        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <div class="flex items-baseline justify-between mb-1">
-            <h2 class="font-bold text-gray-800">ยอดขายรายวัน</h2>
-            <span class="text-xs text-gray-400">หน่วย: บาท</span>
-          </div>
-          <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
-            <span class="inline-block w-3 h-3 rounded-sm" style="background:var(--revenue)"></span> ยอดขายสุทธิ
+      <div id="charts" class="charts">
+        <div class="card chart-card">
+          <div class="chart-head">
+            <div>
+              <h2>ยอดขายรายวัน</h2>
+              <p class="sub">หน่วย: บาท</p>
+            </div>
+            <span class="legend"><span class="swatch"></span> ยอดขายสุทธิ</span>
           </div>
           <div id="chart-daily"></div>
         </div>
 
-        <div class="grid md:grid-cols-2 gap-4">
-          <!-- น้ำซุป -->
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <h2 class="font-bold text-gray-800 mb-0.5">น้ำซุปที่ลูกค้าสั่งมากที่สุด</h2>
-            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+        <div class="grid-2">
+          <div class="card chart-card">
+            <h2>น้ำซุปที่ลูกค้าสั่งมากที่สุด</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-soup"></div>
           </div>
-          <!-- ความเผ็ด -->
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <h2 class="font-bold text-gray-800 mb-0.5">ระดับความเผ็ด</h2>
-            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+          <div class="card chart-card">
+            <h2>ระดับความเผ็ด</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-spice"></div>
           </div>
-          <!-- วิธีจ่าย -->
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <h2 class="font-bold text-gray-800 mb-0.5">วิธีชำระเงิน</h2>
-            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+          <div class="card chart-card">
+            <h2>วิธีชำระเงิน</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-method"></div>
           </div>
-          <!-- น้ำจิ้ม -->
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <h2 class="font-bold text-gray-800 mb-0.5">น้ำจิ้ม</h2>
-            <p class="text-xs text-gray-400 mb-3">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
+          <div class="card chart-card">
+            <h2>น้ำจิ้ม</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-sauce"></div>
           </div>
         </div>
 
-        <!-- ตาราง -->
-        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <div class="flex items-baseline justify-between mb-3">
-            <h2 class="font-bold text-gray-800">ตารางสรุปรายวัน</h2>
-            <button onclick="downloadCsv()" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">⬇ ดาวน์โหลด CSV</button>
+        <div class="card chart-card">
+          <div class="chart-head" style="margin-bottom:12px;">
+            <h2>ตารางสรุปรายวัน</h2>
+            <button onclick="downloadCsv()" class="key mini-btn">⬇ ดาวน์โหลด CSV</button>
           </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm" id="daily-table"></table>
-          </div>
+          <div class="table-scroll"><table id="daily-table"></table></div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<div id="tip" class="hidden fixed z-50 bg-gray-900 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-lg"></div>
+<div id="tip" class="hidden"></div>
 
 <script>
 /* ════════════════════════════════════════════════
@@ -218,8 +282,7 @@ const RANGES = [
 
 function bkkToday() {
   const d = new Date();
-  const bkk = new Date(d.getTime() + (d.getTimezoneOffset() + 420) * 60000);
-  return bkk;
+  return new Date(d.getTime() + (d.getTimezoneOffset() + 420) * 60000);
 }
 function fmtDate(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -251,8 +314,7 @@ function customRange() {
 
 function renderRangeTabs() {
   document.getElementById('range-tabs').innerHTML = RANGES.map(r => `
-    <button onclick="setRange('${r.key}')"
-      class="tabbtn text-sm px-3 py-1.5 rounded-lg border border-gray-200 ${range.key === r.key ? 'on' : 'bg-white text-gray-600'}">${r.label}</button>`).join('');
+    <button onclick="setRange('${r.key}')" class="key tabbtn${range.key === r.key ? ' on' : ''}">${r.label}</button>`).join('');
 }
 
 /* ════════════════════════════════════════════════
@@ -291,7 +353,6 @@ async function loadStats() {
 const baht = n => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 
 function render() {
-  // เติมรายชื่อสาขาในตัวกรอง (ครั้งเดียว)
   const sel = document.getElementById('f-branch');
   if (sel.options.length <= 1 && (stats.branches || []).length) {
     stats.branches.forEach(b => sel.add(new Option(b, b)));
@@ -300,15 +361,15 @@ function render() {
     (range.key === 'all' ? 'ทั้งหมด' : range.from + ' ถึง ' + range.to) + ' · ' + auth.name;
 
   document.getElementById('kpi').innerHTML = [
-    ['ออเดอร์', stats.orders.toLocaleString('th-TH'), 'บิล', '🧾'],
-    ['ยอดขายสุทธิ', baht(stats.revenue), 'บาท', '💰'],
-    ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈'],
-    ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢'],
-    ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁']
-  ].map(([label, value, unit, icon]) => `
-    <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100">
-      <div class="text-xs text-gray-400 mb-1">${icon} ${label}</div>
-      <div class="text-2xl font-bold text-gray-900 leading-none">${value}<span class="text-xs font-medium text-gray-400"> ${unit}</span></div>
+    ['ออเดอร์', stats.orders.toLocaleString('th-TH'), 'บิล', '🧾', ''],
+    ['ยอดขายสุทธิ', baht(stats.revenue), 'บาท', '💰', ' hero'],
+    ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈', ''],
+    ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢', ''],
+    ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', '']
+  ].map(([label, value, unit, icon, extra]) => `
+    <div class="card kpi${extra}">
+      <div class="label">${icon} ${label}</div>
+      <div class="value digits">${value}<small> ${unit}</small></div>
     </div>`).join('');
 
   const isEmpty = !stats.orders;
@@ -317,61 +378,59 @@ function render() {
   if (isEmpty) return;
 
   drawDaily(stats.byDate);
-  drawRanked('chart-soup',   stats.soup,   'var(--soup)',    'ออเดอร์');
-  drawRanked('chart-spice',  stats.spice,  'var(--spice)',   'ออเดอร์');
-  drawRanked('chart-method', stats.method, 'var(--payment)', 'ออเดอร์', stats.methodRevenue);
-  drawRanked('chart-sauce',  stats.sauce,  'var(--revenue)', 'ออเดอร์');
+  drawRanked('chart-soup',   stats.soup,   'ออเดอร์');
+  drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
+  drawRanked('chart-method', stats.method, 'ออเดอร์', stats.methodRevenue);
+  drawRanked('chart-sauce',  stats.sauce,  'ออเดอร์');
   drawTable(stats.byDate);
 }
 
 /* ── กราฟแท่งแนวตั้ง: ยอดขายรายวัน ── */
 function drawDaily(rows) {
   const el = document.getElementById('chart-daily');
-  if (!rows.length) { el.innerHTML = '<p class="text-gray-400 text-sm py-6 text-center">ไม่มีข้อมูล</p>'; return; }
+  if (!rows.length) { el.innerHTML = '<p class="empty-note">ไม่มีข้อมูล</p>'; return; }
 
-  const W = 760, H = 240, padL = 52, padR = 12, padT = 14, padB = 34;
+  const W = 760, H = 240, padL = 54, padR = 12, padT = 14, padB = 34;
   const innerW = W - padL - padR, innerH = H - padT - padB;
-  const max = Math.max.apply(null, rows.map(r => r.revenue)) || 1;
-  const niceMax = niceCeil(max);
+  const niceMax = niceCeil(Math.max.apply(null, rows.map(r => r.revenue)) || 1);
   const slot = innerW / rows.length;
-  const bw = Math.max(4, Math.min(46, slot - 8));   // แท่งบาง เว้นช่องระหว่างแท่ง
+  const bw = Math.max(4, Math.min(46, slot - 8));   // เว้นช่องระหว่างแท่ง
 
   let grid = '', bars = '', labels = '';
   const ticks = 4;
   for (let i = 0; i <= ticks; i++) {
     const v = niceMax * i / ticks;
     const y = padT + innerH - (v / niceMax) * innerH;
-    grid += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`
+    grid += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`
          +  `<text class="tick" x="${padL - 8}" y="${y + 4}" text-anchor="end">${shortNum(v)}</text>`;
   }
+  const step = Math.ceil(rows.length / 12);
   rows.forEach((r, i) => {
     const h = (r.revenue / niceMax) * innerH;
     const x = padL + slot * i + (slot - bw) / 2;
     const y = padT + innerH - h;
-    bars += `<path class="bar" d="${roundedTopBar(x, y, bw, h, 4)}" fill="var(--revenue)"
+    bars += `<path class="bar" d="${roundedTopBar(x, y, bw, h, 4)}" fill="var(--red)"
               data-tip="${r.date} · ${baht(r.revenue)} ฿ · ${r.orders} บิล"></path>`;
-    // แสดงวันที่แบบไม่ให้ทับกัน
-    const step = Math.ceil(rows.length / 12);
     if (i % step === 0 || i === rows.length - 1) {
       labels += `<text class="tick" x="${x + bw / 2}" y="${H - 12}" text-anchor="middle">${r.date.slice(5).replace('-', '/')}</text>`;
     }
   });
 
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" style="max-height:260px">
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:260px;">
     ${grid}${bars}
-    <line x1="${padL}" x2="${W - padR}" y1="${padT + innerH}" y2="${padT + innerH}" stroke="var(--axis)" stroke-width="1"/>
+    <line x1="${padL}" x2="${W - padR}" y1="${padT + innerH}" y2="${padT + innerH}" stroke="#d5d5d9" stroke-width="1"/>
     ${labels}
   </svg>`;
   attachTips(el);
 }
 
 /* ── กราฟแท่งแนวนอน เรียงมาก→น้อย ── */
-function drawRanked(elId, counts, color, unit, extraMoney) {
+function drawRanked(elId, counts, unit, extraMoney) {
   const el = document.getElementById(elId);
   const rows = Object.keys(counts || {})
     .map(k => ({ key: k, value: counts[k] }))
     .sort((a, b) => b.value - a.value);
-  if (!rows.length) { el.innerHTML = '<p class="text-gray-400 text-sm py-6 text-center">ไม่มีข้อมูล</p>'; return; }
+  if (!rows.length) { el.innerHTML = '<p class="empty-note">ไม่มีข้อมูล</p>'; return; }
 
   const total = rows.reduce((s, r) => s + r.value, 0);
   const max = rows[0].value || 1;
@@ -386,14 +445,14 @@ function drawRanked(elId, counts, color, unit, extraMoney) {
     const money = extraMoney && extraMoney[r.key] ? ' · ' + baht(extraMoney[r.key]) + ' ฿' : '';
     return `
       <text class="cat" x="0" y="${y + 15}">${escapeHtml(clip(r.key, 22))}</text>
-      <rect x="${labelW}" y="${y + 3}" width="${barMax}" height="17" rx="4" fill="var(--grid)"/>
-      <path class="bar" d="${roundedRightBar(labelW, y + 3, w, 17, 4)}" fill="${color}"
+      <rect x="${labelW}" y="${y + 3}" width="${barMax}" height="17" rx="4" fill="var(--track)"/>
+      <path class="bar" d="${roundedRightBar(labelW, y + 3, w, 17, 4)}" fill="var(--red)"
         data-tip="${escapeHtml(r.key)} · ${r.value} ${unit} (${pct}%)${money}"></path>
       <text class="val" x="${labelW + barMax + 8}" y="${y + 16}">${r.value.toLocaleString('th-TH')}
         <tspan class="tick">(${pct}%)</tspan></text>`;
   }).join('');
 
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto">${body}</svg>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;">${body}</svg>`;
   attachTips(el);
 }
 
@@ -401,20 +460,16 @@ function drawTable(rows) {
   const t = document.getElementById('daily-table');
   const sorted = rows.slice().sort((a, b) => b.date.localeCompare(a.date));
   t.innerHTML = `
-    <thead><tr class="text-left text-gray-400 border-b border-gray-100">
-      <th class="py-2 pr-3 font-medium whitespace-nowrap">วันที่</th>
-      <th class="py-2 px-3 font-medium text-right">ออเดอร์</th>
-      <th class="py-2 px-3 font-medium text-right">ไม้</th>
-      <th class="py-2 px-3 font-medium text-right">ยอดขาย (฿)</th>
-      <th class="py-2 pl-3 font-medium text-right">เฉลี่ย/บิล (฿)</th>
+    <thead><tr>
+      <th>วันที่</th><th>ออเดอร์</th><th>ไม้</th><th>ยอดขาย (฿)</th><th>เฉลี่ย/บิล (฿)</th>
     </tr></thead>
     <tbody>${sorted.map(r => `
-      <tr class="border-b border-gray-50">
-        <td class="py-2 pr-3 whitespace-nowrap">${r.date}</td>
-        <td class="py-2 px-3 text-right">${r.orders.toLocaleString('th-TH')}</td>
-        <td class="py-2 px-3 text-right">${r.sticks.toLocaleString('th-TH')}</td>
-        <td class="py-2 px-3 text-right font-semibold">${baht(r.revenue)}</td>
-        <td class="py-2 pl-3 text-right">${baht(r.orders ? r.revenue / r.orders : 0)}</td>
+      <tr>
+        <td>${r.date}</td>
+        <td class="digits">${r.orders.toLocaleString('th-TH')}</td>
+        <td class="digits">${r.sticks.toLocaleString('th-TH')}</td>
+        <td class="digits money">${baht(r.revenue)}</td>
+        <td class="digits">${baht(r.orders ? r.revenue / r.orders : 0)}</td>
       </tr>`).join('')}
     </tbody>`;
 }
@@ -467,9 +522,8 @@ function attachTips(root) {
     node.addEventListener('mouseleave', () => tip.classList.add('hidden'));
   });
   function moveTip(ev) {
-    const tip = document.getElementById('tip');
     tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, ev.clientX + 12) + 'px';
-    tip.style.top = Math.max(8, ev.clientY - 34) + 'px';
+    tip.style.top = Math.max(8, ev.clientY - 36) + 'px';
   }
 }
 
@@ -481,15 +535,15 @@ async function doLogin() {
   const password = document.getElementById('login-password').value.trim();
   const errEl = document.getElementById('login-error');
   const btn = document.getElementById('login-btn');
-  errEl.style.display = 'none';
+  errEl.classList.add('hidden');
 
   if (!apiUrl()) {
     errEl.textContent = 'ยังไม่ได้ตั้งค่า URL ของ Apps Script — ตั้งค่าที่หน้าคิดเงินก่อน';
-    errEl.style.display = 'block';
+    errEl.classList.remove('hidden');
     return;
   }
   btn.disabled = true;
-  btn.innerHTML = '<span class="login-spinner"></span> กำลังตรวจสอบ...';
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังตรวจสอบ...';
   try {
     const res = await fetch(apiUrl(), {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -503,11 +557,11 @@ async function doLogin() {
       showApp();
     } else {
       errEl.textContent = data.message || 'Login ไม่สำเร็จ';
-      errEl.style.display = 'block';
+      errEl.classList.remove('hidden');
     }
   } catch (e) {
     errEl.textContent = 'เชื่อมต่อ Server ไม่ได้';
-    errEl.style.display = 'block';
+    errEl.classList.remove('hidden');
   }
   btn.disabled = false;
   btn.innerHTML = 'เข้าสู่ระบบ';
@@ -523,14 +577,14 @@ function doLogout() {
       body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
   }
   readAuth();
-  document.getElementById('app').style.display = 'none';
+  document.getElementById('app').classList.add('hidden');
   document.getElementById('login-page').style.display = 'flex';
 }
 
 function showApp() {
   readAuth();
   document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
+  document.getElementById('app').classList.remove('hidden');
   setRange('today');
 }
 
