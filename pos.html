@@ -276,6 +276,11 @@
   <div id="screen-cart" class="screen active">
     <div class="wrap">
 
+      <button onclick="openDelivery()" class="key btn-ghost" id="btn-delivery"
+        style="width:100%;padding:13px;font-size:15px;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px;">
+        🛵 มีออเดอร์เดลิเวอรี่เข้า
+      </button>
+
       <div class="sec-head">
         <h2>🍢 ไม้หม่าล่า</h2>
         <div class="note">รวม <b id="stick-count" class="digits">0</b> ไม้</div>
@@ -316,6 +321,30 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══ หน้าเดลิเวอรี่ (ไม่ต้องชำระเงิน — แพลตฟอร์มเก็บให้แล้ว) ═══ -->
+  <div id="screen-delivery" class="screen">
+    <div class="panel fade-in" style="max-width:620px;">
+      <button onclick="showScreen('cart')" class="key back">← กลับหน้าคิดเงิน</button>
+
+      <div class="sec-head">
+        <h2>🛵 ออเดอร์เดลิเวอรี่</h2>
+        <div class="note">รวม <b id="delivery-count" class="digits">0</b> รายการ</div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:-4px 0 12px;">
+        กรอกว่าออเดอร์นี้มีอะไรบ้าง แล้วกดบันทึก — ไม่ต้องคิดเงินหน้าร้าน
+      </p>
+
+      <div class="grid-2" id="delivery-grid"></div>
+
+      <button onclick="addDeliveryMenu()" class="key btn-ghost"
+        style="width:100%;padding:12px;font-size:14px;margin-top:12px;">➕ เพิ่มเมนู</button>
+
+      <button onclick="saveDelivery()" id="btn-save-delivery" class="key btn-red"
+        style="width:100%;padding:16px;font-size:16.5px;margin-top:16px;">✓ บันทึกออเดอร์เดลิเวอรี่</button>
+      <p class="note" style="text-align:center;">บันทึกแล้วกลับหน้าคิดเงินเลย ไม่ต้องผ่านหน้าชำระเงิน</p>
     </div>
   </div>
 
@@ -853,6 +882,9 @@ const SOUPS  = ['น้ำใส', 'กระดูกหมูดั้งเ�
 const SPICES = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดกลาง', 'เผ็ดมาก', 'เผ็ดพิเศษ'];
 const SAUCES = ['น้ำจิ้มงา', 'น้ำจิ้มสุกี้', 'ไม่เอาน้ำจิ้ม'];
 
+// เมนูเดลิเวอรี่ — เพิ่มเองในแอปได้ (ปุ่ม "เพิ่มเมนู") ค่าที่เพิ่มจะจำไว้ในเครื่อง
+const DEFAULT_DELIVERY_MENU = ['อุด้ง', 'หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวม'];
+
 /* ════════════════════════════════════════════════════════════
    ค่าที่เก็บในเครื่อง (localStorage)
    ════════════════════════════════════════════════════════════ */
@@ -865,7 +897,9 @@ function loadSettings() {
   Object.keys(DEFAULT_BRANCH_QR).forEach(b => branches[b] = Object.assign({}, DEFAULT_BRANCH_QR[b]));
   Object.keys(saved.branches || {}).forEach(b =>
     branches[b] = Object.assign(branches[b] || { shopName: 'หม่าล่าหน้าแดง' }, saved.branches[b]));
-  return { apiUrl: saved.apiUrl || DEFAULT_API_URL, branches };
+  var menu = Array.isArray(saved.deliveryMenu) && saved.deliveryMenu.length
+    ? saved.deliveryMenu : DEFAULT_DELIVERY_MENU.slice();
+  return { apiUrl: saved.apiUrl || DEFAULT_API_URL, branches, deliveryMenu: menu };
 }
 let settings = loadSettings();
 function apiUrl() { return (settings.apiUrl || '').trim(); }
@@ -1011,6 +1045,139 @@ function newOrder() {
   refreshChips();
   clearInterval(countdownTimer);
   showScreen('cart');
+}
+
+/* ════════════════════════════════════════════════════════════
+   เดลิเวอรี่ — บันทึกว่ามีออเดอร์เข้า ไม่ต้องคิดเงินหน้าร้าน
+   ════════════════════════════════════════════════════════════ */
+const delivery = {};   // ชื่อเมนู -> จำนวน
+
+function deliveryMenu() { return settings.deliveryMenu || DEFAULT_DELIVERY_MENU; }
+
+function renderDeliveryGrid() {
+  const menu = deliveryMenu();
+  menu.forEach(name => { if (delivery[name] === undefined) delivery[name] = 0; });
+  document.getElementById('delivery-grid').innerHTML = menu.map((name, i) => `
+    <div class="qty-card" id="dcard-${i}">
+      <div class="qty-top">
+        <div class="qty-name">${escapeText(name)}</div>
+        <div class="qty-sub digits" id="dsub-${i}">0 ที่</div>
+      </div>
+      <div class="qty-row">
+        <button class="key qty-btn qty-minus" onclick="bumpDelivery(${i},-1)" aria-label="ลด">−</button>
+        <input class="qty-input digits" id="dqty-${i}" type="number" min="0" step="1" inputmode="numeric"
+               value="${delivery[name]}" aria-label="${escapeText(name)}"
+               oninput="typeDelivery(${i}, this.value)" onfocus="this.select()" onblur="normalizeDelivery(${i})">
+        <button class="key qty-btn qty-plus" onclick="bumpDelivery(${i},1)" aria-label="เพิ่ม">+</button>
+      </div>
+    </div>`).join('');
+  refreshDelivery();
+}
+
+function escapeText(t) {
+  return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function bumpDelivery(i, delta) {
+  const name = deliveryMenu()[i];
+  delivery[name] = Math.max(0, (delivery[name] || 0) + delta);
+  document.getElementById('dqty-' + i).value = delivery[name];
+  refreshDelivery();
+}
+
+function typeDelivery(i, raw) {
+  const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+  delivery[deliveryMenu()[i]] = isNaN(n) ? 0 : Math.min(n, 9999);
+  refreshDelivery();
+}
+
+function normalizeDelivery(i) {
+  document.getElementById('dqty-' + i).value = delivery[deliveryMenu()[i]] || 0;
+}
+
+function deliveryTotal() {
+  return deliveryMenu().reduce((sum, name) => sum + (delivery[name] || 0), 0);
+}
+
+function refreshDelivery() {
+  deliveryMenu().forEach((name, i) => {
+    const qty = delivery[name] || 0;
+    document.getElementById('dsub-' + i).textContent = qty + ' ที่';
+    document.getElementById('dqty-' + i).classList.toggle('has', qty > 0);
+    document.getElementById('dcard-' + i).classList.toggle('on', qty > 0);
+  });
+  const total = deliveryTotal();
+  document.getElementById('delivery-count').textContent = total;
+  document.getElementById('btn-save-delivery').disabled = total <= 0;
+}
+
+function clearDelivery() {
+  deliveryMenu().forEach(name => delivery[name] = 0);
+}
+
+function openDelivery() {
+  clearDelivery();
+  renderDeliveryGrid();
+  showScreen('delivery');
+}
+
+/** เพิ่มเมนูใหม่เข้าไปในรายการ (จำไว้ในเครื่อง) */
+function addDeliveryMenu() {
+  const name = (prompt('ชื่อเมนูที่จะเพิ่ม') || '').trim();
+  if (!name) return;
+  const menu = deliveryMenu();
+  if (menu.indexOf(name) >= 0) { toast('มีเมนูนี้อยู่แล้ว'); return; }
+
+  menu.push(name);
+  delivery[name] = 0;
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS.settings) || '{}');
+    saved.deliveryMenu = menu;
+    localStorage.setItem(LS.settings, JSON.stringify(saved));
+  } catch (e) {}
+  settings.deliveryMenu = menu;
+  renderDeliveryGrid();
+  toast('เพิ่มเมนู "' + name + '" แล้ว');
+}
+
+async function saveDelivery() {
+  const total = deliveryTotal();
+  if (total <= 0) { toast('ยังไม่ได้ใส่จำนวน'); return; }
+
+  const now = new Date();
+  const items = deliveryMenu()
+    .filter(name => delivery[name] > 0)
+    .map(name => ({ name: name, qty: delivery[name] }));
+
+  const record = {
+    kind: 'delivery',
+    orderId: 'DLV' + now.getTime(),
+    date: isoDate(now),
+    branch: auth.branch || '',
+    staff: auth.name || '',
+    items: items,
+    itemCount: total,
+    summary: items.map(x => x.name + ' x' + x.qty).join(' · ')
+  };
+
+  clearDelivery();
+  renderDeliveryGrid();
+  showScreen('cart');
+
+  if (isDemo()) { toast('🧪 โหมดทดลอง — ไม่ได้บันทึกออเดอร์เดลิเวอรี่'); return; }
+
+  try {
+    const json = await postApi({ action: 'posDelivery', token: auth.token, order: record });
+    if (json && json.success) {
+      toast('บันทึกออเดอร์เดลิเวอรี่แล้ว (' + total + ' รายการ)');
+      flushPending();
+      return;
+    }
+    throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
+  } catch (e) {
+    queuePending(record);
+    toast('⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว');
+  }
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1195,7 +1362,8 @@ async function flushPending() {
   const remain = [];
   for (const rec of list) {
     try {
-      const json = await postApi({ action: 'posOrder', token: auth.token, order: rec });
+      const action = rec.kind === 'delivery' ? 'posDelivery' : 'posOrder';
+      const json = await postApi({ action: action, token: auth.token, order: rec });
       if (!json || !json.success) remain.push(rec);
     } catch (e) { remain.push(rec); }
   }
@@ -1597,6 +1765,7 @@ renderMamaGrid();
 renderChips('soup-chips', SOUPS, 'soup');
 renderChips('spice-chips', SPICES, 'spice');
 renderChips('sauce-chips', SAUCES, 'sauce');
+renderDeliveryGrid();
 refreshChips();
 refresh();
 

@@ -233,6 +233,11 @@
             <div id="chart-method"></div>
           </div>
           <div class="card chart-card">
+            <h2>เมนูเดลิเวอรี่</h2>
+            <p class="sub">เรียงจากมากไปน้อย (จำนวนที่)</p>
+            <div id="chart-delivery"></div>
+          </div>
+          <div class="card chart-card">
             <h2>น้ำจิ้ม</h2>
             <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-sauce"></div>
@@ -392,7 +397,8 @@ function render() {
     ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈', ''],
     ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢', ''],
     ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', ''],
-    ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', '']
+    ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', ''],
+    ['ออเดอร์เดลิเวอรี่', Number(stats.deliveryOrders || 0).toLocaleString('th-TH'), 'ออเดอร์', '🛵', '']
   ].map(([label, value, unit, icon, extra]) => `
     <div class="card kpi${extra}">
       <div class="label">${icon} ${label}</div>
@@ -409,6 +415,7 @@ function render() {
   drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
   drawRanked('chart-method', stats.method, 'ออเดอร์', stats.methodRevenue);
   drawRanked('chart-sauce',  stats.sauce,  'ออเดอร์');
+  drawRanked('chart-delivery', stats.deliveryItems || {}, 'ที่');
   drawTable(stats.byDate);
 }
 
@@ -661,6 +668,9 @@ function demoStats() {
     mama: Math.round(orders * 0.35),
     discount: Math.round(sticks / 10) * 5,
     sauceCups: Math.round(orders * 0.9),
+    deliveryOrders: Math.round(orders * 0.18),
+    deliveryItemCount: Math.round(orders * 0.28),
+    deliveryItems: share({ 'หม่าล่ารวม': .09, 'หม่าล่าหน้าแดง': .07, 'อุด้ง': .06, 'หม่าล่าทะเล': .05 }, orders),
     avgTicket: Math.round(revenue / orders * 100) / 100,
     soup:   share({ 'กระดูกหมูหม่าล่า': .32, 'น้ำใส': .24, 'หม่าล่านม': .16, 'กระดูกหมูดั้งเดิม': .12, 'น้ำดำหม่าล่า': .08, 'น้ำดำ': .06, 'ไม่เอาซุป': .02 }, orders),
     spice:  share({ 'เผ็ดกลาง': .40, 'เผ็ดน้อย': .26, 'ไม่เผ็ด': .18, 'เผ็ดมาก': .13, 'เผ็ดพิเศษ': .03 }, orders),

@@ -15,10 +15,15 @@ var TZ = 'Asia/Bangkok';
 var SHEET_ORDERS   = 'POS_Orders';   // ข้อมูลการขายรายบิล
 var SHEET_USERS    = 'ผู้ใช้งาน';     // username / password / ชื่อ / สาขา
 var SHEET_SESSIONS = 'Sessions';     // token ที่ยัง login อยู่
+var SHEET_DELIVERY = 'POS_Delivery'; // ออเดอร์เดลิเวอรี่ (แพลตฟอร์มเก็บเงินให้แล้ว)
 
 var SESSION_HOURS = 16;              // token หมดอายุกี่ชั่วโมง
 var MAMA_PRICES   = [10, 15, 20, 35, 45];
 var STICK_PRICES  = [10, 15];
+
+var DELIVERY_HEADERS = [
+  'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน', 'ข้อมูล', 'order_id'
+];
 
 var ORDER_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน',
@@ -41,6 +46,14 @@ function setupPos() {
     orders.getRange(1, 1, 1, ORDER_HEADERS.length)
       .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
     orders.setFrozenRows(1);
+  }
+
+  var delivery = getOrCreateSheet_(ss, SHEET_DELIVERY);
+  if (delivery.getLastRow() === 0) {
+    delivery.appendRow(DELIVERY_HEADERS);
+    delivery.getRange(1, 1, 1, DELIVERY_HEADERS.length)
+      .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+    delivery.setFrozenRows(1);
   }
 
   var users = getOrCreateSheet_(ss, SHEET_USERS);
@@ -77,7 +90,8 @@ function doPost(e) {
     switch (body.action) {
       case 'login':    return json_(handleLogin_(body));
       case 'logout':   return json_(handleLogout_(body));
-      case 'posOrder': return json_(handleOrder_(body));
+      case 'posOrder':    return json_(handleOrder_(body));
+      case 'posDelivery': return json_(handleDelivery_(body));
       default:         return json_({ success: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -255,28 +269,70 @@ function handleOrder_(body) {
   }
 }
 
+/**
+ * บันทึกออเดอร์เดลิเวอรี่ — ไม่มีการคิดเงินหน้าร้าน
+ * (เงินเข้าทางแพลตฟอร์ม จึงเก็บแยกชีตไม่ให้ปนกับยอดขายหน้าร้าน)
+ */
+function handleDelivery_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+
+  var o = body.order || {};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DELIVERY);
+    if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_DELIVERY + ' — รัน setupPos ก่อน' };
+
+    var existing = findRowByOrderId_(sheet, o.orderId, DELIVERY_HEADERS);
+    if (existing) return { success: true, orderNo: existing, duplicated: true };
+
+    var now = new Date();
+    var dateStr = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
+    var orderNo = nextOrderNo_(sheet, dateStr, 'D');
+
+    sheet.appendRow([
+      dateStr,
+      Utilities.formatDate(now, TZ, 'HH:mm:ss'),
+      orderNo,
+      o.branch || session.branch || '',
+      o.staff || session.name || '',
+      o.summary || '',
+      Number(o.itemCount) || 0,
+      JSON.stringify(o.items || []),
+      o.orderId || ''
+    ]);
+    return { success: true, orderNo: orderNo };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** เลขที่ออเดอร์ = วันที่ + ลำดับของวันนั้น เช่น 20260823-014 */
-function nextOrderNo_(sheet, dateStr) {
+function nextOrderNo_(sheet, dateStr, prefix) {
   var last = sheet.getLastRow();
   var count = 0;
   if (last > 1) {
     var dates = sheet.getRange(2, 1, last - 1, 1).getDisplayValues();
     for (var i = 0; i < dates.length; i++) if (dates[i][0] === dateStr) count++;
   }
-  return dateStr.replace(/-/g, '') + '-' + ('00' + (count + 1)).slice(-3);
+  return (prefix || '') + dateStr.replace(/-/g, '') + '-' + ('00' + (count + 1)).slice(-3);
 }
 
-function findOrderRow_(sheet, orderId) {
+/** หาแถวที่เคยบันทึก order_id นี้ไว้แล้ว (กันบันทึกซ้ำตอนส่งของค้างขึ้นไป) */
+function findRowByOrderId_(sheet, orderId, headers) {
   if (!orderId) return null;
   var last = sheet.getLastRow();
   if (last < 2) return null;
-  var col = ORDER_HEADERS.indexOf('order_id') + 1;
+  var col = headers.indexOf('order_id') + 1;
   var ids = sheet.getRange(2, col, last - 1, 1).getDisplayValues();
   for (var i = ids.length - 1; i >= 0; i--) {
     if (ids[i][0] === String(orderId)) return sheet.getRange(i + 2, 3).getDisplayValue();
   }
   return null;
 }
+
+function findOrderRow_(sheet, orderId) { return findRowByOrderId_(sheet, orderId, ORDER_HEADERS); }
 
 // ══════════════════════════════════════════════════════════════
 //  สรุปยอดสำหรับหน้า Dashboard
@@ -289,7 +345,11 @@ function handleStats_(p) {
   }
 
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ORDERS);
-  if (!sheet || sheet.getLastRow() < 2) return { success: true, data: emptyStats_() };
+  if (!sheet || sheet.getLastRow() < 2) {
+    var only = emptyStats_();
+    addDeliveryStats_(only, p.from || '0000-01-01', p.to || '9999-12-31', p.branch || '');
+    return { success: true, data: only };
+  }
 
   var values = sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues();
   var head = values[0];
@@ -332,15 +392,43 @@ function handleStats_(p) {
     byDate[date].sticks  += num_(r[idx['รวมไม้']]);
   }
 
+  addDeliveryStats_(stats, from, to, branch);
+
   stats.avgTicket = stats.orders ? Math.round(stats.revenue / stats.orders * 100) / 100 : 0;
   stats.byDate = Object.keys(byDate).sort().map(function (d) { return byDate[d]; });
   stats.branches = listBranches_(values, idx);
   return { success: true, data: stats };
 }
 
+/** สรุปออเดอร์เดลิเวอรี่ (เก็บแยกชีต ไม่รวมกับยอดขายหน้าร้าน) */
+function addDeliveryStats_(stats, from, to, branch) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DELIVERY);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), DELIVERY_HEADERS.length).getDisplayValues();
+  var idx = {};
+  values[0].forEach(function (h, i) { idx[h] = i; });
+
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    var date = r[idx['วันที่']];
+    if (!date || date < from || date > to) continue;
+    if (branch && r[idx['สาขา']] !== branch) continue;
+
+    stats.deliveryOrders++;
+    stats.deliveryItemCount += num_(r[idx['รวมจำนวน']]);
+    try {
+      JSON.parse(r[idx['ข้อมูล']] || '[]').forEach(function (it) {
+        addTo_(stats.deliveryItems, it.name, Number(it.qty) || 0);
+      });
+    } catch (e) {}
+  }
+}
+
 function emptyStats_() {
   return {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
+    deliveryOrders: 0, deliveryItemCount: 0, deliveryItems: {},
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };
