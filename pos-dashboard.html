@@ -357,7 +357,7 @@ async function loadStats() {
       document.getElementById('content').classList.remove('hidden');
       return;
     }
-    if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (ปุ่ม ⚙️)');
+    if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (แตะโลโก้ 5 ครั้งที่หน้าเข้าสู่ระบบ)');
     const url = apiUrl() + '?action=posStats&token=' + encodeURIComponent(auth.token)
       + '&from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to)
       + '&branch=' + encodeURIComponent(document.getElementById('f-branch').value);

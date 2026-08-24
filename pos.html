@@ -173,8 +173,6 @@
     .login-input { width: 100%; padding: 13px 14px; border: 2px solid var(--line); border-radius: 12px; font-size: 15px; }
     .login-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(225,29,47,.13); }
     .field-label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
-    .link-btn { background: none; border: none; color: var(--muted); font-size: 12.5px; text-decoration: none; display: block;
-                text-align: center; width: 100%; }
     .login-error { background: var(--red-soft); border: 1px solid #fecdd3; color: var(--red-dark); border-radius: 10px;
                    padding: 11px 14px; font-size: 13.5px; text-align: center; }
 
@@ -211,7 +209,7 @@
 <div id="login-page">
   <div class="login-card fade-in">
     <div style="text-align:center;margin-bottom:24px;">
-      <div class="login-logo">🧮</div>
+      <div class="login-logo" id="login-logo" onclick="tapLogo()" title="">🧮</div>
       <h1 style="font-size:22px;font-weight:800;margin:0 0 4px;">POS หม่าล่าหน้าแดง</h1>
       <p style="font-size:13.5px;color:var(--muted);margin:0;">คิดเงินหน้าร้าน — กรุณาเข้าสู่ระบบ</p>
     </div>
@@ -228,8 +226,6 @@
       </div>
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
-      <button onclick="openSettings()" class="key link-btn">⚙️ ตั้งค่าระบบ / QR รับเงิน</button>
-
       <div class="demo-box">
         <button onclick="toggleDemoPanel()" id="demo-toggle" class="key btn-ghost" style="width:100%;padding:12px;font-size:14px;">
           🧪 ลองใช้ดูก่อน — ไม่ต้อง login
@@ -1531,6 +1527,18 @@ function startDemo() {
    ตั้งค่า
    ════════════════════════════════════════════════════════════ */
 let draftBranches = null;   // สำเนาการตั้งค่าระหว่างเปิดกล่องตั้งค่า
+
+/* ทางลับตั้งค่าระบบ — แตะโลโก้ 5 ครั้งติดกัน (กันพนักงาน/ลูกค้ามากดเล่น) */
+var logoTaps = 0, logoTapTimer = null;
+function tapLogo() {
+  logoTaps++;
+  clearTimeout(logoTapTimer);
+  logoTapTimer = setTimeout(function () { logoTaps = 0; }, 1500);
+  if (logoTaps >= 5) {
+    logoTaps = 0;
+    openSettings();
+  }
+}
 
 function openSettings() {
   draftBranches = JSON.parse(JSON.stringify(settings.branches));
