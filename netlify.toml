@@ -1,0 +1,14 @@
+# ตั้งค่า Netlify — เว็บนี้เป็น HTML ล้วน ไม่ต้อง build อะไรเลย
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # กันเว็บอื่นเอาหน้านี้ไปฝังใน iframe
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # ไม่ให้เสิร์ชเอนจินเก็บหน้าเว็บร้านไปขึ้นผลค้นหา
+    X-Robots-Tag = "noindex, nofollow"
