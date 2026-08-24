@@ -881,7 +881,9 @@ var PromptPay = (function () {
    ════════════════════════════════════════════════════════════ */
 
 // URL ของ Web app (Apps Script) — ดูวิธีติดตั้งใน google-apps-script/POS-README.md
-const DEFAULT_API_URL = '';
+// URL ของ Google Apps Script ของร้าน — ฝังไว้ให้ทุกเครื่องใช้ได้เลยไม่ต้องกรอก
+// ถ้า Deploy ใหม่แล้วได้ URL ใหม่ ให้แก้ตรงนี้ (และในไฟล์ pos-dashboard.html ด้วย)
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwur9RtgC-xvqtNf9clSrvr6MzQ0AwDU1uo-lbG0eMk3dl_6voJw_zFm4WYZzX7HVquGA/exec';
 
 // พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
 const DEFAULT_BRANCH_QR = {
