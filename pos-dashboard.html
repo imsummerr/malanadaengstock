@@ -161,8 +161,6 @@
       </div>
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
-      <button onclick="startDemo()" class="key btn-ghost" style="width:100%;padding:12px;font-size:14px;">🧪 ดูตัวอย่างหน้าสรุปยอด</button>
-      <a href="pos.html" class="link">← กลับไปหน้าคิดเงิน</a>
     </div>
   </div>
 </div>
@@ -357,7 +355,7 @@ async function loadStats() {
       document.getElementById('content').classList.remove('hidden');
       return;
     }
-    if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (แตะโลโก้ 5 ครั้งที่หน้าเข้าสู่ระบบ)');
+    if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script — ไปตั้งค่าที่หน้าคิดเงิน (ปุ่ม ⚙️ ตั้งค่า URL ระบบ)');
     const url = apiUrl() + '?action=posStats&token=' + encodeURIComponent(auth.token)
       + '&from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to)
       + '&branch=' + encodeURIComponent(document.getElementById('f-branch').value);
@@ -635,13 +633,6 @@ function showApp() {
    ════════════════════════════════════════════════ */
 function isDemo() { return sessionStorage.getItem('pos_demo') === '1'; }
 
-function startDemo() {
-  sessionStorage.setItem('pos_demo', '1');
-  sessionStorage.setItem('pos_token', 'DEMO');
-  sessionStorage.setItem('pos_name', sessionStorage.getItem('pos_name') || 'ทดลอง');
-  sessionStorage.setItem('pos_branch', sessionStorage.getItem('pos_branch') || 'แบริ่ง');
-  showApp();
-}
 
 // สุ่มแบบคงที่ (seed) เพื่อให้ตัวเลขไม่กระโดดทุกครั้งที่กดโหลด
 function demoRand(seed) { const x = Math.sin(seed * 9781) * 10000; return x - Math.floor(x); }
