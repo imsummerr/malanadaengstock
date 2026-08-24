@@ -60,6 +60,13 @@
     .chip-link { background: var(--red); color: #fff; text-decoration: none; font-size: 12.5px; font-weight: 700;
                  padding: 9px 12px; border-radius: 10px; white-space: nowrap; }
     .chip-link:hover { background: var(--red-dark); }
+    .chip-link.ghost { background: #ffffff1f; }
+    .chip-link.ghost:hover { background: #ffffff33; }
+    @media (max-width: 560px) {
+      /* จอแคบ: ปุ่มเหลือแต่ไอคอน เพื่อให้ชื่อหน้าและช่วงวันที่ยังอ่านได้ */
+      .chip-link { padding: 9px 10px; font-size: 12px; }
+      .chip-link .lbl { display: none; }
+    }
 
     .wrap { max-width: 1000px; margin: 0 auto; padding: 14px; }
 
@@ -192,7 +199,8 @@
         <div class="title">สรุปยอดขาย</div>
         <div class="sub" id="hdr-sub">—</div>
       </div>
-      <a href="pos.html" class="key chip-link">🧮 คิดเงิน</a>
+      <a href="loss-calculator.html" class="key chip-link" title="คำนวณของหาย">🔎<span class="lbl"> ของหาย</span></a>
+      <a href="pos.html" class="key chip-link ghost" title="หน้าคิดเงิน">🧮<span class="lbl"> คิดเงิน</span></a>
       <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
   </div>
