@@ -226,10 +226,8 @@
       </div>
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
-      <div class="demo-box">
-        <button onclick="toggleDemoPanel()" id="demo-toggle" class="key btn-ghost" style="width:100%;padding:12px;font-size:14px;">
-          🧪 ลองใช้ดูก่อน — ไม่ต้อง login
-        </button>
+      <!-- โหมดทดลอง — ไม่มีปุ่มโชว์ที่หน้า login แล้ว เปิดได้ทางลิงก์ pos.html?demo=1 เท่านั้น -->
+      <div class="demo-box hidden" id="demo-box">
         <div id="demo-panel" class="hidden" style="margin-top:12px;">
           <label class="set-label">สาขา</label>
           <select id="demo-branch" class="login-input" style="margin-bottom:10px;"></select>
@@ -1509,8 +1507,7 @@ function toggleDemoPanel() {
     Object.keys(settings.branches).forEach(b => sel.add(new Option(b, b)));
   }
   panel.classList.toggle('hidden');
-  document.getElementById('demo-toggle').textContent =
-    panel.classList.contains('hidden') ? '🧪 ลองใช้ดูก่อน — ไม่ต้อง login' : '▲ ซ่อน';
+  document.getElementById('demo-box').classList.toggle('hidden', panel.classList.contains('hidden'));
 }
 
 function startDemo() {
