@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>หม่าล่าหน้าแดง — ระบบร้าน</title>
   <meta name="theme-color" content="#0d0d0f">
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- โหลดฟอนต์แบบไม่บล็อกหน้าจอ — เน็ตร้านช้าหรือเข้า Google ไม่ได้ ระบบก็ยังใช้งานได้ปกติ -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
   <style>
     :root {
       --ink: #0d0d0f; --ink-2: #1c1c20; --muted: #8e8e97; --line: #e7e7ea;
@@ -36,6 +39,8 @@
     .tile .ico { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
                  font-size: 24px; flex: none; background: #fff1f2; }
     .tile.dark .ico { background: #f1f1f3; }
+    a.tile.try { border-style: dashed; background: transparent; box-shadow: none; }
+    .tile.try .ico { background: #ececed; }
     .tile b { display: block; font-size: 16px; font-weight: 800; }
     .tile small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
     .tile .go { margin-left: auto; color: var(--red); font-size: 20px; font-weight: 800; }
@@ -76,6 +81,17 @@
         <div>
           <b>สรุปยอดขาย</b>
           <small>ยอดขาย · กราฟ · ticket average <br>(เฉพาะเจ้าของร้าน)</small>
+        </div>
+        <div class="go">›</div>
+      </a>
+    </div>
+
+    <div class="tiles" style="margin-top:12px;">
+      <a class="tile try" href="pos.html?demo=1">
+        <div class="ico">🧪</div>
+        <div>
+          <b>ลองใช้ดูก่อน</b>
+          <small>กดเล่นได้ทุกหน้า ไม่ต้อง login — ยอดขายไม่ถูกบันทึกที่ไหน</small>
         </div>
         <div class="go">›</div>
       </a>

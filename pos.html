@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>POS หม่าล่าหน้าแดง</title>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- โหลดฟอนต์แบบไม่บล็อกหน้าจอ — เน็ตร้านช้าหรือเข้า Google ไม่ได้ ระบบก็ยังใช้งานได้ปกติ -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
   <style>
     /* ══════════ โทนสี ดำ · แดง · ขาว ══════════ */
     :root {
@@ -1798,7 +1801,11 @@ refresh();
 
 readAuth();
 if (auth.token) showApp();
-else document.getElementById('login-page').style.display = 'flex';
+else {
+  document.getElementById('login-page').style.display = 'flex';
+  // เปิดมาจากลิงก์ "ลองใช้ดูก่อน" — กางกล่องโหมดทดลองให้เลย
+  if (/[?&]demo=1(&|$)/.test(location.search)) toggleDemoPanel();
+}
 
 window.addEventListener('online', flushPending);
 </script>
