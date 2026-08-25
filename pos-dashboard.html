@@ -184,7 +184,7 @@
         <div class="title">สรุปยอดขาย</div>
         <div class="sub" id="hdr-sub">—</div>
       </div>
-      <a href="loss-calculator.html" class="key chip-link" title="คำนวณของหาย">🔎<span class="lbl"> ของหาย</span></a>
+      <a href="loss-calculator.html" id="chip-loss" class="key chip-link hidden" title="คำนวณของหาย">🔎<span class="lbl"> ของหาย</span></a>
       <a href="pos.html" class="key chip-link ghost" title="หน้าคิดเงิน">🧮<span class="lbl"> คิดเงิน</span></a>
       <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
@@ -637,6 +637,8 @@ function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('demo-bar').classList.toggle('hidden', !isDemo());
+  // ของหาย = ข้อมูลเงิน เห็นเฉพาะเจ้าของร้าน
+  document.getElementById('chip-loss').classList.toggle('hidden', !isOwner());
   setRange(isDemo() ? '30' : 'today');
 }
 

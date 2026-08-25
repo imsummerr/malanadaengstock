@@ -222,6 +222,24 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyooHWF_4pB7WUdfcdU5
 // AUTH
 // ============================================================
 function getAuthToken() { return sessionStorage.getItem('calc_auth_token'); }
+function getAuthRole()  { return sessionStorage.getItem('calc_auth_role') || 'unknown'; }
+
+/**
+ * Apps Script ตัวเก่ายังไม่ส่ง role กลับมาตอน login — ยังกันพนักงานไม่ได้จริง
+ * ขึ้นแถบเตือนไว้ให้เจ้าของร้านรู้ว่ายังต้องไปแก้ฝั่ง Apps Script
+ */
+function warnIfNoRole() {
+  if (getAuthRole() !== 'unknown') return;
+  if (document.getElementById('role-warn')) return;
+  const bar = document.createElement('div');
+  bar.id = 'role-warn';
+  bar.style.cssText = 'background:#fffbeb;border-bottom:1px solid #fde68a;color:#92400e;' +
+    'padding:0.6rem 1rem;font-size:0.8125rem;text-align:center;line-height:1.5;';
+  bar.innerHTML = '⚠️ Apps Script ที่หน้านี้ต่ออยู่ยังไม่ส่งสิทธิ์ผู้ใช้กลับมา — ' +
+    'ตอนนี้พนักงานที่มี user/password ก็ยังเปิดหน้านี้ได้ ' +
+    '<b>ต้องไปเพิ่ม role ใน handleLogin_ และเช็ค owner ที่ action=history ก่อน</b>';
+  document.getElementById('app').prepend(bar);
+}
 
 function showLoginPage() {
   document.getElementById('app').style.display = 'none';
@@ -231,6 +249,7 @@ function showLoginPage() {
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'block';
+  warnIfNoRole();
   // default วันที่เป็นวันนี้ (เช็คสต็อกเป็นวันไหนก็ได้ ไม่บังคับวันอาทิตย์)
   const today = new Date();
   const sy = today.getFullYear();
@@ -270,8 +289,19 @@ async function doLogin() {
     const data = await res.json();
 
     if (data.success) {
+      // หน้านี้เป็นข้อมูลเงิน — เจ้าของร้านเท่านั้น
+      const role = String(data.role || '').toLowerCase();
+      if (role === 'staff') {
+        errEl.textContent = 'หน้าคำนวณของหายสำหรับเจ้าของร้านเท่านั้น';
+        errEl.style.display = 'block';
+        document.getElementById('login-password').value = '';
+        btn.disabled = false;
+        btn.innerHTML = 'เข้าสู่ระบบ';
+        return;
+      }
       sessionStorage.setItem('calc_auth_token', data.token);
       sessionStorage.setItem('calc_auth_branch', data.branch || '');
+      sessionStorage.setItem('calc_auth_role', role || 'unknown');
       showApp();
     } else {
       errEl.textContent = data.message || 'Login ไม่สำเร็จ';
@@ -291,6 +321,7 @@ function doLogout() {
   const token = getAuthToken();
   sessionStorage.removeItem('calc_auth_token');
   sessionStorage.removeItem('calc_auth_branch');
+  sessionStorage.removeItem('calc_auth_role');
   fetch(SHEETS_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ action: 'logout', token })

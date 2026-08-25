@@ -106,6 +106,7 @@ function doGet(e) {
     var p = e.parameter || {};
     if (p.action === 'posStats') return json_(handleStats_(p));
     if (p.action === 'posBills') return json_(handleBills_(p));
+    if (p.action === 'history')  return json_(handleHistory_(p));
     return json_({ success: false, message: 'ไม่รู้จัก action: ' + p.action });
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
@@ -538,4 +539,56 @@ function testPosFlow() {
   });
   Logger.log('order: ' + JSON.stringify(res));
   Logger.log('stats: ' + JSON.stringify(handleStats_({ token: login.token })));
+}
+
+
+// ════════════════════════════════════════════════════════════
+//  ข้อมูลดิบสำหรับหน้า คำนวณของหาย (loss-calculator.html)
+//  เจ้าของร้านเท่านั้น — เป็นข้อมูลเงิน
+// ════════════════════════════════════════════════════════════
+
+/** ชีตที่หน้าคำนวณของหายอ่าน — type ที่หน้าเว็บส่งมา → ชื่อชีตจริง */
+var HISTORY_SHEETS = {
+  incoming: 'จำนวนของเข้า',
+  weekly:   'เช็คสต็อกรายสัปดาห์',
+  waste:    'ของเสีย',
+  sales:    'ยอดขาย'
+};
+
+/**
+ * GET ?action=history&type=incoming|weekly|waste|sales&token=...
+ * คืนทุกแถวของชีตนั้นเป็น object โดยใช้หัวคอลัมน์เป็น key บวก _sheet
+ * เจ้าของร้านเท่านั้น — พนักงานได้ 403
+ */
+function handleHistory_(p) {
+  var session = checkToken_(p.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (session.role !== 'owner') {
+    return { success: false, code: 403, message: 'หน้าคำนวณของหายสำหรับเจ้าของร้านเท่านั้น' };
+  }
+
+  var name = HISTORY_SHEETS[String(p.type || '').trim()];
+  if (!name) return { success: false, message: 'ไม่รู้จัก type: ' + p.type };
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) {
+    return { success: false, message: 'ไม่พบชีต "' + name + '" ในไฟล์ Google Sheet นี้' };
+  }
+  if (sheet.getLastRow() < 2) return { success: true, data: [] };
+
+  var values  = sheet.getDataRange().getValues();
+  var headers = values[0].map(function (h) { return String(h).trim(); });
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    if (row.join('') === '') continue;
+    var obj = { _sheet: name };
+    for (var c = 0; c < headers.length; c++) {
+      if (!headers[c]) continue;
+      var v = row[c];
+      obj[headers[c]] = (v instanceof Date) ? Utilities.formatDate(v, TZ, 'yyyy-MM-dd HH:mm:ss') : v;
+    }
+    out.push(obj);
+  }
+  return { success: true, data: out };
 }
