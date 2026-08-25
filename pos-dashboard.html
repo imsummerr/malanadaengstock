@@ -145,6 +145,16 @@
 
     #tip { position: fixed; z-index: 50; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600;
            border-radius: 9px; padding: 7px 10px; pointer-events: none; box-shadow: var(--shadow); }
+
+    /* ── แท็บสลับ ยอดขาย / คำนวณของหาย ── */
+    .viewtabs { display: flex; gap: 6px; padding: 6px; margin-bottom: 14px; }
+    .viewtabs .tabbtn { flex: 1; padding: 11px; font-size: 14.5px; }
+
+    /* ── สไตล์เฉพาะหน้าคำนวณของหาย ── */
+    #panel-loss .input-field:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.1); }
+
+    /* ══ Tailwind utilities — build เองเฉพาะคลาสที่ใช้ ไม่ต้องโหลดจาก CDN ══ */
+.fixed{position:fixed}.inset-0{inset:0}.bottom-4{bottom:1rem}.left-1\/2{left:50%}.z-40{z-index:40}.z-50{z-index:50}.col-span-3{grid-column:span 3/span 3}.mx-auto{margin-left:auto;margin-right:auto}.mb-0\.5{margin-bottom:.125rem}.mb-1{margin-bottom:.25rem}.mb-2{margin-bottom:.5rem}.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}.mb-8{margin-bottom:2rem}.mt-1{margin-top:.25rem}.mt-2{margin-top:.5rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}.block{display:block}.flex{display:flex}.table{display:table}.grid{display:grid}.hidden{display:none}.h-44{height:11rem}.h-5{height:1.25rem}.h-6{height:1.5rem}.h-full{height:100%}.max-h-96{max-height:24rem}.w-5{width:1.25rem}.w-6{width:1.5rem}.w-full{width:100%}.min-w-0{min-width:0}.max-w-lg{max-width:32rem}.flex-1{flex:1 1 0%}.-translate-x-1\/2{--tw-translate-x:-50%;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-pointer{cursor:pointer}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.items-end{align-items:flex-end}.items-center{align-items:center}.justify-end{justify-content:flex-end}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-1{gap:.25rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}.gap-5{gap:1.25rem}.gap-\[2px\]{gap:2px}.gap-x-4{-moz-column-gap:1rem;column-gap:1rem}.gap-y-1{row-gap:.25rem}.divide-y>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:0;border-top-width:calc(1px*(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px*var(--tw-divide-y-reverse))}.divide-gray-100>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(243 244 246/var(--tw-divide-opacity,1))}.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.overflow-y-auto{overflow-y:auto}.whitespace-nowrap{white-space:nowrap}.break-all{word-break:break-all}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}.rounded-t{border-top-left-radius:.25rem;border-top-right-radius:.25rem}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-blue-100{--tw-border-opacity:1;border-color:rgb(219 234 254/var(--tw-border-opacity,1))}.border-blue-200{--tw-border-opacity:1;border-color:rgb(191 219 254/var(--tw-border-opacity,1))}.border-gray-200{--tw-border-opacity:1;border-color:rgb(229 231 235/var(--tw-border-opacity,1))}.border-gray-50{--tw-border-opacity:1;border-color:rgb(249 250 251/var(--tw-border-opacity,1))}.border-green-200{--tw-border-opacity:1;border-color:rgb(187 247 208/var(--tw-border-opacity,1))}.border-red-200{--tw-border-opacity:1;border-color:rgb(254 202 202/var(--tw-border-opacity,1))}.border-yellow-200{--tw-border-opacity:1;border-color:rgb(254 240 138/var(--tw-border-opacity,1))}.bg-black\/40{background-color:rgba(0,0,0,.4)}.bg-blue-50{--tw-bg-opacity:1;background-color:rgb(239 246 255/var(--tw-bg-opacity,1))}.bg-gray-100{--tw-bg-opacity:1;background-color:rgb(243 244 246/var(--tw-bg-opacity,1))}.bg-gray-200{--tw-bg-opacity:1;background-color:rgb(229 231 235/var(--tw-bg-opacity,1))}.bg-gray-50{--tw-bg-opacity:1;background-color:rgb(249 250 251/var(--tw-bg-opacity,1))}.bg-green-50{--tw-bg-opacity:1;background-color:rgb(240 253 244/var(--tw-bg-opacity,1))}.bg-green-600{--tw-bg-opacity:1;background-color:rgb(22 163 74/var(--tw-bg-opacity,1))}.bg-orange-50{--tw-bg-opacity:1;background-color:rgb(255 247 237/var(--tw-bg-opacity,1))}.bg-red-100{--tw-bg-opacity:1;background-color:rgb(254 226 226/var(--tw-bg-opacity,1))}.bg-red-50{--tw-bg-opacity:1;background-color:rgb(254 242 242/var(--tw-bg-opacity,1))}.bg-red-50\/70{background-color:hsla(0,86%,97%,.7)}.bg-red-500{--tw-bg-opacity:1;background-color:rgb(239 68 68/var(--tw-bg-opacity,1))}.bg-red-600{background-color:rgb(220 38 38/var(--tw-bg-opacity,1))}.bg-red-600,.bg-white{--tw-bg-opacity:1}.bg-white{background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.bg-white\/20{background-color:hsla(0,0%,100%,.2)}.bg-yellow-200{--tw-bg-opacity:1;background-color:rgb(254 240 138/var(--tw-bg-opacity,1))}.bg-yellow-50{--tw-bg-opacity:1;background-color:rgb(254 252 232/var(--tw-bg-opacity,1))}.bg-yellow-500{--tw-bg-opacity:1;background-color:rgb(234 179 8/var(--tw-bg-opacity,1))}.bg-gradient-to-r{background-image:linear-gradient(to right,var(--tw-gradient-stops))}.from-gray-700{--tw-gradient-from:#374151 var(--tw-gradient-from-position);--tw-gradient-to:rgba(55,65,81,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.from-red-500{--tw-gradient-from:#ef4444 var(--tw-gradient-from-position);--tw-gradient-to:rgba(239,68,68,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.to-gray-800{--tw-gradient-to:#1f2937 var(--tw-gradient-to-position)}.to-red-600{--tw-gradient-to:#dc2626 var(--tw-gradient-to-position)}.p-1{padding:.25rem}.p-2{padding:.5rem}.p-3{padding:.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-10{padding-top:2.5rem;padding-bottom:2.5rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}.py-4{padding-top:1rem;padding-bottom:1rem}.py-6{padding-top:1.5rem;padding-bottom:1.5rem}.pr-1{padding-right:.25rem}.text-left{text-align:left}.text-center{text-align:center}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-\[10px\]{font-size:10px}.text-sm{font-size:.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:.75rem;line-height:1rem}.font-bold{font-weight:700}.font-medium{font-weight:500}.font-semibold{font-weight:600}.leading-none{line-height:1}.text-blue-500{--tw-text-opacity:1;color:rgb(59 130 246/var(--tw-text-opacity,1))}.text-blue-700{--tw-text-opacity:1;color:rgb(29 78 216/var(--tw-text-opacity,1))}.text-blue-800{--tw-text-opacity:1;color:rgb(30 64 175/var(--tw-text-opacity,1))}.text-gray-400{--tw-text-opacity:1;color:rgb(156 163 175/var(--tw-text-opacity,1))}.text-gray-500{--tw-text-opacity:1;color:rgb(107 114 128/var(--tw-text-opacity,1))}.text-gray-600{--tw-text-opacity:1;color:rgb(75 85 99/var(--tw-text-opacity,1))}.text-gray-700{--tw-text-opacity:1;color:rgb(55 65 81/var(--tw-text-opacity,1))}.text-green-700{--tw-text-opacity:1;color:rgb(21 128 61/var(--tw-text-opacity,1))}.text-green-800{--tw-text-opacity:1;color:rgb(22 101 52/var(--tw-text-opacity,1))}.text-orange-600{--tw-text-opacity:1;color:rgb(234 88 12/var(--tw-text-opacity,1))}.text-red-500{--tw-text-opacity:1;color:rgb(239 68 68/var(--tw-text-opacity,1))}.text-red-600{--tw-text-opacity:1;color:rgb(220 38 38/var(--tw-text-opacity,1))}.text-red-700{--tw-text-opacity:1;color:rgb(185 28 28/var(--tw-text-opacity,1))}.text-red-800{--tw-text-opacity:1;color:rgb(153 27 27/var(--tw-text-opacity,1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.text-yellow-700{--tw-text-opacity:1;color:rgb(161 98 7/var(--tw-text-opacity,1))}.text-yellow-800{--tw-text-opacity:1;color:rgb(133 77 14/var(--tw-text-opacity,1))}.text-yellow-900{--tw-text-opacity:1;color:rgb(113 63 18/var(--tw-text-opacity,1))}.opacity-70{opacity:.7}.opacity-80{opacity:.8}.shadow{--tw-shadow:0 1px 3px 0 rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1);--tw-shadow-colored:0 1px 3px 0 var(--tw-shadow-color),0 1px 2px -1px var(--tw-shadow-color)}.shadow,.shadow-lg{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color),0 4px 6px -4px var(--tw-shadow-color)}.shadow-md{--tw-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);--tw-shadow-colored:0 4px 6px -1px var(--tw-shadow-color),0 2px 4px -2px var(--tw-shadow-color)}.shadow-md,.shadow-xl{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color),0 8px 10px -6px var(--tw-shadow-color)}.filter{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-colors{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.hover\:bg-gray-50:hover{--tw-bg-opacity:1;background-color:rgb(249 250 251/var(--tw-bg-opacity,1))}.hover\:bg-red-700:hover{--tw-bg-opacity:1;background-color:rgb(185 28 28/var(--tw-bg-opacity,1))}.hover\:bg-white\/30:hover{background-color:hsla(0,0%,100%,.3)}.hover\:bg-yellow-300:hover{--tw-bg-opacity:1;background-color:rgb(253 224 71/var(--tw-bg-opacity,1))}.hover\:shadow-lg:hover{--tw-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color),0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}@media (min-width:768px){.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
   </style>
 </head>
 <body>
@@ -184,13 +194,18 @@
         <div class="title">สรุปยอดขาย</div>
         <div class="sub" id="hdr-sub">—</div>
       </div>
-      <a href="loss-calculator.html" id="chip-loss" class="key chip-link hidden" title="คำนวณของหาย">🔎<span class="lbl"> ของหาย</span></a>
       <a href="pos.html" class="key chip-link ghost" title="หน้าคิดเงิน">🧮<span class="lbl"> คิดเงิน</span></a>
       <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
   </div>
 
   <div class="wrap">
+    <div class="card viewtabs">
+      <button onclick="setView('sales')" id="view-sales" class="key tabbtn on">📊 ยอดขาย</button>
+      <button onclick="setView('loss')"  id="view-loss"  class="key tabbtn">🔎 คำนวณของหาย</button>
+    </div>
+
+    <div id="panel-sales">
     <div class="card filters">
       <div class="tabs" id="range-tabs"></div>
       <div class="filter-right">
@@ -265,6 +280,130 @@
         </div>
       </div>
     </div>
+    </div><!-- /panel-sales -->
+
+    <div id="panel-loss" class="hidden">
+    <!-- คำอธิบายสูตร -->
+    <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-5 text-sm text-blue-800">
+      <p class="font-semibold mb-1">📐 วิธีคำนวณ</p>
+      <p>สต็อกยกมา (เช็คครั้งก่อน) + ของเข้าช่วงนี้ − ของเสียช่วงนี้ − สต็อกคงเหลือ (เช็ควันที่เลือก) = จำนวนที่หายไป/ขายไป → คูณราคา/ชิ้น = มูลค่ารวม แล้วเทียบกับยอดขายจริง</p>
+    </div>
+
+    <!-- ตั้งค่า -->
+    <div class="bg-white rounded-2xl shadow-md p-5 mb-5">
+      <h2 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <span class="w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+        เลือกสาขาและช่วงเช็คสต็อก
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-600 mb-1">สาขา <span class="text-red-500">*</span></label>
+          <select id="calc-branch" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl bg-white">
+            <option value="">เลือกสาขา</option>
+            <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
+            <option value="แบริ่ง">แบริ่ง</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-600 mb-1">วันที่เช็คสต็อก <span class="text-red-500">*</span></label>
+          <input type="date" id="stock-date" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-600 mb-1">มูลค่าต่อชิ้น (บาท) <span class="text-red-500">*</span></label>
+          <input type="number" id="unit-value" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl" value="10" min="0" step="0.01">
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 mt-2">ระบบจะใช้สต็อกยกมาจากการเช็คครั้งก่อน + ของเข้า/ของเสีย/ยอดขายหลังจากนั้นถึงวันที่เลือก เฉพาะสาขาที่เลือก</p>
+      <p class="text-xs text-gray-400 mt-1">💰 ราคาพิเศษอัตโนมัติ: มาม่า ok ทุกรส = 20 บาท, มาม่าเผ็ด (ชมพู/เหลือง/ดำ) = 45 บาท — รายการอื่นใช้มูลค่าต่อชิ้นด้านบน</p>
+      <button onclick="calculate()" id="calc-btn"
+        class="w-full mt-4 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-xl font-semibold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        คำนวณ
+      </button>
+    </div>
+
+    <!-- สรุปผลรวม -->
+    <div id="summary-box" class="hidden bg-white rounded-2xl shadow-md p-5 mb-5">
+      <h2 class="font-semibold text-gray-700 mb-4">📊 สรุปผลรวม — <span id="summary-branch" class="text-red-600"></span></h2>
+      <p id="debug-info" class="text-xs text-gray-400 mb-3"></p>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-red-50 rounded-xl p-4 text-center">
+          <div id="total-qty-lost" class="text-3xl font-bold text-red-600">0</div>
+          <div class="text-xs text-gray-500 mt-1">จำนวนที่หายไปทั้งหมด (ชิ้น)</div>
+        </div>
+        <div class="bg-orange-50 rounded-xl p-4 text-center">
+          <div id="total-value-lost" class="text-3xl font-bold text-orange-600">0</div>
+          <div class="text-xs text-gray-500 mt-1">มูลค่ารวม (บาท)</div>
+        </div>
+      </div>
+      <!-- เปรียบเทียบกับยอดขายจริง -->
+      <div id="sales-compare" class="mt-3 hidden"></div>
+    </div>
+
+    <!-- รายละเอียดรายรายการ -->
+    <div id="detail-box" class="hidden bg-white rounded-2xl shadow-lg overflow-hidden mb-8">
+      <div class="bg-gradient-to-r from-gray-700 to-gray-800 text-white px-5 py-3 flex items-center justify-between">
+        <h2 class="font-semibold">รายละเอียดแต่ละรายการ</h2>
+        <button onclick="toggleZeroRows()" id="toggle-zero-btn" class="text-xs bg-white/20 px-3 py-1 rounded-lg hover:bg-white/30 transition-all">
+          ซ่อนรายการที่ไม่หาย
+        </button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead><tr class="bg-gray-50">
+            <th class="p-3 text-left font-medium text-gray-600">รายการ</th>
+            <th class="p-3 text-center font-medium text-gray-600">ยกมา</th>
+            <th class="p-3 text-center font-medium text-gray-600">เข้าช่วงนี้</th>
+            <th class="p-3 text-center font-medium text-gray-600">เสียช่วงนี้</th>
+            <th class="p-3 text-center font-medium text-gray-600">สต็อกปัจจุบัน</th>
+            <th class="p-3 text-center font-medium text-gray-600">หายไป</th>
+            <th class="p-3 text-center font-medium text-gray-600">ราคา/ชิ้น</th>
+            <th class="p-3 text-center font-medium text-gray-600">มูลค่า (บาท)</th>
+          </tr></thead>
+          <tbody id="detail-table" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน -->
+    <div id="stats-box" class="hidden bg-white rounded-2xl shadow-md p-5 mb-8">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 class="font-semibold text-gray-700">📈 สรุปยอดขาย</h2>
+        <div class="flex gap-1 bg-gray-100 rounded-xl p-1">
+          <button onclick="setStatsMode('daily')"   id="stats-btn-daily"   class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายวัน</button>
+          <button onclick="setStatsMode('weekly')"  id="stats-btn-weekly"  class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายสัปดาห์</button>
+          <button onclick="setStatsMode('monthly')" id="stats-btn-monthly" class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500">รายเดือน</button>
+        </div>
+      </div>
+      <div id="stats-summary" class="grid grid-cols-3 gap-2 mb-4"></div>
+      <div id="stats-table" class="overflow-x-auto mb-5"></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <h3 id="stats-sellers-head" class="text-sm font-semibold text-gray-600 mb-2">🏆 ขายดีสุด</h3>
+          <div id="stats-top-sellers" class="max-h-96 overflow-y-auto pr-1"></div>
+        </div>
+        <div>
+          <h3 id="stats-waste-head" class="text-sm font-semibold text-gray-600 mb-2">🗑️ เสียบ่อยสุด</h3>
+          <div id="stats-top-waste" class="max-h-96 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="empty-state" class="text-center text-gray-400 py-10">
+      เลือกวันที่เช็คสต็อกแล้วกด "คำนวณ" เพื่อดูผลลัพธ์
+    </div>
+    </div><!-- /panel-loss -->
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl shadow-lg hidden z-50 flex items-center gap-2 text-white text-sm"></div>
+
+<!-- Loading -->
+<div id="loading-overlay" class="hidden fixed inset-0 bg-black/40 z-40 flex items-center justify-center">
+  <div class="bg-white rounded-2xl p-6 text-center shadow-xl">
+    <div class="spinner mx-auto mb-3"></div>
+    <p id="loading-text" class="text-gray-700 font-medium">กำลังโหลดข้อมูล...</p>
   </div>
 </div>
 
@@ -638,7 +777,6 @@ function showApp() {
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('demo-bar').classList.toggle('hidden', !isDemo());
   // ของหาย = ข้อมูลเงิน เห็นเฉพาะเจ้าของร้าน
-  document.getElementById('chip-loss').classList.toggle('hidden', !isOwner());
   setRange(isDemo() ? '30' : 'today');
 }
 
@@ -697,6 +835,916 @@ readAuth();
 renderRangeTabs();
 if (auth.token) showApp();
 else document.getElementById('login-page').style.display = 'flex';
+
+/* ════════════════════════════════════════════════
+   สลับแท็บ ยอดขาย / คำนวณของหาย
+   ════════════════════════════════════════════════ */
+let lossReady = false;
+function setView(v) {
+  document.getElementById('panel-sales').classList.toggle('hidden', v !== 'sales');
+  document.getElementById('panel-loss').classList.toggle('hidden', v !== 'loss');
+  document.getElementById('view-sales').classList.toggle('on', v === 'sales');
+  document.getElementById('view-loss').classList.toggle('on', v === 'loss');
+  if (v === 'loss' && !lossReady) { initLossPanel(); lossReady = true; }
+}
+
+/** ตั้งค่าเริ่มต้นของแท็บคำนวณ — วันที่วันนี้ และสาขาของคนที่ login */
+function initLossPanel() {
+  const d = new Date();
+  document.getElementById('stock-date').value =
+    d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const sel = document.getElementById('calc-branch');
+  if (auth.branch && [...sel.options].some(o => o.value === auth.branch)) sel.value = auth.branch;
+}
+
+/* ════════════════════════════════════════════════
+   คำนวณของหาย — ใช้ session และ URL เดียวกับหน้าสรุปยอด ไม่ต้อง login ซ้ำ
+   ════════════════════════════════════════════════ */
+
+// ============================================================
+// FETCH DATA FROM GOOGLE SHEETS
+// ============================================================
+const SHEET_NAME_MAP = {
+  incoming: 'จำนวนของเข้า',
+  weekly:   'เช็คสต็อกรายสัปดาห์',
+  waste:    'ของเสีย',
+  sales:    'ยอดขาย'
+};
+
+async function fetchAllHistory(type) {
+  const token = auth.token;
+  // &_=timestamp กันเบราว์เซอร์ cache ผลเก่า — ดึงข้อมูลสดจาก Sheet ทุกครั้ง
+  const res  = await fetch(`${apiUrl()}?action=history&type=${type}&token=${encodeURIComponent(token)}&_=${Date.now()}`, { cache: 'no-store' });
+  const json = await res.json();
+  if (json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
+  if (!json.success) throw new Error(json.message || json.error || 'โหลดข้อมูลไม่สำเร็จ');
+  const data = json.data || [];
+  // กรอง _sheet ฝั่ง client เผื่อ server คืนข้อมูลทุก sheet กลับมา
+  const sheetName = SHEET_NAME_MAP[type];
+  if (sheetName && data.some(r => r['_sheet'])) {
+    return data.filter(r => r['_sheet'] === sheetName);
+  }
+  return data;
+}
+
+// แปลง string วันที่ไทย "18/6/2569 14:30:00" หรือ ISO ให้เป็น Date (local midnight)
+function parseThaiDate(str) {
+  if (!str) return null;
+  str = String(str);
+  const match = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (match) {
+    let [, d, m, y] = match;
+    y = parseInt(y);
+    if (y > 2400) y -= 543; // พ.ศ. -> ค.ศ.
+    return new Date(y, parseInt(m) - 1, parseInt(d));
+  }
+  // ISO: parse as local date (split on T or space)
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    let y = parseInt(iso[1]);
+    if (y > 2400) y -= 543; // API ส่งปี พ.ศ. ใน ISO format เช่น "2569-06-28T..."
+    return new Date(y, parseInt(iso[2]) - 1, parseInt(iso[3]));
+  }
+  return null;
+}
+
+// แปลง Date เป็น "YYYY-MM-DD" ใน local time
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// ============================================================
+// CALCULATE
+// ============================================================
+async function calculate() {
+  const stockDateStr = document.getElementById('stock-date').value;
+  const unitValue    = parseFloat(document.getElementById('unit-value').value) || 0;
+  const branch       = document.getElementById('calc-branch').value;
+
+  if (!branch) { showToast('⚠️ กรุณาเลือกสาขา', 'warn'); return; }
+  if (!stockDateStr) { showToast('⚠️ กรุณาเลือกวันที่เช็คสต็อก', 'warn'); return; }
+
+  showLoading(true, 'กำลังโหลดข้อมูลจาก Google Sheets...');
+
+  try {
+    // parse stockDateStr เป็น local date (ป้องกันปัญหา UTC offset)
+    const [yr, mo, da] = stockDateStr.split('-').map(Number);
+    const currentSunday = new Date(yr, mo - 1, da);
+    const currentSundayStr = toDateStr(currentSunday);
+
+    const [incomingDataAll, weeklyDataAll, wasteDataAll, salesDataAll] = await Promise.all([
+      fetchAllHistory('incoming'),
+      fetchAllHistory('weekly'),
+      fetchAllHistory('waste'),
+      fetchAllHistory('sales').catch(() => []) // ยอดขายเป็น optional ถ้าดึงไม่ได้ไม่ต้อง error
+    ]);
+
+    // ── กรองเฉพาะสาขาที่เลือก ──
+    const incomingData = incomingDataAll.filter(row => row['สาขา'] === branch);
+    const weeklyData   = weeklyDataAll.filter(row => row['สาขา'] === branch);
+    const wasteData    = wasteDataAll.filter(row => row['สาขา'] === branch);
+    const salesData    = salesDataAll.filter(row => row['สาขา'] === branch);
+
+
+    // ── หาวันเช็คสต็อกครั้งก่อนล่าสุด (ก่อนวันที่เลือก) เพื่อใช้เป็นสต็อกยกมา ──
+    let openingDateStr = null;
+    weeklyData.forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d) return;
+      const ds = toDateStr(d);
+      if (ds >= currentSundayStr) return;
+      if (!openingDateStr || ds > openingDateStr) openingDateStr = ds;
+    });
+
+    // ── สต็อกยกมา = ผลเช็คสต็อกของครั้งก่อน ──
+    const openingStock = {};
+    if (openingDateStr) {
+      weeklyData.forEach(row => {
+        const d = parseThaiDate(row['วันที่เวลา']);
+        if (!d || toDateStr(d) !== openingDateStr) return;
+        const name = row['รายการ'];
+        const qty  = parseFloat(row['จำนวน']) || 0;
+        if (!name) return;
+        openingStock[name] = qty;
+      });
+    }
+
+    // ช่วงเวลาที่นับ: หลังวันเช็คครั้งก่อน จนถึงวันที่เลือก (ถ้าไม่มีเช็คครั้งก่อน = ตั้งแต่ต้น)
+    const inWindow = ds => ds <= currentSundayStr && (!openingDateStr || ds > openingDateStr);
+
+    // ── ของเข้าในช่วงนี้ (หลังเช็คครั้งก่อน ถึงวันที่เลือก) ──
+    const incomingTotals = {};
+    incomingData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      if (!inWindow(toDateStr(rowDate))) return;
+      const name = row['รายการ'];
+      const qty  = parseFloat(row['จำนวน']) || 0;
+      if (!name) return;
+      incomingTotals[name] = (incomingTotals[name] || 0) + qty;
+    });
+
+    // ── ของเสียในช่วงเดียวกัน ──
+    const thisWeekWaste = {};
+    wasteData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      if (!inWindow(toDateStr(rowDate))) return;
+      const name = row['รายการ'];
+      const qty  = parseFloat(row['จำนวน']) || 0;
+      if (!name) return;
+      thisWeekWaste[name] = (thisWeekWaste[name] || 0) + qty;
+    });
+
+    // ── สต็อกคงเหลือ (เช็คสต็อกรายสัปดาห์วันที่เลือก) ──
+    const currentStock = {};
+    weeklyData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      if (toDateStr(rowDate) !== currentSundayStr) return;
+      const name = row['รายการ'];
+      const qty  = parseFloat(row['จำนวน']) || 0;
+      if (!name) return;
+      currentStock[name] = qty; // อันล่าสุดทับอันเก่า
+    });
+
+
+    if (!Object.keys(currentStock).length) {
+      // วิเคราะห์ข้อมูลดิบเพื่อ debug
+      const parsedInfo = weeklyData.map(row => ({
+        raw: row['วันที่เวลา'],
+        parsed: (() => { const d = parseThaiDate(row['วันที่เวลา']); return d ? toDateStr(d) : 'FAIL'; })()
+      }));
+      const failCount = parsedInfo.filter(x => x.parsed === 'FAIL').length;
+      const availableDates = [...new Set(parsedInfo.filter(x => x.parsed !== 'FAIL').map(x => x.parsed))].sort().reverse().slice(0, 5);
+      const sampleRaw = weeklyData.slice(0, 2).map(r => r['วันที่เวลา']);
+
+
+      const datesHtml = availableDates.length
+        ? `<div class="mt-3">
+            <p class="text-sm font-medium text-yellow-800 mb-1">📅 วันที่มีข้อมูล (กดเพื่อใช้):</p>
+            <div class="flex flex-wrap gap-2">
+              ${availableDates.map(d => `
+                <button onclick="document.getElementById('stock-date').value='${d}'; calculate()"
+                  class="bg-yellow-200 hover:bg-yellow-300 text-yellow-900 text-sm font-semibold px-3 py-1 rounded-lg transition-all">
+                  ${d}
+                </button>`).join('')}
+            </div>
+          </div>`
+        : `<p class="text-sm text-red-700 mt-2">⚠️ แปลงวันที่ไม่ได้เลย (parse fail ${failCount}/${weeklyData.length})</p>`;
+
+      document.getElementById('empty-state').innerHTML = `
+        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left mx-auto">
+          <p class="font-semibold text-yellow-800 mb-2">⚠️ ไม่พบข้อมูลเช็คสต็อกสำหรับวันที่เลือก</p>
+          <p class="text-sm text-yellow-700">วันที่เลือก: <strong>${currentSundayStr}</strong></p>
+          ${datesHtml}
+          <div class="mt-3 bg-white rounded-lg p-3 text-xs text-gray-500 font-mono break-all">
+            <p class="font-semibold text-gray-600 mb-1">ตัวอย่าง format วันที่ใน API:</p>
+            ${sampleRaw.map(r => `<p>"${r}"</p>`).join('')}
+            <p class="mt-1">แปลงไม่ได้: ${failCount}/${weeklyData.length} รายการ</p>
+          </div>
+        </div>`;
+      document.getElementById('empty-state').classList.remove('hidden');
+      showLoading(false);
+      return;
+    }
+
+    // ── รอบฐาน: มีสต็อกวันนี้ แต่ไม่มีเช็คสต็อกรอบก่อนหน้า → คำนวณของหายไม่ได้ ──
+    // (การคำนวณต้องมี 2 จุด: รอบก่อน(ฐาน) กับรอบนี้(ปิด) เอามาลบกัน)
+    if (!openingDateStr) {
+      const stockList = Object.entries(currentStock)
+        .sort((a, b) => getItemGroup(a[0]) - getItemGroup(b[0]) || a[0].localeCompare(b[0], 'th'));
+      document.getElementById('summary-box').classList.add('hidden');
+      document.getElementById('detail-box').classList.add('hidden');
+      document.getElementById('stats-box').classList.add('hidden');
+      document.getElementById('empty-state').innerHTML = `
+        <div class="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-left max-w-lg mx-auto">
+          <p class="font-semibold text-blue-800 mb-2">📌 นี่คือ "รอบฐาน" (${currentSundayStr})</p>
+          <p class="text-sm text-blue-700 mb-2">เช็คสต็อกรอบนี้เป็นจุดเริ่มต้น ยังไม่มีรอบก่อนหน้าให้เทียบ จึงยังคำนวณของหายไม่ได้</p>
+          <p class="text-sm text-blue-700 mb-3">✅ ตั้งแต่นี้ให้บันทึก <strong>ของเข้า / ยอดขาย / ของเสีย</strong> ตามปกติ แล้วมา <strong>เช็คสต็อกรอบถัดไป</strong> — ระบบจะใช้ยอดวันนี้เป็น "ยกมา" แล้วคำนวณของหายให้อัตโนมัติ</p>
+          <div class="bg-white rounded-lg p-3">
+            <p class="text-xs font-semibold text-gray-600 mb-2">📦 สต็อกฐานที่บันทึกไว้ (${stockList.length} รายการ):</p>
+            <div class="text-sm text-gray-700 grid grid-cols-2 gap-x-4 gap-y-1">
+              ${stockList.map(([name, qty]) => `<div class="flex justify-between"><span>${name}</span><span class="font-medium">${qty}</span></div>`).join('')}
+            </div>
+          </div>
+        </div>`;
+      document.getElementById('empty-state').classList.remove('hidden');
+      showLoading(false);
+      return;
+    }
+
+    // ── คำนวณของหายต่อรายการ ──
+    // สูตร: สต็อกยกมา (เช็คครั้งก่อน) + ของเข้าช่วงนี้ − ของเสียช่วงนี้ − สต็อกปัจจุบัน = หายไป/ขายไป
+    const allNames = new Set([
+      ...Object.keys(currentStock),
+      ...Object.keys(incomingTotals),
+      ...Object.keys(openingStock)
+    ]);
+
+    const details = [];
+    let totalQtyLost = 0, totalValueLost = 0;
+
+    allNames.forEach(name => {
+      if (!currentStock.hasOwnProperty(name)) return; // ต้องมีสต็อกปัจจุบัน
+      if (isExcludedItem(name)) return; // ของไม่มีราคา ไม่ต้องนับ
+      const openingQty  = openingStock[name] || 0;
+      const incomingQty = incomingTotals[name] || 0;
+      const wasteQty    = thisWeekWaste[name] || 0;
+      const currentQty  = currentStock[name];
+      const lostQty     = openingQty + incomingQty - wasteQty - currentQty;
+      const price       = getUnitPrice(name, unitValue);
+      const lostValue   = lostQty * price;
+      details.push({ name, openingQty, incomingQty, wasteQty, currentQty, lostQty, price, lostValue });
+      totalQtyLost   += lostQty;
+      totalValueLost += lostValue;
+    });
+
+    // เรียงเป็นหมวด: หมู/เนื้อ → ทะเล → ของสดอื่นๆ → เสียบไม้ → มาม่า ok → มาม่าเผ็ด → เส้น/ของแห้ง → ผัก → อื่นๆ
+    details.sort((a, b) => {
+      const ga = getItemGroup(a.name), gb = getItemGroup(b.name);
+      if (ga !== gb) return ga - gb;
+      return a.name.localeCompare(b.name, 'th');
+    });
+
+
+    // ── ยอดขายจริง + รายการหักในช่วงเดียวกัน ──
+    // Delivery/น้ำจิ้มแถม ใช้ของแต่ไม่มีเงินเข้า, ส่วนลดทำให้เงินเข้าน้อยกว่ามูลค่าของ
+    let weekSales = 0, salesDays = 0, deliveryBags = 0, weekDiscount = 0, freeSauce = 0;
+    salesData.forEach(row => {
+      const rowDate = parseThaiDate(row['วันที่เวลา']);
+      if (!rowDate) return;
+      if (!inWindow(toDateStr(rowDate))) return;
+      weekSales    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
+      deliveryBags += rowDeliveryBags(row);
+      weekDiscount += parseFloat(row['ส่วนลด (บาท)']) || 0;
+      freeSauce    += parseFloat(row['น้ำจิ้มแถม (ชิ้น)']) || 0;
+      salesDays++;
+    });
+    const deliveryValue  = deliveryBags * unitValue;
+    const freeSauceValue = freeSauce * unitValue;
+
+    const debugInfo = {
+      incomingRows: incomingData.length,
+      wasteRows: wasteData.length,
+      weeklyRows: weeklyData.length,
+      stockItems: Object.keys(currentStock).length,
+      incomingItems: Object.keys(incomingTotals).length
+    };
+
+    renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays,
+      { deliveryBags, deliveryValue, discount: weekDiscount, freeSauce, freeSauceValue });
+
+    // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
+    const allCheckDates = [...new Set(weeklyData
+      .map(r => { const d = parseThaiDate(r['วันที่เวลา']); return d ? toDateStr(d) : null; })
+      .filter(Boolean))].sort();
+    statsData = {
+      days: buildDailySales(salesData),
+      checkDates: allCheckDates,
+      waste: wasteData,
+      usage: buildUsageByPeriod(weeklyData, incomingData, wasteData)
+    };
+    renderStats();
+    document.getElementById('stats-box').classList.remove('hidden');
+
+    showToast('✅ คำนวณสำเร็จ', 'success');
+
+  } catch(e) {
+    showToast('❌ เกิดข้อผิดพลาด: ' + e.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+let lastDetails = [];
+
+function renderResults(details, totalQty, totalValue, debugInfo, weekSales, salesDays, deduct) {
+  deduct = deduct || {};
+  lastDetails = details;
+
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('summary-box').classList.remove('hidden');
+  document.getElementById('detail-box').classList.remove('hidden');
+
+  document.getElementById('summary-branch').textContent = document.getElementById('calc-branch').value;
+  document.getElementById('total-qty-lost').textContent   = totalQty.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+  document.getElementById('total-value-lost').textContent = totalValue.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+  // ── เปรียบเทียบมูลค่าของที่ใช้ไป กับ ยอดขายจริง ──
+  const cmpEl = document.getElementById('sales-compare');
+  const fmt = n => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+  if (!salesDays) {
+    cmpEl.innerHTML = `
+      <div class="bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-500">
+        💵 ไม่พบข้อมูลยอดขายในสัปดาห์นี้ — บันทึกยอดขายรายวันใน index.html เพื่อเทียบกับมูลค่าของที่ใช้ไป
+      </div>`;
+  } else {
+    // หักรายการที่ใช้ของ/ลดเงินแต่ไม่มีเงินเข้า: Delivery, ส่วนลด, น้ำจิ้มแถม
+    const totalDeduct = (deduct.deliveryValue || 0) + (deduct.discount || 0) + (deduct.freeSauceValue || 0);
+    const expectValue = totalValue - totalDeduct;
+    const diff = weekSales - expectValue;
+    let verdict, boxCls;
+    if (diff >= 0) {
+      verdict = `✅ ยอดขายครอบคลุมมูลค่าของที่ใช้ไป (เกิน ${fmt(diff)} บาท)`;
+      boxCls  = 'bg-green-50 border-green-200 text-green-800';
+    } else {
+      verdict = `⚠️ ยอดขายน้อยกว่าที่ควรได้ <strong>${fmt(-diff)} บาท</strong> — เงิน/ของอาจหายไป`;
+      boxCls  = 'bg-red-50 border-red-200 text-red-800';
+    }
+    const deductParts = [];
+    if (deduct.deliveryBags > 0) deductParts.push(`🛵 Delivery ${fmt(deduct.deliveryBags)} ถุง = ${fmt(deduct.deliveryValue)} บาท`);
+    if (deduct.discount > 0)     deductParts.push(`🏷️ ส่วนลด ${fmt(deduct.discount)} บาท`);
+    if (deduct.freeSauce > 0)    deductParts.push(`🥫 น้ำจิ้มแถม ${fmt(deduct.freeSauce)} ชิ้น = ${fmt(deduct.freeSauceValue)} บาท`);
+    const deductLine = deductParts.length
+      ? `<p class="text-xs opacity-80 mb-2">หักรายการไม่มีเงินเข้า: ${deductParts.join(' + ')} → ที่ต้องได้เงิน = ${fmt(totalValue)} − ${fmt(totalDeduct)} = ${fmt(expectValue)} บาท</p>`
+      : '';
+    cmpEl.innerHTML = `
+      <div class="border rounded-xl p-4 ${boxCls}">
+        <p class="font-semibold text-sm mb-2">💵 เทียบกับยอดขายจริง (${salesDays} วันในสัปดาห์นี้)</p>
+        ${deductLine}
+        <div class="grid grid-cols-3 gap-2 text-center text-sm mb-2">
+          <div><div class="font-bold">${fmt(weekSales)}</div><div class="text-xs opacity-70">ยอดขายจริง (บาท)</div></div>
+          <div><div class="font-bold">${fmt(expectValue)}</div><div class="text-xs opacity-70">มูลค่าที่ต้องได้เงิน (บาท)</div></div>
+          <div><div class="font-bold">${diff >= 0 ? '+' : ''}${fmt(diff)}</div><div class="text-xs opacity-70">ส่วนต่าง (บาท)</div></div>
+        </div>
+        <p class="text-xs">${verdict}</p>
+      </div>`;
+  }
+  cmpEl.classList.remove('hidden');
+
+  // แสดง debug info
+  if (debugInfo) {
+    const el = document.getElementById('debug-info');
+    if (el) {
+      el.textContent = `ข้อมูลที่ใช้: ของเข้า ${debugInfo.incomingRows} รายการ (${debugInfo.incomingItems} รายการสินค้า) | เสีย ${debugInfo.wasteRows} รายการ | สต็อก ${debugInfo.weeklyRows} รายการ (${debugInfo.stockItems} รายการสินค้า)`;
+    }
+  }
+
+  renderTable(details);
+}
+
+let hideZero = false;
+function toggleZeroRows() {
+  hideZero = !hideZero;
+  document.getElementById('toggle-zero-btn').textContent = hideZero ? 'แสดงทุกรายการ' : 'ซ่อนรายการที่ไม่หาย';
+  renderTable(lastDetails);
+}
+
+function renderTable(details) {
+  const rows = hideZero ? details.filter(d => d.lostQty > 0) : details;
+  const tbody = document.getElementById('detail-table');
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-6">ไม่มีรายการ</td></tr>';
+    return;
+  }
+
+  let prevGroup = -1;
+  tbody.innerHTML = rows.map(d => {
+    const lostColor = d.lostQty > 0 ? 'text-red-600 font-semibold' : d.lostQty < 0 ? 'text-blue-500' : 'text-gray-400';
+    const fmt = n => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+    const group = getItemGroup(d.name);
+    let sectionHeader = '';
+    if (group !== prevGroup) {
+      prevGroup = group;
+      sectionHeader = `
+        <tr class="bg-red-50/70">
+          <td colspan="8" class="px-3 py-2 text-xs font-bold text-red-700">${ITEM_CATEGORIES[group].label}</td>
+        </tr>`;
+    }
+    return sectionHeader + `
+      <tr class="hover:bg-gray-50">
+        <td class="p-3 font-medium text-gray-700">${d.name}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.openingQty || 0)}</td>
+        <td class="p-3 text-center text-gray-600">${fmt(d.incomingQty)}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.wasteQty)}</td>
+        <td class="p-3 text-center text-gray-600">${fmt(d.currentQty)}</td>
+        <td class="p-3 text-center ${lostColor}">${fmt(d.lostQty)}</td>
+        <td class="p-3 text-center text-gray-500">${fmt(d.price)}</td>
+        <td class="p-3 text-center ${lostColor}">${fmt(d.lostValue)}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// สรุปยอดขาย (รายวัน / รายสัปดาห์ / รายเดือน)
+// ============================================================
+let statsData = null;
+let statsMode = 'weekly';
+const THAI_DAYS   = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function fmtBaht(n) { return n.toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+
+function dayLabel(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${THAI_DAYS[dt.getDay()]} ${d}/${m}`;
+}
+
+// จำนวนถุง Delivery ต่อแถว (ใช้ของแต่ไม่มีเงินเข้า)
+function rowDeliveryBags(row) {
+  return (parseFloat(row['ถุง Delivery (ชิ้น)']) || 0)
+       + (parseFloat(row['ลูกค้าแอดเพิ่ม (ชิ้น)']) || 0);
+}
+
+// รวมยอดขายเป็นรายวัน (กรณีบันทึกหลายรอบในวันเดียวกันจะบวกรวมกัน)
+function buildDailySales(salesData) {
+  const byDay = {};
+  salesData.forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d) return;
+    const ds = toDateStr(d);
+    byDay[ds] = (byDay[ds] || 0) + (parseFloat(row['ยอดขายรวม (บาท)']) || 0);
+  });
+  return Object.entries(byDay).map(([date, total]) => ({ date, total }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function setStatsMode(mode) { statsMode = mode; renderStats(); }
+
+// ตัวเลือกช่วงของแต่ละแท็บ ('' = ทั้งหมด)
+let statsSel = { daily: '', weekly: '', monthly: '', year: '' };
+function setStatsSel(mode, val) { statsSel[mode] = val; renderStats(); }
+
+function statsPicker(mode, options, selected, allLabel) {
+  return `<div class="mb-3 flex items-center gap-2 flex-wrap">
+    <label class="text-sm text-gray-500">เลือกดู:</label>
+    <select onchange="setStatsSel('${mode}', this.value)"
+      class="text-sm p-2 border-2 border-gray-200 rounded-lg bg-white">
+      <option value="">${allLabel}</option>
+      ${options.map(o => `<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+function renderStatsSummary(el, totals) {
+  if (!totals.length) { el.innerHTML = ''; return; }
+  if (totals.length === 1) {
+    el.innerHTML = `<div class="bg-blue-50 rounded-xl p-3 text-center col-span-3">
+      <div class="font-bold text-blue-700 text-xl">${fmtBaht(totals[0])}</div>
+      <div class="text-xs text-gray-500">ยอดขาย (บาท)</div></div>`;
+    return;
+  }
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const avg = sum / totals.length;
+  el.innerHTML = `
+    <div class="bg-blue-50 rounded-xl p-3 text-center"><div class="font-bold text-blue-700">${fmtBaht(avg)}</div><div class="text-xs text-gray-500">เฉลี่ย/วัน (บาท)</div></div>
+    <div class="bg-green-50 rounded-xl p-3 text-center"><div class="font-bold text-green-700">${fmtBaht(Math.max(...totals))}</div><div class="text-xs text-gray-500">วันดีสุด (บาท)</div></div>
+    <div class="bg-yellow-50 rounded-xl p-3 text-center"><div class="font-bold text-yellow-700">${fmtBaht(Math.min(...totals))}</div><div class="text-xs text-gray-500">วันน้อยสุด (บาท)</div></div>`;
+}
+
+function statsTable(headers, rows) {
+  if (!rows.length) return '<p class="text-sm text-gray-400 text-center py-4">ไม่มีข้อมูล</p>';
+  return `<table class="w-full text-sm">
+    <thead><tr class="bg-gray-50">${headers.map((h, i) =>
+      `<th class="p-2 ${i === 0 ? 'text-left' : 'text-center'} font-medium text-gray-600 whitespace-nowrap">${h}</th>`).join('')}</tr></thead>
+    <tbody class="divide-y divide-gray-100">${rows.map(r =>
+      `<tr>${r.map((c, i) =>
+        `<td class="p-2 ${i === 0 ? 'text-left font-medium text-gray-700' : 'text-center text-gray-600'} whitespace-nowrap">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function periodRow(label, days) {
+  if (!days.length) return [label, '-', '-', '-', '-'];
+  const totals = days.map(d => d.total);
+  const sum    = totals.reduce((a, b) => a + b, 0);
+  const best   = days.reduce((a, b) => b.total > a.total ? b : a);
+  const worst  = days.reduce((a, b) => b.total < a.total ? b : a);
+  return [label, fmtBaht(sum), fmtBaht(sum / days.length),
+    `${dayLabel(best.date)} (${fmtBaht(best.total)})`,
+    `${dayLabel(worst.date)} (${fmtBaht(worst.total)})`];
+}
+
+// กราฟแท่งยอดขายรายเดือนทั้งปี (12 เดือน)
+function monthlyChart(byMonth, year) {
+  const vals = [];
+  for (let m = 1; m <= 12; m++) {
+    const mk = `${year}-${String(m).padStart(2, '0')}`;
+    const ds = byMonth[mk] || [];
+    vals.push({ m, mk, total: ds.reduce((a, b) => a + b.total, 0), has: ds.length > 0 });
+  }
+  const max      = Math.max(...vals.map(v => v.total), 1);
+  const withData = vals.filter(v => v.has);
+  const best     = withData.length ? withData.reduce((a, b) => b.total > a.total ? b : a) : null;
+  const worst    = withData.length > 1 ? withData.reduce((a, b) => b.total < a.total ? b : a) : null;
+
+  return `
+  <div class="mb-4">
+    <div class="flex items-end gap-[2px] h-44">
+      ${vals.map(v => {
+        const h = v.has ? Math.max(4, Math.round(v.total / max * 130)) : 2;
+        const isBest  = best  && v.mk === best.mk;
+        const isWorst = worst && v.mk === worst.mk;
+        const lbl = (isBest || isWorst)
+          ? `<div class="text-[10px] ${isBest ? 'text-red-700 font-bold' : 'text-gray-500'} leading-none mb-0.5 whitespace-nowrap">${fmtBaht(v.total)}</div>`
+          : '';
+        const caption = `${THAI_MONTHS[v.m - 1]} ${year}: ${v.has ? fmtBaht(v.total) + ' บาท' : 'ไม่มีข้อมูล'}`;
+        return `<div class="flex-1 flex flex-col items-center justify-end h-full cursor-pointer min-w-0"
+          onclick="document.getElementById('chart-caption').textContent='${caption}'"
+          onmouseenter="document.getElementById('chart-caption').textContent='${caption}'">
+          ${lbl}
+          <div class="w-full rounded-t ${v.has ? 'bg-red-500 hover:bg-red-700' : 'bg-gray-200'} transition-colors" style="height:${h}px"></div>
+          <div class="text-[10px] text-gray-500 mt-1 whitespace-nowrap">${THAI_MONTHS[v.m - 1]}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <p id="chart-caption" class="text-xs text-gray-500 text-center mt-2">แตะ/ชี้แท่งเพื่อดูยอดแต่ละเดือน</p>
+  </div>`;
+}
+
+function renderStats() {
+  if (!statsData) return;
+  const { days, checkDates } = statsData;
+
+  ['daily', 'weekly', 'monthly'].forEach(m => {
+    const btn = document.getElementById('stats-btn-' + m);
+    if (btn) btn.className = 'px-3 py-1.5 rounded-lg text-sm font-medium transition-all ' +
+      (m === statsMode ? 'bg-white shadow text-red-600' : 'text-gray-500');
+  });
+
+  const sumEl = document.getElementById('stats-summary');
+  const tblEl = document.getElementById('stats-table');
+
+  if (!days.length) {
+    sumEl.innerHTML = '';
+    tblEl.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">ยังไม่มีข้อมูลยอดขาย — บันทึกยอดขายรายวันใน index.html ก่อน</p>';
+    return;
+  }
+
+  if (statsMode === 'daily') {
+    // ของเสียแยกตามวัน (ตรงจาก Google Sheet ไม่ผูกกับรอบคำนวณ)
+    const wasteByDay = {};
+    (statsData.waste || []).forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d) return;
+      const ds = toDateStr(d);
+      (wasteByDay[ds] = wasteByDay[ds] || []).push(row);
+    });
+    const wasteQtyOf = ds => (wasteByDay[ds] || []).reduce((a, r) => a + (parseFloat(r['จำนวน']) || 0), 0);
+
+    // รวมวันที่มียอดขาย + วันที่มีของเสีย (เผื่อวันที่มีแต่ของเสียไม่มียอดขาย)
+    const dayMap = {};
+    days.forEach(d => { dayMap[d.date] = d.total; });
+    Object.keys(wasteByDay).forEach(ds => { if (!(ds in dayMap)) dayMap[ds] = null; });
+    const sortedDays = Object.keys(dayMap).sort().reverse().map(date => ({ date, total: dayMap[date] }));
+
+    const sel   = sortedDays.some(d => d.date === statsSel.daily) ? statsSel.daily : '';
+    const shown = sel ? sortedDays.filter(d => d.date === sel) : sortedDays.slice(0, 31);
+    renderStatsSummary(sumEl, shown.filter(r => r.total !== null).map(r => r.total));
+
+    let html = statsPicker('daily',
+        sortedDays.map(d => ({ value: d.date, label: dayLabel(d.date) })), sel, 'ทั้งหมด (31 วันล่าสุด)')
+      + statsTable(['วันที่', 'ยอดขาย (บาท)', 'ของเสีย'],
+        shown.map(r => {
+          const wq = wasteQtyOf(r.date);
+          return [dayLabel(r.date),
+            r.total === null ? '-' : fmtBaht(r.total),
+            wq > 0 ? `<span class="text-red-600 font-semibold">${fmtBaht(wq)} ชิ้น</span>` : '-'];
+        }));
+
+    // ถ้าเลือกวันเดียว แสดงรายละเอียดของเสียวันนั้น
+    if (sel) {
+      const rows = wasteByDay[sel] || [];
+      html += `<div class="mt-4">
+        <h4 class="text-sm font-semibold text-gray-600 mb-2">🗑️ ของเสียวันที่ ${dayLabel(sel)}</h4>
+        ${rows.length
+          ? rows.map(r => `
+              <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+                <span class="text-gray-700">${r['รายการ'] || '-'}${r['หมายเหตุ'] ? ` <span class="text-xs text-gray-400">(${r['หมายเหตุ']})</span>` : ''}</span>
+                <span class="font-semibold text-red-600">${fmtBaht(parseFloat(r['จำนวน']) || 0)} ${r['หน่วย'] || ''}</span>
+              </div>`).join('')
+          : '<p class="text-sm text-gray-400">ไม่มีของเสียวันนั้น 🎉</p>'}
+      </div>`;
+    }
+    tblEl.innerHTML = html;
+
+    // อันดับของเสียตามช่วงที่เลือก
+    if (sel) renderWasteRank(ds => ds === sel, 'วัน ' + dayLabel(sel));
+    else { const set = new Set(shown.map(r => r.date)); renderWasteRank(ds => set.has(ds), '31 วันล่าสุด'); }
+    // อันดับขายดี: ยอดต่อรายการรู้เป็นรายรอบเช็ค — เลือกวันจะแสดงรอบที่ครอบวันนั้น
+    if (sel) {
+      const end = (statsData.checkDates || []).find(cd => cd >= sel);
+      if (end) renderSellerRank(e => e === end, 'รอบที่รวมวัน ' + dayLabel(sel) + ' (จบ ' + dayLabel(end) + ')');
+      else sellersUnavailable('วัน ' + dayLabel(sel), 'วันนี้อยู่ในรอบที่ยังไม่ได้เช็คสต็อก จึงยังคำนวณยอดขายต่อรายการไม่ได้');
+    } else if (shown.length) {
+      const minD = shown[shown.length - 1].date, maxD = shown[0].date;
+      renderSellerRank(e => e >= minD && e <= maxD, '31 วันล่าสุด (รอบเช็คในช่วงนี้)');
+    }
+  }
+
+  if (statsMode === 'weekly') {
+    // แบ่งช่วงตามรอบเช็คสต็อก: ช่วง = หลังเช็คครั้งก่อน ถึงวันเช็คครั้งนั้น
+    const periods = [];
+    checkDates.forEach((cd, i) => {
+      const start  = i > 0 ? checkDates[i - 1] : null;
+      const inDays = days.filter(d => d.date <= cd && (!start || d.date > start));
+      periods.push({ key: cd, label: 'จบ ' + dayLabel(cd), days: inDays, start, end: cd });
+    });
+    const last    = checkDates[checkDates.length - 1];
+    const pending = last ? days.filter(d => d.date > last) : days;
+    if (pending.length) periods.push({ key: 'pending', label: 'ยังไม่เช็ค', days: pending, start: last || null, end: null });
+    periods.reverse(); // ใหม่สุดก่อน
+
+    const sel    = periods.some(p => p.key === statsSel.weekly) ? statsSel.weekly : '';
+    const shown  = sel ? periods.filter(p => p.key === sel) : periods.slice(0, 12);
+    const sumSrc = sel ? shown[0].days : ((shown.find(p => p.days.length) || {}).days || []);
+    renderStatsSummary(sumEl, sumSrc.map(d => d.total));
+    tblEl.innerHTML = statsPicker('weekly',
+        periods.map(p => ({ value: p.key, label: p.label })), sel, 'ทั้งหมด (12 รอบล่าสุด)')
+      + statsTable(['สัปดาห์', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+        shown.map(p => periodRow(p.label, p.days)));
+
+    // อันดับของเสียตามรอบที่เลือก
+    const inPeriod = p => ds => (!p.start || ds > p.start) && (!p.end || ds <= p.end);
+    if (sel) renderWasteRank(inPeriod(shown[0]), 'รอบ' + shown[0].label);
+    else if (shown.length) {
+      const oldest = shown[shown.length - 1], newest = shown[0];
+      renderWasteRank(ds => (!oldest.start || ds > oldest.start) && (!newest.end || ds <= newest.end), 'ทุกรอบที่แสดง');
+    }
+    // อันดับขายดีตามรอบที่เลือก (รอบ = วันเช็คสต็อกที่จบรอบ)
+    if (sel === 'pending') {
+      sellersUnavailable('รอบยังไม่เช็ค', 'รอบนี้ยังไม่ได้เช็คสต็อก จึงยังคำนวณยอดขายต่อรายการไม่ได้');
+    } else if (sel) {
+      renderSellerRank(end => end === sel, 'รอบ' + shown[0].label);
+    } else {
+      const keys = new Set(shown.filter(p => p.key !== 'pending').map(p => p.key));
+      renderSellerRank(end => keys.has(end), 'ทุกรอบที่แสดง');
+    }
+  }
+
+  if (statsMode === 'monthly') {
+    const byMonth = {};
+    days.forEach(d => {
+      const mk = d.date.slice(0, 7);
+      (byMonth[mk] = byMonth[mk] || []).push(d);
+    });
+    const monthLabel = mk => { const [y, m] = mk.split('-'); return `${THAI_MONTHS[parseInt(m) - 1]} ${y}`; };
+    const months = Object.keys(byMonth).sort().reverse();
+    const sel    = months.includes(statsSel.monthly) ? statsSel.monthly : '';
+    const shown  = sel ? [sel] : months.slice(0, 12);
+    renderStatsSummary(sumEl, shown.length ? byMonth[shown[0]].map(d => d.total) : []);
+
+    // กราฟทั้งปี + ตัวเลือกปี
+    const years   = [...new Set(months.map(mk => mk.slice(0, 4)))].sort().reverse();
+    const yearSel = years.includes(statsSel.year) ? statsSel.year : years[0];
+    const yearPicker = `<div class="flex items-center gap-2 mb-2">
+      <label class="text-sm text-gray-500">📊 กราฟทั้งปี:</label>
+      <select onchange="setStatsSel('year', this.value)"
+        class="text-sm p-2 border-2 border-gray-200 rounded-lg bg-white">
+        ${years.map(y => `<option value="${y}" ${y === yearSel ? 'selected' : ''}>${y}</option>`).join('')}
+      </select>
+    </div>`;
+
+    tblEl.innerHTML = yearPicker + monthlyChart(byMonth, yearSel)
+      + statsPicker('monthly',
+        months.map(mk => ({ value: mk, label: monthLabel(mk) })), sel, 'ทั้งหมด (12 เดือนล่าสุด)')
+      + statsTable(['เดือน', 'ยอดรวม', 'เฉลี่ย/วัน', 'ดีสุด', 'น้อยสุด'],
+        shown.map(mk => periodRow(monthLabel(mk), byMonth[mk])));
+
+    // อันดับของเสียตามเดือนที่เลือก
+    if (sel) renderWasteRank(ds => ds.slice(0, 7) === sel, 'เดือน ' + monthLabel(sel));
+    else { const set = new Set(shown); renderWasteRank(ds => set.has(ds.slice(0, 7)), 'เดือนที่แสดงทั้งหมด'); }
+    // อันดับขายดีตามเดือนที่เลือก (นับรอบเช็คที่จบในเดือนนั้น)
+    if (sel) renderSellerRank(end => end.slice(0, 7) === sel, 'เดือน ' + monthLabel(sel));
+    else { const set = new Set(shown); renderSellerRank(end => set.has(end.slice(0, 7)), 'เดือนที่แสดงทั้งหมด'); }
+  }
+}
+
+// คำนวณยอดใช้ไป/ขายไปต่อรายการ ของทุกรอบเช็คสต็อก
+// คืน { วันเช็ค(YYYY-MM-DD): { ชื่อสินค้า: จำนวนที่ใช้ไป } }
+function buildUsageByPeriod(weeklyData, incomingData, wasteData) {
+  const stockByDate = {};
+  weeklyData.forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d) return;
+    const ds = toDateStr(d);
+    const name = row['รายการ'];
+    if (!name) return;
+    (stockByDate[ds] = stockByDate[ds] || {})[name] = parseFloat(row['จำนวน']) || 0;
+  });
+  const checks = Object.keys(stockByDate).sort();
+
+  const usageByPeriod = {};
+  checks.forEach((end, i) => {
+    const start   = i > 0 ? checks[i - 1] : null;
+    const opening = start ? stockByDate[start] : {};
+    const closing = stockByDate[end];
+    const within  = ds => ds <= end && (!start || ds > start);
+
+    const incoming = {}, waste = {};
+    incomingData.forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d || !within(toDateStr(d))) return;
+      const name = row['รายการ'];
+      if (!name) return;
+      incoming[name] = (incoming[name] || 0) + (parseFloat(row['จำนวน']) || 0);
+    });
+    wasteData.forEach(row => {
+      const d = parseThaiDate(row['วันที่เวลา']);
+      if (!d || !within(toDateStr(d))) return;
+      const name = row['รายการ'];
+      if (!name) return;
+      waste[name] = (waste[name] || 0) + (parseFloat(row['จำนวน']) || 0);
+    });
+
+    const usage = {};
+    Object.keys(closing).forEach(name => {
+      if (isExcludedItem(name)) return; // ของไม่มีราคา ไม่ต้องนับ
+      const u = (opening[name] || 0) + (incoming[name] || 0) - (waste[name] || 0) - closing[name];
+      if (u > 0) usage[name] = u;
+    });
+    usageByPeriod[end] = usage;
+  });
+  return usageByPeriod;
+}
+
+// อันดับขายดี เปลี่ยนตามช่วงที่เลือกดู (รวมยอดจากรอบเช็คที่อยู่ในช่วงนั้น)
+function renderSellerRank(pred, contextLabel) {
+  const el   = document.getElementById('stats-top-sellers');
+  const head = document.getElementById('stats-sellers-head');
+  if (head) head.textContent = '🏆 ขายดีสุด — ' + contextLabel;
+
+  const agg = {};
+  Object.entries(statsData.usage || {}).forEach(([end, usage]) => {
+    if (!pred(end)) return;
+    Object.entries(usage).forEach(([name, qty]) => { agg[name] = (agg[name] || 0) + qty; });
+  });
+  const ranked = Object.entries(agg).sort((a, b) => b[1] - a[1]);
+  el.innerHTML = ranked.length
+    ? ranked.map(([name, qty], i) => `
+        <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+          <span class="text-gray-700">${i + 1}. ${name}</span>
+          <span class="font-semibold text-red-600">${fmtBaht(qty)} ชิ้น</span>
+        </div>`).join('')
+    : '<p class="text-sm text-gray-400">ไม่มีข้อมูลขายในช่วงนี้</p>';
+}
+
+function sellersUnavailable(contextLabel, msg) {
+  const head = document.getElementById('stats-sellers-head');
+  if (head) head.textContent = '🏆 ขายดีสุด — ' + contextLabel;
+  document.getElementById('stats-top-sellers').innerHTML = `<p class="text-sm text-gray-400">${msg}</p>`;
+}
+
+// อันดับของเสีย เปลี่ยนตามช่วงที่เลือกดูในแท็บสรุปยอดขาย
+function renderWasteRank(pred, contextLabel) {
+  const el   = document.getElementById('stats-top-waste');
+  const head = document.getElementById('stats-waste-head');
+  if (head) head.textContent = '🗑️ เสียบ่อยสุด — ' + contextLabel;
+
+  const wasteAgg = {};
+  (statsData.waste || []).forEach(row => {
+    const d = parseThaiDate(row['วันที่เวลา']);
+    if (!d || !pred(toDateStr(d))) return;
+    const name = row['รายการ'];
+    if (!name) return;
+    if (!wasteAgg[name]) wasteAgg[name] = { qty: 0, times: 0 };
+    wasteAgg[name].qty += parseFloat(row['จำนวน']) || 0;
+    wasteAgg[name].times++;
+  });
+  const ranked = Object.entries(wasteAgg)
+    .sort((a, b) => b[1].times - a[1].times || b[1].qty - a[1].qty);
+  el.innerHTML = ranked.length
+    ? ranked.map(([name, w], i) => `
+        <div class="flex justify-between items-center py-1.5 border-b border-gray-50 text-sm">
+          <span class="text-gray-700">${i + 1}. ${name}</span>
+          <span class="text-gray-500">${w.times} ครั้ง / ${fmtBaht(w.qty)} ชิ้น</span>
+        </div>`).join('')
+    : '<p class="text-sm text-gray-400">ไม่มีของเสียในช่วงนี้ 🎉</p>';
+}
+
+// ============================================================
+// ราคาและกลุ่มสินค้า
+// ============================================================
+// มาม่า ok ทุกรส = 20 บาท, มาม่าเผ็ด (ชมพู/เหลือง/ดำ) = 45 บาท, อื่นๆ ใช้ราคาจากช่องมูลค่าต่อชิ้น
+function normalizeName(name) {
+  return String(name).toLowerCase().replace(/\s+/g, '');
+}
+
+function isMamaOk(name) {
+  const n = normalizeName(name);
+  return n.includes('มาม่า') && (n.includes('ok') || n.includes('โอเค'));
+}
+
+function isMamaPhed(name) {
+  const n = normalizeName(name);
+  return n.includes('มาม่า') && n.includes('เผ็ด');
+}
+
+function getUnitPrice(name, defaultPrice) {
+  if (isMamaOk(name))   return 20;
+  if (isMamaPhed(name)) return 45;
+  return defaultPrice;
+}
+
+// รายการที่ไม่มีราคาขาย — ไม่นับในคำนวณของหาย/ขายดี (ถ้วย ช้อน นม น้ำกระดูกหมู น้ำดำ)
+const EXCLUDED_ITEMS = ['ถ้วย', 'ช้อน', 'นม', 'น้ำดำ', 'น้ำกระดูกหมู', 'กระดูกหมู'];
+function isExcludedItem(name) {
+  const n = normalizeName(name);
+  return EXCLUDED_ITEMS.some(x => n === normalizeName(x)) || n.startsWith('ถ้วย');
+}
+
+// หมวดสินค้าสำหรับจัดกลุ่มในตาราง (เรียงตามลำดับนี้)
+const ITEM_CATEGORIES = [
+  { label: '🥩 หมู / เนื้อ',       items: ['สันคอสไลด์','สามชั้นสไลด์','หมูนุ่ม','สันนอก','เนื้อแดง','โบโลน่า','ตีนไก่'] },
+  { label: '🦑 ทะเล',              items: ['หมึก','ปลาดอลลี่','ปลาหมึกกรอบ','แมงกะพรุน','กุ้ง','ปูอัด','ปูอัดชีส','ปูอัดยาว','เต้าหู้ปลาแผ่น','หอย'] },
+  { label: '🥟 ของสดอื่นๆ',        items: ['รากบัว','ต็อก','เต้าหู้หลอด'] },
+  { label: '🍢 ของเสียบไม้',       items: ['เต้าหู้ชีส','ชีสหลายสี','กุ้งพันสาหร่าย','เต้าหู้หมู','ไส้กรอกชีส','ไส้กรอกพันเบคอน','ฟองเต้าหู้สามเหลี่ยม','รวม (ถ้ามี)','ไส้กรอกหนังกรอบ','ไส้กรอกชมพู'] },
+  { label: '🍜 มาม่า ok (20฿)',    items: [] },
+  { label: '🌶️ มาม่าเผ็ด (45฿)',  items: [] },
+  { label: '🍝 เส้น / มาม่า / ของแห้ง', items: ['เส้นมันเทศ','เส้นอุด้ง','วุ้นเส้นหม่าล่า','บะหมี่','สาหร่าย','ฟองเต้าหู้','น้ำจิ้มสุกี้','น้ำจิ้มงา','น้ำจิ้มหน้าแดง','ควิซ ต้มยำกุ้ง','มาม่า ต้มยำกุ้ง','มาม่า ต้มยำกุ้งน้ำข้น','มาม่า หมูสับ','ยำยำ ผัดขี้เมา'] },
+  { label: '🥬 ผัก',               items: ['ผักกาดขาว','เห็ดเข็มทอง','เห็ดชิเมจิ','เห็ดออเร็นจิ','กวางตุ้ง','ผักบุ้ง','ข้าวโพด','กะหล่ำ','น้ำดำ','น้ำกระดูกหมู','นม'] },
+  { label: '📦 อื่นๆ',             items: [] }
+];
+
+const GROUP_MAMA_OK   = ITEM_CATEGORIES.findIndex(c => c.label.includes('มาม่า ok'));
+const GROUP_MAMA_PHED = ITEM_CATEGORIES.findIndex(c => c.label.includes('มาม่าเผ็ด'));
+
+// map ชื่อสินค้า (normalize แล้ว) -> เลขหมวด
+const CATEGORY_MAP = {};
+ITEM_CATEGORIES.forEach((cat, idx) => {
+  cat.items.forEach(name => { CATEGORY_MAP[normalizeName(name)] = idx; });
+});
+
+function getItemGroup(name) {
+  const n = normalizeName(name);
+  // มาม่า ok / มาม่าเผ็ด จับก่อนเสมอ (ราคาพิเศษ)
+  if (isMamaOk(name))   return GROUP_MAMA_OK;
+  if (isMamaPhed(name)) return GROUP_MAMA_PHED;
+  // ชื่อที่รู้จักในหมวด
+  if (CATEGORY_MAP.hasOwnProperty(n)) return CATEGORY_MAP[n];
+  // เดาจากคำในชื่อ (สำหรับสินค้าใหม่ที่ยังไม่อยู่ในรายการ)
+  if (n.includes('มาม่า') || n.includes('เส้น') || n.includes('บะหมี่') || n.includes('น้ำจิ้ม')) return 6;
+  if (n.includes('เห็ด') || n.includes('ผัก')) return 7;
+  if (n.includes('ไส้กรอก') || n.includes('ลูกชิ้น') || n.includes('ชีส')) return 3;
+  if (n.includes('ปลา') || n.includes('กุ้ง') || n.includes('หอย') || n.includes('หมึก') || n.includes('ปู')) return 1;
+  if (n.includes('หมู') || n.includes('เนื้อ') || n.includes('สันคอ') || n.includes('สันนอก') || n.includes('สามชั้น')) return 0;
+  return ITEM_CATEGORIES.length - 1; // อื่นๆ
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function showLoading(show, text='กำลังโหลด...') {
+  document.getElementById('loading-overlay').classList.toggle('hidden', !show);
+  document.getElementById('loading-text').textContent = text;
+}
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl shadow-lg z-50 flex items-center gap-2 text-white text-sm';
+  if (type==='success') t.classList.add('bg-green-600');
+  else if (type==='warn') t.classList.add('bg-yellow-500');
+  else t.classList.add('bg-red-600');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => t.classList.add('hidden'), 3500);
+}
 </script>
 </body>
 </html>
