@@ -254,7 +254,7 @@
 
   <div class="topbar">
     <div class="topbar-inner">
-      <div class="logo">🧮</div>
+      <div class="logo" id="hdr-logo" onclick="tapLogo()">🧮</div>
       <div style="min-width:0;flex:1;">
         <div class="title">POS <span style="color:#ff6b78;">หม่าล่าหน้าแดง</span></div>
         <div class="sub"><span id="hdr-branch">—</span> · <span id="hdr-name">—</span></div>
@@ -262,7 +262,6 @@
       <span id="demo-badge" class="demo-badge hidden">🧪 โหมดทดลอง</span>
       <span id="pending-badge" class="pending hidden">⏳ รอส่ง <span id="pending-count">0</span></span>
       <a href="pos-dashboard.html" class="key chip-link owner-only" id="link-dashboard">📊 สรุปยอด</a>
-      <button onclick="openSettings()" class="key icon-btn owner-only" id="btn-settings" title="ตั้งค่า">⚙️</button>
       <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
     </div>
   </div>
@@ -886,8 +885,11 @@ var PromptPay = (function () {
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwur9RtgC-xvqtNf9clSrvr6MzQ0AwDU1uo-lbG0eMk3dl_6voJw_zFm4WYZzX7HVquGA/exec';
 
 // พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
+// QR รับเงินของแต่ละสาขา — ฝังไว้ให้ทุกเครื่องใช้ได้เลย ไม่ต้องอัปโหลดรูป
+// promptpayId ใส่ได้ทั้งเบอร์มือถือ (10 หลัก) / เลขบัตรประชาชน (13) / e-Wallet ID (15)
+// ระบบสร้าง QR ขึ้นใหม่เองพร้อมใส่ยอดเงินให้ทุกบิล
 const DEFAULT_BRANCH_QR = {
-  'ตลาดทรัพย์พัฒนา': { promptpayId: '', shopName: 'หม่าล่าหน้าแดง', qrImage: '' },
+  'ตลาดทรัพย์พัฒนา': { promptpayId: '004999124195842', shopName: 'หม่าล่าหน้าแดง', qrImage: '' },
   'แบริ่ง':          { promptpayId: '', shopName: 'หม่าล่าหน้าแดง', qrImage: '' }
 };
 
@@ -1527,9 +1529,13 @@ function startDemo() {
    ════════════════════════════════════════════════════════════ */
 let draftBranches = null;   // สำเนาการตั้งค่าระหว่างเปิดกล่องตั้งค่า
 
-/* ทางลับตั้งค่าระบบ — แตะโลโก้ 5 ครั้งติดกัน (กันพนักงาน/ลูกค้ามากดเล่น) */
+/* ทางลับตั้งค่าระบบ — แตะโลโก้ 5 ครั้งติดกัน
+   ไม่มีปุ่มฟันเฟืองโชว์แล้ว เพราะ URL และ QR ฝังมาในโค้ดให้หมดแล้ว
+   เก็บทางนี้ไว้เผื่อฉุกเฉิน เช่น Deploy Apps Script ใหม่ หรือเปลี่ยน QR กะทันหัน */
 var logoTaps = 0, logoTapTimer = null;
 function tapLogo() {
+  // พนักงานที่ login อยู่ ห้ามเปิดหน้าตั้งค่า (เจ้าของ หรือหน้า login เท่านั้น)
+  if (auth.token && !isOwner()) return;
   logoTaps++;
   clearTimeout(logoTapTimer);
   logoTapTimer = setTimeout(function () { logoTaps = 0; }, 1500);

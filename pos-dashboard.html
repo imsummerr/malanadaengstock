@@ -171,21 +171,6 @@
       <div id="login-error" class="login-error hidden"></div>
       <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
 
-      <div id="api-box" style="border-top:1px dashed #d5d5da;padding-top:16px;margin-top:4px;">
-        <button onclick="toggleApiBox()" id="api-toggle" class="key btn-ghost"
-          style="width:100%;padding:12px;font-size:14px;">⚙️ ตั้งค่า URL ระบบ</button>
-        <div id="api-panel" class="hidden" style="margin-top:12px;">
-          <label class="field-label">URL ของ Google Apps Script</label>
-          <input id="set-api" class="login-input" placeholder="https://script.google.com/.../exec"
-            style="margin-bottom:6px;font-size:13px;">
-          <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;line-height:1.5;">
-            ได้จาก Apps Script → Deploy → Web app URL (ลงท้ายด้วย <b>/exec</b>)<br>
-            ตั้งครั้งเดียวต่อเครื่อง ใช้ได้ทั้งหน้าคิดเงินและหน้าสรุปยอด
-          </p>
-          <button onclick="saveApiUrl()" class="key btn-red" style="width:100%;padding:12px;font-size:14.5px;">บันทึก</button>
-          <p id="api-msg" class="hidden" style="font-size:12.5px;color:var(--red-dark);margin:10px 0 0;text-align:center;"></p>
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -296,32 +281,6 @@ function apiUrl() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem('pos_settings') || '{}'); } catch (e) {}
   return (s.apiUrl || DEFAULT_API_URL || '').trim();
-}
-
-/* ตั้งค่า URL ระบบ — วางไว้ที่หน้านี้เพราะพนักงานไม่ได้เข้าหน้าสรุปยอด */
-function toggleApiBox() {
-  const panel = document.getElementById('api-panel');
-  panel.classList.toggle('hidden');
-  if (!panel.classList.contains('hidden')) document.getElementById('set-api').value = apiUrl();
-  document.getElementById('api-toggle').textContent =
-    panel.classList.contains('hidden') ? '⚙️ ตั้งค่า URL ระบบ' : '▲ ซ่อน';
-}
-
-function saveApiUrl() {
-  const url = document.getElementById('set-api').value.trim();
-  const msg = document.getElementById('api-msg');
-  if (url && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
-    msg.textContent = 'URL ต้องขึ้นต้นด้วย https://script.google.com และลงท้ายด้วย /exec';
-    msg.classList.remove('hidden');
-    return;
-  }
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem('pos_settings') || '{}'); } catch (e) {}
-  saved.apiUrl = url;
-  localStorage.setItem('pos_settings', JSON.stringify(saved));
-  msg.textContent = url ? '✓ บันทึกแล้ว' : '✓ ล้าง URL แล้ว';
-  msg.style.color = 'var(--ink)';
-  msg.classList.remove('hidden');
 }
 
 const auth = { token: '', name: '', branch: '', role: 'staff' };
