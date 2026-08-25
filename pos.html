@@ -109,6 +109,11 @@
             padding: 9px 14px; font-size: 14px; font-weight: 600; }
     .chip:hover { border-color: var(--ink); }
     .chip.on { background: var(--red); border-color: var(--red); color: #fff; }
+    .req { font-size: 11.5px; font-weight: 700; color: var(--red); margin-left: 4px; }
+    h3.done .req { display: none; }
+    /* ยังไม่ได้เลือก — ตีกรอบแดงจาง ๆ ให้สะดุดตา */
+    .chips.need { border: 1.5px dashed var(--red); border-radius: 12px; padding: 8px; background: var(--red-soft); }
+    .pay-need { font-size: 12px; color: var(--red-dark); font-weight: 700; text-align: right; margin: 0 0 6px; }
 
     /* ── แถบสรุปล่างจอ ── */
     .bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--paper);
@@ -291,11 +296,11 @@
       <div class="grid-mama" id="mama-grid"></div>
 
       <div class="card opt-card">
-        <h3>🍲 น้ำซุป</h3>
+        <h3 id="head-soup">🍲 น้ำซุป <span class="req">* ต้องเลือก</span></h3>
         <div class="chips" id="soup-chips"></div>
-        <h3 style="margin-top:16px;">🌶️ ระดับความเผ็ด</h3>
+        <h3 id="head-spice" style="margin-top:16px;">🌶️ ระดับความเผ็ด <span class="req">* ต้องเลือก</span></h3>
         <div class="chips" id="spice-chips"></div>
-        <h3 style="margin-top:16px;">🥣 น้ำจิ้ม</h3>
+        <h3 id="head-sauce" style="margin-top:16px;">🥣 น้ำจิ้ม <span class="req">* ต้องเลือก</span></h3>
         <div class="chips" id="sauce-chips"></div>
       </div>
     </div>
@@ -306,6 +311,7 @@
         <div class="sum-line discount hidden" id="sum-discount-row">
           <span id="sum-discount-label">ส่วนลด</span><span class="digits" id="sum-discount">-0 ฿</span>
         </div>
+        <p id="pay-need" class="pay-need hidden"></p>
         <div class="total-row">
           <div>
             <div class="total-label">ยอดสุทธิ</div>
@@ -926,9 +932,10 @@ function apiUrl() { return (settings.apiUrl || '').trim(); }
 /* ════════════════════════════════════════════════════════════
    สถานะออเดอร์
    ════════════════════════════════════════════════════════════ */
+// น้ำซุป · ความเผ็ด · น้ำจิ้ม เริ่มต้นเป็นค่าว่าง — บังคับให้พนักงานกดเลือกทุกบิล
 const order = {
   sticks: {}, mama: {},
-  soup: 'น้ำใส', spice: 'เผ็ดกลาง', sauce: 'น้ำจิ้มงา', method: ''
+  soup: '', spice: '', sauce: '', method: ''
 };
 STICK_PRICES.forEach(p => order.sticks[p] = 0);
 MAMA_PRICES.forEach(p => order.mama[p] = 0);
@@ -1002,12 +1009,27 @@ function renderChips(containerId, options, field) {
   document.getElementById(containerId).innerHTML = options.map(o => `
     <button onclick="pick('${field}','${o}')" data-opt="${o}" class="chip key">${o}</button>`).join('');
 }
+const REQUIRED = [
+  { id: 'soup-chips',  head: 'head-soup',  field: 'soup',  label: 'น้ำซุป' },
+  { id: 'spice-chips', head: 'head-spice', field: 'spice', label: 'ความเผ็ด' },
+  { id: 'sauce-chips', head: 'head-sauce', field: 'sauce', label: 'น้ำจิ้ม' }
+];
+
+/** รายชื่อสิ่งที่ยังไม่ได้เลือก — ว่าง = ครบแล้ว */
+function missingChoices() {
+  return REQUIRED.filter(r => !order[r.field]).map(r => r.label);
+}
+
 function refreshChips() {
-  [['soup-chips', 'soup'], ['spice-chips', 'spice'], ['sauce-chips', 'sauce']].forEach(([id, field]) => {
-    document.querySelectorAll('#' + id + ' .chip').forEach(el => el.classList.toggle('on', el.dataset.opt === order[field]));
+  REQUIRED.forEach(r => {
+    const chosen = !!order[r.field];
+    document.querySelectorAll('#' + r.id + ' .chip')
+      .forEach(el => el.classList.toggle('on', el.dataset.opt === order[r.field]));
+    document.getElementById(r.id).classList.toggle('need', !chosen);
+    document.getElementById(r.head).classList.toggle('done', chosen);
   });
 }
-function pick(field, value) { order[field] = value; refreshChips(); }
+function pick(field, value) { order[field] = value; refreshChips(); refresh(); }
 
 /* ── อัปเดตตัวเลขทั้งหน้า ── */
 function refresh() {
@@ -1049,7 +1071,15 @@ function refresh() {
     hint.className = 'hidden';
   }
 
-  document.getElementById('btn-pay').disabled = t.total <= 0;
+  const missing = missingChoices();
+  const needBox = document.getElementById('pay-need');
+  if (t.total > 0 && missing.length) {
+    needBox.textContent = 'ยังไม่ได้เลือก: ' + missing.join(' · ');
+    needBox.classList.remove('hidden');
+  } else {
+    needBox.classList.add('hidden');
+  }
+  document.getElementById('btn-pay').disabled = t.total <= 0 || missing.length > 0;
 }
 
 function clearOrder() {
@@ -1060,7 +1090,7 @@ function clearOrder() {
 
 function newOrder() {
   clearOrder();
-  order.soup = 'น้ำใส'; order.spice = 'เผ็ดกลาง'; order.sauce = 'น้ำจิ้มงา'; order.method = '';
+  order.soup = ''; order.spice = ''; order.sauce = ''; order.method = '';
   refreshChips();
   clearInterval(countdownTimer);
   showScreen('cart');
@@ -1220,6 +1250,12 @@ function showScreen(name) {
 function goPayment() {
   const t = totals();
   if (t.total <= 0) return;
+  const missing = missingChoices();
+  if (missing.length) {
+    toast('ยังไม่ได้เลือก ' + missing.join(' · '));
+    document.getElementById(REQUIRED.find(r => !order[r.field]).id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   document.getElementById('pay-total').innerHTML = t.total.toLocaleString('th-TH') + '<small> ฿</small>';
   const parts = [];
   if (t.stickCount) parts.push(t.stickCount + ' ไม้');
