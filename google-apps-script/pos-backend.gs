@@ -93,6 +93,7 @@ function doPost(e) {
       case 'logout':   return json_(handleLogout_(body));
       case 'posOrder':    return json_(handleOrder_(body));
       case 'posDelivery': return json_(handleDelivery_(body));
+      case 'posBills':    return json_(handleBills_(body));
       default:         return json_({ success: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -104,6 +105,7 @@ function doGet(e) {
   try {
     var p = e.parameter || {};
     if (p.action === 'posStats') return json_(handleStats_(p));
+    if (p.action === 'posBills') return json_(handleBills_(p));
     return json_({ success: false, message: 'ไม่รู้จัก action: ' + p.action });
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
@@ -426,6 +428,66 @@ function addDeliveryStats_(stats, from, to, branch) {
       });
     } catch (e) {}
   }
+}
+
+/**
+ * รายการบิลที่ขายไปแล้ว — ของสาขาที่ login อยู่เท่านั้น
+ * ค่าเริ่มต้นคือของวันนี้ · ส่ง date มาเพื่อดูวันอื่น
+ */
+function handleBills_(p) {
+  var session = checkToken_(p.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ORDERS);
+  if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_ORDERS + ' — รัน setupPos ก่อน' };
+  if (sheet.getLastRow() < 2) return { success: true, data: { date: '', bills: [] } };
+
+  var date = String(p.date || '').trim() || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  var branch = session.branch || '';
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues();
+  var idx = {};
+  values[0].forEach(function (h, i) { idx[h] = i; });
+
+  var bills = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (r[idx['วันที่']] !== date) continue;
+    if (branch && r[idx['สาขา']] !== branch) continue;
+
+    var sticks = [], mama = [];
+    STICK_PRICES.forEach(function (price) {
+      var q = num_(r[idx['ไม้ ' + price + '฿']]);
+      if (q > 0) sticks.push({ price: price, qty: q });
+    });
+    MAMA_PRICES.forEach(function (price) {
+      var q = num_(r[idx['มาม่า ' + price + '฿']]);
+      if (q > 0) mama.push({ price: price, qty: q });
+    });
+
+    bills.push({
+      orderNo:    r[idx['เลขที่ออเดอร์']],
+      time:       r[idx['เวลา']],
+      staff:      r[idx['พนักงาน']],
+      sticks:     sticks,
+      stickCount: num_(r[idx['รวมไม้']]),
+      stickAmount:num_(r[idx['ยอดไม้']]),
+      mama:       mama,
+      mamaCount:  num_(r[idx['รวมมาม่า']]),
+      mamaAmount: num_(r[idx['ยอดมาม่า']]),
+      subtotal:   num_(r[idx['ยอดรวม']]),
+      discount:   num_(r[idx['ส่วนลด']]),
+      total:      num_(r[idx['ยอดสุทธิ']]),
+      soup:       r[idx['น้ำซุป']],
+      spice:      r[idx['ความเผ็ด']],
+      sauce:      r[idx['น้ำจิ้ม']],
+      method:     r[idx['วิธีชำระเงิน']]
+    });
+  }
+  bills.reverse();   // บิลล่าสุดอยู่บนสุด
+
+  var sum = 0;
+  bills.forEach(function (b) { sum += b.total; });
+  return { success: true, data: { date: date, branch: branch, count: bills.length, revenue: sum, bills: bills } };
 }
 
 function emptyStats_() {
