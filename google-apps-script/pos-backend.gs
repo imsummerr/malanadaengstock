@@ -863,15 +863,25 @@ function stockBalances_() {
 // line-expiry-alert.gs อยู่คนละโปรเจกต์ เรียกข้ามกันไม่ได้ จึงต้องตั้งค่าที่นี่ด้วย
 // ใส่ Group ID (ขึ้นต้น C...) ให้ตรงกับที่ตั้งไว้ใน BRANCH_LINE_GROUPS ของอีกไฟล์
 // เว้นว่าง = ส่งไปปลายทางกลาง (LINE_TARGET_ID) แทน
-// ต้องใส่ค่าเดียวกับ BRANCH_LINE_GROUPS ใน line-expiry-alert.gs
+// ตั้งค่าใน โปรเจกต์ > การตั้งค่าสคริปต์ > คุณสมบัติสคริปต์ (ไม่ใช่ในโค้ด — repo นี้ public)
+//   LINE_CHANNEL_ACCESS_TOKEN = token ของบอท (ตัวเดียวกับโปรเจกต์ line-expiry-alert)
+//   LINE_GROUPS = {"ครัวกลาง":"Cxxxx","ตลาดทรัพย์พัฒนา":"Cyyyy"}
+// Script Properties ไม่แชร์ข้ามโปรเจกต์ ต้องใส่ทั้งสองโปรเจกต์ ค่าเดียวกัน
 //   กลุ่มครัวกลาง ← ของครัวกลางใกล้หมด · ของเสียครัวกลาง
 //   กลุ่มสาขา    ← เช็คสต็อกรายสัปดาห์ · ของเสียสาขา
 // (ของเข้าไม่ได้แจ้งจากไฟล์นี้ line-expiry-alert.gs แจ้งให้)
-var STOCK_BRANCH_GROUPS = {
-  'ครัวกลาง': '',           // ← ใส่ C... ของกลุ่มครัวกลาง
-  'ตลาดทรัพย์พัฒนา': '',   // ← ใส่ C... ของกลุ่มสาขา
-  'แบริ่ง': ''              // ← ใส่ C... ของกลุ่มสาขา
-};
+var STOCK_BRANCH_GROUPS = {};   // สำรอง — ปกติใช้ Script Property LINE_GROUPS แทน
+
+function stockLineGroups_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('LINE_GROUPS');
+  if (!raw) return STOCK_BRANCH_GROUPS;
+  try {
+    var o = JSON.parse(raw);
+    return (o && typeof o === 'object') ? o : STOCK_BRANCH_GROUPS;
+  } catch (e) {
+    return STOCK_BRANCH_GROUPS;
+  }
+}
 
 /**
  * ส่งข้อความเข้ากลุ่ม LINE ของสถานที่นั้น
@@ -885,12 +895,17 @@ function stockNotify_(location, text) {
   if (!token) {
     return { sent: false, message: 'ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ในโปรเจกต์นี้ — บันทึกแล้วแต่ไม่ได้แจ้งกลุ่ม' };
   }
-  var to = STOCK_BRANCH_GROUPS[String(location || '').trim()] || props.getProperty('LINE_TARGET_ID') || '';
+  var to = String(stockLineGroups_()[String(location || '').trim()] || '').trim() ||
+           props.getProperty('LINE_TARGET_ID') || '';
+  // ไม่รู้ปลายทาง = ข้ามไป ห้าม broadcast เด็ดขาด
+  // broadcast ส่งหาเพื่อนของ OA ทุกคน ลูกค้าจะได้ข้อความสต็อกภายในร้านไปด้วย
+  // (สาขาที่ยังไม่เปิดใช้ เช่น แบริ่ง จะตกมาทางนี้)
+  if (!to) {
+    return { sent: false, message: 'ยังไม่ได้ตั้ง Group ID ของ "' + location + '" — บันทึกแล้วแต่ไม่ได้แจ้งกลุ่ม' };
+  }
 
-  var url  = to ? 'https://api.line.me/v2/bot/message/push'
-                : 'https://api.line.me/v2/bot/message/broadcast';
-  var body = to ? { to: to, messages: [{ type: 'text', text: text }] }
-                : { messages: [{ type: 'text', text: text }] };
+  var url  = 'https://api.line.me/v2/bot/message/push';
+  var body = { to: to, messages: [{ type: 'text', text: text }] };
   try {
     var res = UrlFetchApp.fetch(url, {
       method: 'post', contentType: 'application/json',
@@ -1159,9 +1174,9 @@ function handleStockBootstrap_(p) {
   var items = getStockItems_();
   var bal = stockBalances_();
 
-  // สถานที่ = ครัวกลาง + สาขาที่ตั้งกลุ่ม LINE ไว้ใน STOCK_BRANCH_GROUPS
+  // สถานที่ = ครัวกลาง + สาขาที่ตั้งกลุ่ม LINE ไว้ใน Script Property LINE_GROUPS
   var locations = [CENTRAL];
-  Object.keys(STOCK_BRANCH_GROUPS).forEach(function (b) {
+  Object.keys(stockLineGroups_()).forEach(function (b) {
     if (locations.indexOf(b) === -1) locations.push(b);
   });
   Object.keys(bal).forEach(function (l) { if (locations.indexOf(l) === -1) locations.push(l); });
