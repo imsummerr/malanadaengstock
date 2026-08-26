@@ -489,11 +489,54 @@ function handleBills_(p) {
       method:     r[idx['วิธีชำระเงิน']]
     });
   }
-  bills.reverse();   // บิลล่าสุดอยู่บนสุด
-
   var sum = 0;
   bills.forEach(function (b) { sum += b.total; });
-  return { success: true, data: { date: date, branch: branch, count: bills.length, revenue: sum, bills: bills } };
+  var posCount = bills.length;
+
+  // ── ออเดอร์เดลิเวอรี่ของวันเดียวกัน — เอามาแสดงรวมในรายการบิลด้วย ──
+  // (ไม่นับเข้ายอดขายหน้าร้าน เพราะเงินเข้าทางแพลตฟอร์ม)
+  var dlvSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DELIVERY);
+  var dlvCount = 0, dlvItems = 0;
+  if (dlvSheet && dlvSheet.getLastRow() > 1) {
+    var dv = dlvSheet.getRange(1, 1, dlvSheet.getLastRow(), DELIVERY_HEADERS.length).getDisplayValues();
+    var di = {};
+    dv[0].forEach(function (h, i) { di[h] = i; });
+    for (var k = 1; k < dv.length; k++) {
+      var d = dv[k];
+      if (d[di['วันที่']] !== date) continue;
+      if (branch && d[di['สาขา']] !== branch) continue;
+      var items = [];
+      try { items = JSON.parse(d[di['ข้อมูล']] || '[]'); } catch (e) {}
+      dlvCount++;
+      dlvItems += num_(d[di['รวมจำนวน']]);
+      bills.push({
+        kind: 'delivery',
+        orderNo:    d[di['เลขที่ออเดอร์']],
+        time:       d[di['เวลา']],
+        staff:      d[di['พนักงาน']],
+        items:      items,
+        itemCount:  num_(d[di['รวมจำนวน']]),
+        addonCount: num_(d[di['ของเพิ่ม']]),
+        summary:    d[di['รายการ']],
+        total: 0
+      });
+    }
+  }
+
+  // เรียงตามเวลา บิลล่าสุดอยู่บนสุด (คละบิลหน้าร้านกับเดลิเวอรี่)
+  // เวลาชนกันได้ถ้าขายติด ๆ กันในวินาทีเดียว จึงตัดสินด้วยเลขที่ออเดอร์ต่อ
+  bills.sort(function (a, b) {
+    var t = String(b.time).localeCompare(String(a.time));
+    if (t !== 0) return t;
+    return String(b.orderNo).localeCompare(String(a.orderNo));
+  });
+
+  return { success: true, data: {
+    date: date, branch: branch,
+    count: posCount, revenue: sum,
+    deliveryCount: dlvCount, deliveryItems: dlvItems,
+    bills: bills
+  } };
 }
 
 function emptyStats_() {
