@@ -815,19 +815,42 @@ function stockBalances_() {
 
 /* ───────────────────────── แจ้ง LINE ───────────────────────── */
 
+// ── กลุ่ม LINE ของแต่ละสถานที่ ──
+// line-expiry-alert.gs อยู่คนละโปรเจกต์ เรียกข้ามกันไม่ได้ จึงต้องตั้งค่าที่นี่ด้วย
+// ใส่ Group ID (ขึ้นต้น C...) ให้ตรงกับที่ตั้งไว้ใน BRANCH_LINE_GROUPS ของอีกไฟล์
+// เว้นว่าง = ส่งไปปลายทางกลาง (LINE_TARGET_ID) แทน
+var STOCK_BRANCH_GROUPS = {
+  'ครัวกลาง': '',
+  'ตลาดทรัพย์พัฒนา': '',
+  'แบริ่ง': ''
+};
+
 /**
- * ส่งเข้ากลุ่ม LINE ของสถานที่นั้น
- * ใช้ sendLine_ / getBranchTarget_ ที่อยู่ใน line-expiry-alert.gs (โปรเจกต์เดียวกัน)
- * จะได้มี channel access token อยู่ที่เดียว ไม่ต้องตั้งซ้ำ
- * ถ้ายังไม่ได้วางไฟล์นั้น จะข้ามการแจ้งไป ไม่ทำให้การบันทึกล้มเหลว
+ * ส่งข้อความเข้ากลุ่ม LINE ของสถานที่นั้น
+ * ใช้ Script Property ชื่อเดียวกับอีกโปรเจกต์ (LINE_CHANNEL_ACCESS_TOKEN)
+ * แต่ต้องตั้งค่าแยกในโปรเจกต์นี้ด้วย เพราะ Script Properties ไม่แชร์ข้ามโปรเจกต์
+ * ส่งไม่สำเร็จก็ไม่ทำให้การบันทึกล้มเหลว — ของลงชีตแล้วถือว่าบันทึกสำเร็จ
  */
 function stockNotify_(location, text) {
-  if (typeof sendLine_ !== 'function') {
-    return { sent: false, message: 'ยังไม่ได้วาง line-expiry-alert.gs — บันทึกแล้วแต่ไม่ได้แจ้งกลุ่ม' };
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!token) {
+    return { sent: false, message: 'ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ในโปรเจกต์นี้ — บันทึกแล้วแต่ไม่ได้แจ้งกลุ่ม' };
   }
+  var to = STOCK_BRANCH_GROUPS[String(location || '').trim()] || props.getProperty('LINE_TARGET_ID') || '';
+
+  var url  = to ? 'https://api.line.me/v2/bot/message/push'
+                : 'https://api.line.me/v2/bot/message/broadcast';
+  var body = to ? { to: to, messages: [{ type: 'text', text: text }] }
+                : { messages: [{ type: 'text', text: text }] };
   try {
-    var target = (typeof getBranchTarget_ === 'function') ? getBranchTarget_(location) : '';
-    sendLine_(text, target);
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify(body), muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code !== 200) return { sent: false, message: 'LINE ตอบ ' + code + ': ' + res.getContentText() };
     return { sent: true, message: '' };
   } catch (err) {
     return { sent: false, message: 'แจ้งกลุ่มไม่สำเร็จ: ' + err.message };
@@ -906,14 +929,11 @@ function handleStockIn_(body) {
     'หมายเหตุ': String(body.note || '')
   });
 
-  var text = fmtPack_(p.total, p.item);
-  var line = stockNotify_(CENTRAL,
-    '📥 ของเข้าครัวกลาง\n\n' + p.item.name + '  ' + text +
-    '\nรวม ' + p.total + ' ' + p.item.subUnit +
-    '\nวันที่เข้า ' + Utilities.formatDate(now, TZ, 'd/M/yyyy') +
-    '\nผู้บันทึก ' + p.session.name);
-
-  return { success: true, text: text, lineSent: line.sent, lineMsg: line.message };
+  // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs เห็นแถวใหม่
+  // ในชีตนี้ทุก 5 นาที แล้วแจ้งให้เอง พร้อมจำนวนแพ็คและวันหมดอายุ
+  // ถ้าแจ้งทั้งสองที่ กลุ่มจะได้ข้อความซ้ำ 2 รอบ
+  return { success: true, text: fmtPack_(p.total, p.item), lineSent: false,
+           lineMsg: 'บอทของเข้าจะแจ้งกลุ่มให้ภายใน 5 นาที' };
 }
 
 /** ของเข้าร้าน — ส่งจากครัวกลางไปสาขา หักครัวกลางอัตโนมัติตอนคิดยอดคงเหลือ */
@@ -940,28 +960,13 @@ function handleStockToShop_(body) {
     'หมายเหตุ': String(body.note || '')
   });
 
-  // แจ้งกลุ่มสาขา: กี่แพ็ค วงเล็บบอกว่า 1 แพ็คมีกี่อัน วันที่เข้า และวันหมดอายุ
-  var packs = Number(body.packs) || 0;
-  var qtyText = fmtPack_(p.total, p.item) +
-    (p.item.perPack > 1 ? '  (1 ' + p.item.packUnit + ' = ' + p.item.perPack + ' ' + p.item.subUnit + ')' : '');
-
-  var msg = '🏪 ของเข้าร้าน — ' + branch + '\n\n' +
-            p.item.name + '  ' + qtyText +
-            '\nวันที่เข้า ' + Utilities.formatDate(now, TZ, 'd/M/yyyy');
-
-  // อายุเก็บอ่านจาก line-expiry-alert.gs ที่เดียว ไม่เก็บซ้ำในชีต
-  if (typeof getItemExpiryDays_ === 'function' &&
-      typeof hasExpiry_ === 'function' && hasExpiry_(p.item.name)) {
-    var days = getItemExpiryDays_(p.item.name);
-    var exp = new Date(now);
-    exp.setDate(exp.getDate() + days - 1);        // นับรวมวันที่ของเข้า
-    msg += '\nหมดอายุ ' + Utilities.formatDate(exp, TZ, 'd/M/yyyy') + '  (อยู่ได้ ' + days + ' วัน)';
-  }
-
-  var line = stockNotify_(branch, msg);
+  // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs แจ้งให้เอง
+  // พร้อมจำนวนแพ็ค วงเล็บบอกว่า 1 แพ็คมีกี่ไม้ และวันหมดอายุ
+  // (อายุเก็บอยู่ในไฟล์นั้นที่เดียว จะได้ไม่ต้องเก็บตารางอายุซ้ำสองที่)
   checkLowStock_([p.item.name]);                  // ส่งออกแล้วครัวกลางอาจตกต่ำกว่าจุดเตือน
 
-  return { success: true, text: fmtPack_(p.total, p.item), lineSent: line.sent, lineMsg: line.message };
+  return { success: true, text: fmtPack_(p.total, p.item), lineSent: false,
+           lineMsg: 'บอทของเข้าจะแจ้งกลุ่ม ' + branch + ' ให้ภายใน 5 นาที' };
 }
 
 /** ของเสีย / แถมฟรี — ตัดออกจากสต็อก */
@@ -1070,11 +1075,11 @@ function handleStockBootstrap_(p) {
   var items = getStockItems_();
   var bal = stockBalances_();
 
-  // สถานที่ = ครัวกลาง + สาขาที่ตั้งกลุ่ม LINE ไว้ใน line-expiry-alert.gs
+  // สถานที่ = ครัวกลาง + สาขาที่ตั้งกลุ่ม LINE ไว้ใน STOCK_BRANCH_GROUPS
   var locations = [CENTRAL];
-  if (typeof BRANCH_LINE_GROUPS === 'object' && BRANCH_LINE_GROUPS) {
-    Object.keys(BRANCH_LINE_GROUPS).forEach(function (b) { if (locations.indexOf(b) === -1) locations.push(b); });
-  }
+  Object.keys(STOCK_BRANCH_GROUPS).forEach(function (b) {
+    if (locations.indexOf(b) === -1) locations.push(b);
+  });
   Object.keys(bal).forEach(function (l) { if (locations.indexOf(l) === -1) locations.push(l); });
 
   // ยอดคงเหลือแปลงเป็นข้อความ "3 แพ็ค 5 ไม้" ให้หน้าเว็บแสดงได้เลย

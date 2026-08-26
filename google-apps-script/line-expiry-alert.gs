@@ -49,6 +49,27 @@ function hasExpiry_(name) {
 
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
 
+// ── ID ของ Google Sheet ──
+// ถ้าสคริปต์นี้อยู่ "คนละโปรเจกต์" กับชีต (สร้างจาก script.google.com
+// ไม่ใช่จาก ส่วนขยาย → Apps Script ในตัวชีต) getActiveSpreadsheet() จะได้ null
+// ต้องใส่ ID ตรงนี้ ไม่งั้นสคริปต์จะหาชีตไม่เจอและไม่แจ้งเตือนอะไรเลย
+//
+// ID เอามาจาก URL ของชีต ท่อนกลางระหว่าง /d/ กับ /edit
+//   https://docs.google.com/spreadsheets/d/[ตรงนี้คือ ID]/edit
+var SPREADSHEET_ID = '';   // ← ใส่ ID ตรงนี้ (ถ้าอยู่โปรเจกต์เดียวกับชีต เว้นว่างไว้ได้)
+
+/** หาไฟล์ Google Sheet — รองรับทั้งอยู่โปรเจกต์เดียวกับชีตและอยู่คนละโปรเจกต์ */
+function ss_() {
+  var ss = SPREADSHEET_ID
+    ? SpreadsheetApp.openById(SPREADSHEET_ID)
+    : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('หาไฟล์ Google Sheet ไม่เจอ — สคริปต์นี้อยู่คนละโปรเจกต์กับชีต ' +
+                    'ต้องใส่ SPREADSHEET_ID ที่ด้านบนของไฟล์นี้ก่อน');
+  }
+  return ss;
+}
+
 // ── กลุ่ม LINE ของแต่ละสาขา ──
 // ใส่ Group ID (ขึ้นต้น C...) ของกลุ่มแต่ละสาขา — วิธีหาดู README หัวข้อ webhook.site
 // แจ้งเตือนของสาขาไหน จะส่งเข้ากลุ่มสาขานั้นเท่านั้น
@@ -74,7 +95,7 @@ var PROP_LAST_ROW = 'LAST_NOTIFIED_INCOMING_ROW'; // ตำแหน่งแถ
  * ว่าเข้าอะไรบ้าง พร้อมวันที่ควรทิ้งของแต่ละรายการ
  */
 function checkNewIncoming() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) return;
 
@@ -97,6 +118,10 @@ function checkNewIncoming() {
   var colName    = findCol_(headers, ['รายการ', 'ชื่อรายการ', 'ชื่อ', 'name']);
   var colQty     = findCol_(headers, ['จำนวน', 'qty']);
   var colUnit    = findCol_(headers, ['หน่วย', 'unit']);
+  var colPacks   = findCol_(headers, ['แพ็ค', 'packs']);
+  var colRem     = findCol_(headers, ['เศษ', 'rem']);
+  var colPerPack = findCol_(headers, ['ไม้ต่อแพ็ค', 'หน่วยย่อยต่อแพ็ค', 'perPack']);
+  var colKind    = findCol_(headers, ['ประเภท', 'kind']);
   if (colName === -1) return;
 
   var items = [];
@@ -104,7 +129,7 @@ function checkNewIncoming() {
     var row = values[r];
     var name = String(row[colName] || '').trim();
     if (!name) continue;
-    if (!hasExpiry_(name)) continue; // รายการที่ไม่คิดวันหมดอายุ
+    // ของแห้ง/มาม่า ไม่มีวันหมดอายุ แต่ก็ยังต้องแจ้งว่าเข้ามา แค่ไม่บอกวันทิ้ง
     var inDate = (colDate !== -1 ? parseThaiDate_(row[colDate]) : null) || new Date();
     var hasExp = hasExpiry_(name);
     var expireStr = '';
@@ -120,6 +145,10 @@ function checkNewIncoming() {
       unit:       colUnit    !== -1 ? String(row[colUnit] || '')    : '',
       branch:     colBranch  !== -1 ? String(row[colBranch] || '')  : '',
       checker:    colChecker !== -1 ? String(row[colChecker] || '') : '',
+      packs:      colPacks   !== -1 ? Number(row[colPacks])   || 0 : 0,
+      rem:        colRem     !== -1 ? Number(row[colRem])     || 0 : 0,
+      perPack:    colPerPack !== -1 ? Number(row[colPerPack]) || 0 : 0,
+      kind:       colKind    !== -1 ? String(row[colKind] || '')    : '',
       expireStr:  expireStr
     });
   }
@@ -140,6 +169,22 @@ function checkNewIncoming() {
   Logger.log('แจ้งของเข้าใหม่ ' + items.length + ' รายการ (' + Object.keys(byBranch).length + ' สาขา)');
 }
 
+/**
+ * ข้อความจำนวน — ถ้ามีข้อมูลแพ็คก็บอกเป็น "3 แพ็ค 5 ไม้ (1 แพ็ค = 7 ไม้)"
+ * ถ้าไม่มี (แถวเก่าก่อนเพิ่มคอลัมน์) ก็บอกแบบเดิม "26 ไม้"
+ */
+function qtyText_(it) {
+  var unit = it.unit || '';
+  if (it.perPack > 1 && (it.packs || it.rem)) {
+    var parts = [];
+    if (it.packs) parts.push(it.packs + ' แพ็ค');
+    if (it.rem)   parts.push(it.rem + ' ' + unit);
+    return ' ' + parts.join(' ') + ' (1 แพ็ค = ' + it.perPack + ' ' + unit + ')';
+  }
+  if (it.qty !== '' && it.qty != null) return ' ' + it.qty + ' ' + unit;
+  return '';
+}
+
 function buildIncomingMessage_(items) {
   var now = new Date();
   var lines = ['📦 ของเข้าใหม่ (' + thaiDMY_(now) + ' ' + Utilities.formatDate(now, TZ, 'HH:mm') + ' น.)'];
@@ -152,8 +197,7 @@ function buildIncomingMessage_(items) {
     lines.push('');
     lines.push(b);
     byBranch[b].forEach(function(it) {
-      lines.push('• ' + it.name +
-        (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') +
+      lines.push('• ' + it.name + qtyText_(it) +
         (it.expireStr ? ' → ทิ้ง ' + it.expireStr : ''));
     });
   });
@@ -195,7 +239,7 @@ function notifyExpiringItems() {
  * อ่านชีต "จำนวนของเข้า" แล้วหาของที่ครบกำหนดทิ้งวันนี้ / เลยกำหนดแล้ว
  */
 function getItemsToDiscard_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) throw new Error('ไม่พบชีตชื่อ "' + INCOMING_SHEET_NAME + '"');
 
@@ -340,7 +384,7 @@ function setupTriggers() {
     .everyMinutes(INCOMING_POLL_MINUTES)
     .create();
   // จำตำแหน่งแถวปัจจุบันของชีตของเข้า จะได้ไม่ย้อนแจ้งข้อมูลเก่า
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INCOMING_SHEET_NAME);
+  var sheet = ss_().getSheetByName(INCOMING_SHEET_NAME);
   if (sheet) {
     PropertiesService.getScriptProperties().setProperty(PROP_LAST_ROW, String(sheet.getLastRow()));
   }
