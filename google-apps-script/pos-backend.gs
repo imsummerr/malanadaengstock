@@ -951,8 +951,9 @@ function stockErr_(e) {
 /**
  * สิทธิ์ในระบบสต็อก แบ่งจากช่อง "สาขา" ในชีตผู้ใช้งาน
  *   owner   = เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่
- *   central = สาขาเป็น "ครัวกลาง"  → สต็อกคงเหลือ / ของเข้าครัวกลาง / ของเสีย
+ *   central = สาขาเป็น "ครัวกลาง"  → สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
  *   branch  = สาขาเป็นชื่อสาขา     → ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
+ * เช็คสต็อกทำได้ทั้งคู่ แต่ลงได้เฉพาะสถานที่ของตัวเอง (stockCanUseLoc_)
  */
 function stockRoleOf_(session) {
   if (session.role === 'owner') return 'owner';
@@ -1093,10 +1094,6 @@ function handleStockWaste_(body) {
 function handleStockCount_(body) {
   var session = checkToken_(body.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
-  if (!stockAllow_(session, 'branch')) {
-    return { success: false, code: 403, message: 'เช็คสต็อกเป็นงานของพนักงานสาขา' };
-  }
-
   var loc = String(body.location || '').trim();
   if (!loc) return { success: false, message: 'กรุณาเลือกสถานที่' };
   if (!stockCanUseLoc_(session, loc)) {

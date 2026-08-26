@@ -223,8 +223,8 @@ function readAuth() {
 }
 function isOwner() { return auth.role === 'owner'; }
 /* สิทธิ์แบ่งตามช่อง "สาขา" ในชีตผู้ใช้งาน
-     สาขา = ครัวกลาง → พนักงานครัวกลาง  ทำสต็อกคงเหลือ / ของเข้าครัวกลาง / ของเสีย
-     สาขา = ชื่อสาขา  → พนักงานสาขา      ทำของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
+     สาขา = ครัวกลาง → พนักงานครัวกลาง  สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
+     สาขา = ชื่อสาขา  → พนักงานสาขา      ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
      เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
 function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
 function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
@@ -365,7 +365,7 @@ const TABS = [
   { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'central' },
   { id: 'in',      label: '📥 ของเข้าครัวกลาง', who: 'central' },
   { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
-  { id: 'count',   label: '📋 เช็คสต็อก',      who: 'branch'  },
+  { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
   { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    }
 ];
 let tab = 'stock';
