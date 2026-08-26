@@ -1513,7 +1513,7 @@ function goQR() {
     holder.classList.add('hidden');
     noteManual.classList.remove('hidden');
   } else {
-    fail('ยังไม่ได้ตั้งค่า QR ของสาขา <b>' + (branch || '-') + '</b><br>กดปุ่ม ⚙️ ด้านบน แล้วอัปโหลดรูป QR พร้อมเพย์ของร้าน'
+    fail('สาขา <b>' + (branch || '-') + '</b> ยังไม่ได้ตั้ง QR รับเงิน<br>ตอนนี้รับ <b>เงินสด</b> หรือ <b>ไทยช่วยไทย</b> ไปก่อน แล้วแจ้งเจ้าของร้าน'
        + (isDemo() ? '<br>(ส่วนนี้ไม่ต้องใช้ Apps Script ทำได้เลย)' : ''));
   }
   showScreen('qr');
