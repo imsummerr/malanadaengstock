@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>สต็อก — หม่าล่าหน้าแดง</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700;800&display=swap">
+  <style>
+    :root {
+      --ink:      #0d0d0f;
+      --ink-2:    #1c1c20;
+      --ink-soft: #4a4a52;
+      --muted:    #8e8e97;
+      --line:     #e7e7ea;
+      --paper:    #ffffff;
+      --bg:       #f3f3f4;
+      --red:      #e11d2f;
+      --red-dark: #b3121f;
+      --red-soft: #fff1f2;
+      --green:    #0f9d58;
+      --amber:    #b45309;
+      --amber-bg: #fffbeb;
+      --radius:   16px;
+      --shadow:   0 1px 2px rgba(13,13,15,.05), 0 8px 24px rgba(13,13,15,.06);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.5;
+      font-family: "IBM Plex Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    .hidden { display: none !important; }
+
+    /* ── Login ── */
+    #login-page {
+      min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+      padding: 24px; background: linear-gradient(160deg, #1c1c20, #0d0d0f);
+    }
+    .login-card {
+      background: var(--paper); border-radius: 22px; padding: 32px 26px;
+      width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    .login-logo { font-size: 40px; line-height: 1; margin-bottom: 10px; }
+    .field-label { display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+    .login-input {
+      width: 100%; padding: 13px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+      font-size: 16px; font-family: inherit; background: var(--paper); color: var(--ink);
+    }
+    .login-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+    .login-error {
+      background: var(--red-soft); border: 1px solid #fecdd3; border-radius: 10px;
+      padding: 10px 12px; color: var(--red-dark); font-size: 13.5px; text-align: center;
+    }
+    .key {
+      border: none; border-radius: 12px; font-family: inherit; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-red { background: var(--red); color: #fff; }
+    .btn-red:active { background: var(--red-dark); }
+    .btn-red:disabled { opacity: .6; cursor: not-allowed; }
+    .spinner-sm {
+      width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35);
+      border-top-color: #fff; border-radius: 50%; display: inline-block;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: var(--ink); color: #fff; position: sticky; top: 0; z-index: 20;
+      padding-top: env(safe-area-inset-top);
+    }
+    .topbar-inner { display: flex; align-items: center; gap: 10px; padding: 11px 14px; max-width: 780px; margin: 0 auto; }
+    .topbar .logo { font-size: 22px; }
+    .topbar .title { font-size: 15.5px; font-weight: 800; }
+    .topbar .sub { font-size: 12px; color: #b9b9c0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .icon-btn { background: #ffffff1f; color: #fff; padding: 9px 11px; font-size: 14px; }
+    .icon-btn:active { background: #ffffff33; }
+    .chip-link { background: var(--red); color: #fff; text-decoration: none; font-size: 12.5px; padding: 9px 12px; }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px;
+      background: var(--paper); border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 15; scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      flex: 0 0 auto; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line);
+      background: var(--paper); color: var(--ink-soft); font-size: 13.5px; font-weight: 700;
+      font-family: inherit; cursor: pointer; white-space: nowrap;
+    }
+    .tab.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+    /* ── Layout ── */
+    .wrap { max-width: 780px; margin: 0 auto; padding: 14px 14px 40px; }
+    .card { background: var(--paper); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .card h2 { margin: 0 0 4px; font-size: 16px; font-weight: 800; }
+    .card .lead { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+    label.fld { display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 12px 0 6px; }
+    input, select, textarea {
+      width: 100%; padding: 12px 13px; border: 1.5px solid var(--line); border-radius: 12px;
+      font-size: 16px; font-family: inherit; background: var(--paper); color: var(--ink);
+    }
+    input:focus, select:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+    .qtyrow { display: flex; gap: 10px; align-items: flex-end; }
+    .qtyrow > div { flex: 1; }
+    .qtyrow .plus { flex: 0 0 auto; padding-bottom: 13px; color: var(--muted); font-weight: 800; }
+    .calc {
+      background: var(--red-soft); border: 1px solid #fecdd3; border-radius: 12px;
+      padding: 12px 14px; margin-top: 14px; font-size: 14.5px;
+    }
+    .calc .big { font-size: 20px; font-weight: 800; }
+    .calc .sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; }
+    .submit { width: 100%; padding: 14px; font-size: 15.5px; margin-top: 16px; }
+    .note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+    .warnbox { background: var(--amber-bg); border: 1px solid #fde68a; color: var(--amber);
+               border-radius: 12px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 14px; }
+
+    /* ── ตาราง / รายการ ── */
+    .locblock { margin-bottom: 18px; }
+    .locblock:last-child { margin-bottom: 0; }
+    .loctitle { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14.5px; margin-bottom: 8px; }
+    .pill { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--red-soft); color: var(--red-dark); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+    th { font-size: 11.5px; color: var(--muted); font-weight: 700; white-space: nowrap; }
+    td.num { text-align: right; white-space: nowrap; }
+    .low { color: var(--red); font-weight: 700; }
+    .empty { text-align: center; color: var(--muted); padding: 22px 8px; font-size: 14px; }
+
+    /* ── ฟอร์มนับสต็อก ── */
+    .countrow { display: grid; grid-template-columns: 1fr 84px 84px; gap: 8px; align-items: center;
+                padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .countrow:last-of-type { border-bottom: none; }
+    .countrow .nm { font-size: 14px; font-weight: 600; min-width: 0; }
+    .countrow .nm small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+    .countrow input { padding: 9px 10px; font-size: 15px; text-align: center; }
+    .countrow.done .nm { color: var(--green); }
+    .counthead { display: grid; grid-template-columns: 1fr 84px 84px; gap: 8px;
+                 font-size: 11.5px; color: var(--muted); font-weight: 700; padding-bottom: 6px; }
+    .counthead span:not(:first-child) { text-align: center; }
+    .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; }
+    .progress > div { height: 100%; background: var(--green); width: 0; transition: width .2s; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      background: var(--ink); color: #fff; padding: 13px 18px; border-radius: 12px;
+      font-size: 14px; z-index: 60; max-width: 92%; text-align: center; line-height: 1.45;
+      box-shadow: 0 10px 30px rgba(0,0,0,.3);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════ Login ══════════ -->
+<div id="login-page">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="login-logo">📦</div>
+      <h1 style="font-size:22px;font-weight:800;margin:0 0 4px;">ระบบสต็อก</h1>
+      <p style="font-size:13.5px;color:var(--muted);margin:0;">หม่าล่าหน้าแดง</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <label class="field-label">Username</label>
+        <input type="text" id="login-username" class="login-input" placeholder="กรอก username" autocomplete="username"
+          onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+      </div>
+      <div>
+        <label class="field-label">Password</label>
+        <input type="password" id="login-password" class="login-input" placeholder="กรอก password" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <div id="login-error" class="login-error hidden"></div>
+      <button onclick="doLogin()" id="login-btn" class="key btn-red" style="width:100%;padding:14px;font-size:15.5px;">เข้าสู่ระบบ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ App ══════════ -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">📦</div>
+      <div style="min-width:0;flex:1;">
+        <div class="title">ระบบสต็อก</div>
+        <div class="sub" id="hdr-sub">—</div>
+      </div>
+      <a href="pos.html" class="key chip-link" title="หน้าคิดเงิน">🧮</a>
+      <button onclick="doLogout()" class="key icon-btn" title="ออกจากระบบ">⏻</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="wrap" id="view"></div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════
+   ต่อกับ Apps Script ตัวเดียวกับ pos.html / pos-dashboard.html
+   → login ครั้งเดียวใช้ได้ทุกหน้า
+   ════════════════════════════════════════════════════════ */
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyyctCsEVpIQdcvOQcWz5YPCfkiijl9js6jqtn9FAA_QGtE7lMikBZ4JGAP7-gKPrWzmg/exec';
+
+function apiUrl() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('pos_settings') || '{}'); } catch (e) {}
+  return (s.apiUrl || DEFAULT_API_URL || '').trim();
+}
+
+const auth = { token: '', name: '', branch: '', role: 'staff' };
+function readAuth() {
+  try {
+    auth.token  = sessionStorage.getItem('pos_token')  || '';
+    auth.name   = sessionStorage.getItem('pos_name')   || '';
+    auth.branch = sessionStorage.getItem('pos_branch') || '';
+    auth.role   = sessionStorage.getItem('pos_role')   || 'staff';
+  } catch (e) {}
+}
+function isOwner() { return auth.role === 'owner'; }
+/* สิทธิ์แบ่งตามช่อง "สาขา" ในชีตผู้ใช้งาน
+     สาขา = ครัวกลาง → พนักงานครัวกลาง  สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
+     สาขา = ชื่อสาขา  → พนักงานสาขา      ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
+     เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
+function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
+function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
+function canSee(who) { return who === 'both' ? (isCentral() || isBranch())
+                            : who === 'central' ? isCentral() : isBranch(); }
+
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+let toastTimer = null;
+function toast(html, ms) {
+  const old = document.querySelector('.toast');
+  if (old) old.remove();
+  clearTimeout(toastTimer);
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  toastTimer = setTimeout(() => el.remove(), ms || 3500);
+}
+
+/* ── เรียก API ── */
+async function apiPost(body) {
+  const res = await fetch(apiUrl(), {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ token: auth.token }, body))
+  });
+  return handle(await res.json());
+}
+async function apiGet(params) {
+  const q = new URLSearchParams(Object.assign({ token: auth.token, _: Date.now() }, params));
+  const res = await fetch(apiUrl() + '?' + q, { cache: 'no-store' });
+  return handle(await res.json());
+}
+function handle(json) {
+  if (json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
+  if (!json.success && /ไม่รู้จัก action/.test(json.message || '')) {
+    throw new Error('Apps Script ยังเป็นเวอร์ชันเก่า — เปิด Apps Script แล้วกด ทำให้ใช้งานได้ → ' +
+                    'จัดการรุ่นการทำให้ใช้งานได้ → แก้ไข → เวอร์ชันใหม่ → ทำให้ใช้งานได้');
+  }
+  if (!json.success) throw new Error(json.message || 'ทำรายการไม่สำเร็จ');
+  return json;
+}
+
+/* ── Login ── */
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  errEl.classList.add('hidden');
+  if (!username || !password) {
+    errEl.textContent = 'กรอก username และ password';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังตรวจสอบ...';
+  try {
+    const res = await fetch(apiUrl(), {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'login', username, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      sessionStorage.setItem('pos_token', data.token);
+      sessionStorage.setItem('pos_name', data.name);
+      sessionStorage.setItem('pos_branch', data.branch || '');
+      sessionStorage.setItem('pos_role', data.role === 'owner' ? 'owner' : 'staff');
+      showApp();
+    } else {
+      errEl.textContent = data.message || 'Login ไม่สำเร็จ';
+      errEl.classList.remove('hidden');
+      document.getElementById('login-password').value = '';
+    }
+  } catch (e) {
+    errEl.textContent = 'เชื่อมต่อ Server ไม่ได้';
+    errEl.classList.remove('hidden');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'เข้าสู่ระบบ';
+}
+
+function doLogout() {
+  const token = auth.token;
+  ['pos_token', 'pos_name', 'pos_branch', 'pos_role'].forEach(k => sessionStorage.removeItem(k));
+  if (token) {
+    fetch(apiUrl(), {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'logout', token })
+    }).catch(() => {});
+  }
+  auth.token = '';
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-page').classList.remove('hidden');
+}
+
+/* ════════════════════════════════════════════════════════
+   ข้อมูลและการแปลงหน่วย — ตรรกะเดียวกับฝั่งเซิร์ฟเวอร์
+   เก็บยอดเป็นหน่วยย่อย (ไม้/กรัม) แปลงเป็นแพ็คตอนแสดงผล
+   ════════════════════════════════════════════════════════ */
+let D = { items: [], locations: [], stock: [], central: 'ครัวกลาง' };
+
+const itemOf = n => D.items.find(i => i.name === n) || null;
+
+/** สถานที่ที่ผู้ใช้คนนี้ลงรายการได้ — เจ้าของทุกที่ ครัวกลางเฉพาะครัวกลาง สาขาเฉพาะสาขาตัวเอง */
+function allowedLocs() {
+  if (isOwner()) return D.locations;
+  if (auth.branch === 'ครัวกลาง') return [D.central];
+  return D.locations.filter(l => l === auth.branch);
+}
+
+function toBase(packs, rem, perPack) {
+  const p = Number(packs) || 0, r = Number(rem) || 0;
+  const per = Number(perPack) > 0 ? Number(perPack) : 1;
+  return Math.round((p * per + r) * 1000) / 1000;
+}
+function fmtPack(base, it) {
+  base = Math.round((Number(base) || 0) * 1000) / 1000;
+  if (!it || it.perPack <= 1) return base + ' ' + (it ? it.subUnit : '');
+  const neg = base < 0, a = Math.abs(base);
+  const packs = Math.floor(a / it.perPack);
+  const rem = Math.round((a - packs * it.perPack) * 1000) / 1000;
+  const out = [];
+  if (packs) out.push((neg ? -packs : packs) + ' ' + it.packUnit);
+  if (rem)   out.push((neg ? -rem : rem) + ' ' + it.subUnit);
+  return out.length ? out.join(' ') : '0 ' + it.packUnit;
+}
+function balOf(loc, name) {
+  const L = D.stock.find(s => s.name === loc);
+  if (!L) return 0;
+  const r = L.rows.find(x => x.item === name);
+  return r ? r.base : 0;
+}
+
+/* ── แท็บ ── */
+const TABS = [
+  { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'central' },
+  { id: 'in',      label: '📥 ของเข้าครัวกลาง', who: 'central' },
+  { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
+  { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
+  { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    }
+];
+let tab = 'stock';
+
+const myTabs = () => TABS.filter(t => canSee(t.who));
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = myTabs()
+    .map(t => `<button class="tab${t.id === tab ? ' on' : ''}" onclick="go('${t.id}')">${t.label}</button>`)
+    .join('');
+}
+function go(id) { tab = id; renderTabs(); render(); }
+
+/* ════════════════════════════════════════════════════════
+   หน้าจอ
+   ════════════════════════════════════════════════════════ */
+function render() {
+  const v = document.getElementById('view');
+  if (!D.items.length) {
+    v.innerHTML = `<div class="card"><div class="warnbox" style="margin:0">
+      ⚠️ ยังไม่มีรายการสินค้า — เปิด Apps Script แล้วรันฟังก์ชัน <b>setupStock</b> หนึ่งครั้ง
+      จากนั้นกรอกช่อง <b>หน่วยย่อยต่อแพ็ค</b> ในชีต "รายการสินค้า"
+    </div></div>`;
+    return;
+  }
+  if (tab === 'stock')  return viewStock(v);
+  if (tab === 'in')     return viewMove(v, 'in');
+  if (tab === 'toshop') return viewMove(v, 'toshop');
+  if (tab === 'waste')  return viewMove(v, 'waste');
+  if (tab === 'count')  return viewCount(v);
+}
+
+/* ── สต็อกคงเหลือ ── */
+function viewStock(v) {
+  const blocks = D.stock.map(L => {
+    if (!L.rows.length) {
+      return `<div class="locblock"><div class="loctitle"><span class="pill">${esc(L.name)}</span></div>
+              <div class="empty">ยังไม่มีของในสต็อก</div></div>`;
+    }
+    const rows = L.rows.map(r => `<tr>
+        <td>${esc(r.item)}</td>
+        <td class="num${r.low ? ' low' : ''}">${esc(r.text)}${r.low ? ' ⚠️' : ''}</td>
+      </tr>`).join('');
+    return `<div class="locblock">
+      <div class="loctitle"><span class="pill">${esc(L.name)}</span></div>
+      <table><tbody>${rows}</tbody></table>
+    </div>`;
+  }).join('');
+
+  v.innerHTML = `<div class="card">
+    <h2>📦 สต็อกคงเหลือ</h2>
+    <p class="lead">ยอดล่าสุดจากการนับครั้งหลังสุด บวกของเข้า ลบของเสีย</p>
+    ${blocks || '<div class="empty">ยังไม่มีข้อมูล</div>'}
+    <p class="note">⚠️ = ต่ำกว่าจุดเตือนที่ตั้งไว้ในชีตรายการสินค้า</p>
+  </div>`;
+}
+
+/* ── ฟอร์มของเข้า / ส่งเข้าร้าน / ของเสีย ── */
+const MOVE = {
+  in:     { title: '📥 ของเข้าครัวกลาง', lead: 'เสียบและแพ็คเสร็จแล้วลงยอดตรงนี้',
+            action: 'stockIn', btn: 'บันทึกของเข้า', fixedLoc: true },
+  toshop: { title: '🏪 ของเข้าร้าน', lead: 'รับของที่ครัวกลางส่งมา ระบบหักออกจากครัวกลางให้อัตโนมัติ',
+            action: 'stockToShop', btn: 'บันทึกของเข้าร้าน', branchOnly: true },
+  waste:  { title: '🗑️ ของเสีย', lead: 'ของที่ทิ้ง ระบบจะตัดออกจากสต็อกให้',
+            action: 'stockWaste', btn: 'บันทึกของเสีย', reason: true }
+};
+
+function viewMove(v, kind) {
+  const c = MOVE[kind];
+  let locs = allowedLocs();
+  if (c.branchOnly) locs = locs.filter(l => l !== D.central);
+
+  const locField = c.fixedLoc
+    ? `<input id="f-loc" value="${esc(D.central)}" readonly style="background:var(--bg)">`
+    : `<select id="f-loc" onchange="recalc()">${locs.map(l =>
+        `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+
+  v.innerHTML = `<div class="card">
+    <h2>${c.title}</h2>
+    <p class="lead">${c.lead}</p>
+
+    <label class="fld">${c.branchOnly ? 'สาขาปลายทาง' : 'สถานที่'}</label>
+    ${locField}
+
+    <label class="fld">สินค้า</label>
+    <select id="f-item" onchange="syncUnits(); recalc()">
+      ${D.items.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
+    </select>
+
+    <div class="qtyrow" style="margin-top:12px">
+      <div>
+        <label class="fld" id="lbl-packs" style="margin-top:0">แพ็ค</label>
+        <input id="f-packs" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="recalc()">
+      </div>
+      <div class="plus">+</div>
+      <div>
+        <label class="fld" id="lbl-rem" style="margin-top:0">เศษ</label>
+        <input id="f-rem" type="number" inputmode="decimal" min="0" step="any" placeholder="0" oninput="recalc()">
+      </div>
+    </div>
+
+    ${c.reason ? `<label class="fld">สาเหตุ</label>
+      <select id="f-reason">
+        <option>หมดอายุ</option><option>ของเสีย/เน่า</option>
+        <option>ตกพื้น</option><option>ชำรุด</option><option>อื่น ๆ</option>
+      </select>` : ''}
+
+    <label class="fld">หมายเหตุ</label>
+    <input id="f-note" placeholder="ไม่ใส่ก็ได้">
+
+    <div class="calc" id="calc"></div>
+
+    <button class="key btn-red submit" id="f-btn" onclick="submitMove('${kind}')">${c.btn}</button>
+    <p class="note" id="f-note-line"></p>
+  </div>`;
+
+  syncUnits();
+  recalc();
+}
+
+function syncUnits() {
+  const it = itemOf(document.getElementById('f-item').value);
+  if (!it) return;
+  document.getElementById('lbl-packs').textContent = it.packUnit;
+  document.getElementById('lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
+  const pk = document.getElementById('f-packs');
+  if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
+}
+
+function recalc() {
+  const box = document.getElementById('calc');
+  if (!box) return;
+  const it = itemOf(document.getElementById('f-item').value);
+  if (!it) { box.innerHTML = ''; return; }
+
+  const total = toBase(document.getElementById('f-packs').value,
+                       document.getElementById('f-rem').value, it.perPack);
+  const locEl = document.getElementById('f-loc');
+  const loc = locEl ? locEl.value : D.central;
+  // ของเข้าร้านตัดจากครัวกลาง ที่เหลือตัด/บวกที่สถานที่นั้น
+  const from = (tab === 'toshop') ? D.central : loc;
+  const have = balOf(from, it.name);
+  const after = (tab === 'in') ? have + total : have - total;
+
+  if (!(total > 0)) {
+    box.innerHTML = `<div class="sub">กรอกจำนวน — ตอนนี้ ${esc(from)} มี <b>${esc(fmtPack(have, it))}</b></div>`;
+    return;
+  }
+  const over = (tab !== 'in') && after < 0;
+  box.innerHTML =
+    `<div class="big">${esc(fmtPack(total, it))}</div>` +
+    (it.perPack > 1 ? `<div class="sub">= ${total} ${esc(it.subUnit)} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)})</div>` : '') +
+    `<div class="sub">${esc(from)} ${esc(fmtPack(have, it))} → เหลือ <b>${esc(fmtPack(after, it))}</b>` +
+    (over ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
+}
+
+async function submitMove(kind) {
+  const c = MOVE[kind];
+  const it = itemOf(document.getElementById('f-item').value);
+  if (!it) return toast('เลือกสินค้าก่อน');
+  const packs = document.getElementById('f-packs').value;
+  const rem   = document.getElementById('f-rem').value;
+  if (!(toBase(packs, rem, it.perPack) > 0)) return toast('กรอกจำนวนก่อน');
+
+  const locEl = document.getElementById('f-loc');
+  const btn = document.getElementById('f-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
+  try {
+    const r = await apiPost({
+      action: c.action, item: it.name, location: locEl ? locEl.value : D.central,
+      packs: packs, rem: rem,
+      reason: c.reason ? document.getElementById('f-reason').value : '',
+      note: document.getElementById('f-note').value
+    });
+    toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
+          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
+    document.getElementById('f-packs').value = '';
+    document.getElementById('f-rem').value = '';
+    document.getElementById('f-note').value = '';
+    await loadData();
+    recalc();
+  } catch (e) {
+    toast('❌ ' + esc(e.message), 6000);
+  }
+  btn.disabled = false;
+  btn.innerHTML = c.btn;
+}
+
+/* ── เช็คสต็อกรายสัปดาห์ — บังคับนับให้ครบ ── */
+function viewCount(v) {
+  const locs = allowedLocs();
+
+  v.innerHTML = `<div class="card">
+    <h2>📋 เช็คสต็อกรายสัปดาห์</h2>
+    <p class="lead">ต้องนับให้ครบทุกรายการ ยอดที่นับได้จะกลายเป็นยอดตั้งต้นใหม่</p>
+
+    <label class="fld">สถานที่</label>
+    <select id="c-loc" onchange="paintCount()">${locs.map(l =>
+      `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+
+    <div class="progress"><div id="c-bar"></div></div>
+    <p class="note" id="c-prog">นับแล้ว 0 / ${D.items.length}</p>
+  </div>
+
+  <div class="card">
+    <div class="counthead"><span>สินค้า</span><span id="c-h1">แพ็ค</span><span id="c-h2">เศษ</span></div>
+    <div id="c-rows"></div>
+    <button class="key btn-red submit" id="c-btn" onclick="submitCount()">บันทึกผลนับ</button>
+    <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
+  </div>`;
+
+  document.getElementById('c-rows').innerHTML = D.items.map((it, i) => `
+    <div class="countrow" id="cr-${i}">
+      <div class="nm">${esc(it.name)}<small>ระบบว่ามี <span id="cs-${i}">–</span></small></div>
+      <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
+             placeholder="${it.perPack > 1 ? esc(it.packUnit) : '–'}"
+             ${it.perPack > 1 ? '' : 'disabled'} oninput="paintProgress()">
+      <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
+             placeholder="${esc(it.subUnit)}" oninput="paintProgress()">
+    </div>`).join('');
+
+  paintCount();
+}
+
+function paintCount() {
+  const loc = document.getElementById('c-loc').value;
+  D.items.forEach((it, i) => {
+    document.getElementById('cs-' + i).textContent = fmtPack(balOf(loc, it.name), it);
+  });
+  paintProgress();
+}
+
+function paintProgress() {
+  let done = 0;
+  D.items.forEach((it, i) => {
+    const p = document.getElementById('cp-' + i).value;
+    const r = document.getElementById('cr2-' + i).value;
+    const ok = (p !== '' || r !== '');
+    if (ok) done++;
+    document.getElementById('cr-' + i).classList.toggle('done', ok);
+  });
+  const pct = D.items.length ? Math.round(done / D.items.length * 100) : 0;
+  document.getElementById('c-bar').style.width = pct + '%';
+  document.getElementById('c-prog').innerHTML = done === D.items.length
+    ? `<b style="color:var(--green)">นับครบ ${done} รายการแล้ว ✓</b>`
+    : `นับแล้ว ${done} / ${D.items.length} — ยังขาด ${D.items.length - done}`;
+}
+
+async function submitCount() {
+  const rows = D.items.map((it, i) => ({
+    item: it.name,
+    packs: document.getElementById('cp-' + i).value,
+    rem:   document.getElementById('cr2-' + i).value
+  }));
+  const missing = rows.filter(r => r.packs === '' && r.rem === '');
+  if (missing.length) {
+    toast('ยังนับไม่ครบ ขาดอีก ' + missing.length + ' รายการ<br>' +
+          '<span style="opacity:.8;font-size:12.5px">' + esc(missing.slice(0, 3).map(m => m.item).join(', ')) +
+          (missing.length > 3 ? ' …' : '') + '</span>', 5000);
+    return;
+  }
+  const btn = document.getElementById('c-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
+  try {
+    const r = await apiPost({ action: 'stockCount', location: document.getElementById('c-loc').value, rows });
+    toast('บันทึกแล้ว ✅ นับครบ ' + r.counted + ' รายการ<br>' +
+          '<span style="opacity:.8;font-size:12.5px">' +
+          (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') + '</span>', 5500);
+    await loadData();
+    go('stock');
+  } catch (e) {
+    toast('❌ ' + esc(e.message), 6000);
+    btn.disabled = false;
+    btn.innerHTML = 'บันทึกผลนับ';
+  }
+}
+
+/* ════════════════════════════════════════════════════════ */
+async function loadData() {
+  const r = await apiGet({ action: 'stockBootstrap' });
+  D = r.data;
+  document.getElementById('hdr-sub').textContent =
+    auth.name + (auth.branch ? ' • ' + auth.branch : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
+}
+
+async function showApp() {
+  readAuth();
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  const mine = myTabs();
+  if (!mine.some(t => t.id === tab)) tab = mine.length ? mine[0].id : 'waste';
+  renderTabs();
+  document.getElementById('view').innerHTML = '<div class="card"><div class="empty">กำลังโหลด...</div></div>';
+  try {
+    await loadData();
+    render();
+  } catch (e) {
+    document.getElementById('view').innerHTML =
+      `<div class="card"><div class="warnbox" style="margin:0">❌ ${esc(e.message)}</div></div>`;
+  }
+}
+
+readAuth();
+if (auth.token) showApp();
+</script>
+</body>
+</html>

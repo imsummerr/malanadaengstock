@@ -941,10 +941,44 @@ function checkLowStock_(itemNames) {
 
 /* ───────────────────────── บันทึกความเคลื่อนไหว ───────────────────────── */
 
-/** ตรวจ token + แปลงจำนวนแพ็ค/เศษ เป็นหน่วยย่อย — ใช้ร่วมกันทุก action */
-function stockPrepare_(body) {
+/** แปลง error จาก stockPrepare_ เป็นคำตอบที่หน้าเว็บเข้าใจ */
+function stockErr_(e) {
+  if (e.message === '401') return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (e.message === '403') return { success: false, code: 403, message: 'บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้' };
+  return { success: false, message: e.message };
+}
+
+/**
+ * สิทธิ์ในระบบสต็อก แบ่งจากช่อง "สาขา" ในชีตผู้ใช้งาน
+ *   owner   = เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่
+ *   central = สาขาเป็น "ครัวกลาง"  → สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
+ *   branch  = สาขาเป็นชื่อสาขา     → ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
+ * เช็คสต็อกทำได้ทั้งคู่ แต่ลงได้เฉพาะสถานที่ของตัวเอง (stockCanUseLoc_)
+ */
+function stockRoleOf_(session) {
+  if (session.role === 'owner') return 'owner';
+  return String(session.branch || '').trim() === CENTRAL ? 'central' : 'branch';
+}
+
+/** เจ้าของผ่านหมด นอกนั้นต้องตรงกับที่กำหนด */
+function stockAllow_(session, need) {
+  var r = stockRoleOf_(session);
+  return r === 'owner' || r === need;
+}
+
+/** สถานที่ที่คนนี้ลงรายการได้ — กันไม่ให้สาขาหนึ่งไปลงของอีกสาขา */
+function stockCanUseLoc_(session, loc) {
+  var r = stockRoleOf_(session);
+  if (r === 'owner') return true;
+  if (r === 'central') return String(loc || '').trim() === CENTRAL;
+  return String(loc || '').trim() === String(session.branch || '').trim();
+}
+
+/** ตรวจ token + สิทธิ์ + แปลงจำนวนแพ็ค/เศษ เป็นหน่วยย่อย — ใช้ร่วมกันทุก action */
+function stockPrepare_(body, need) {
   var session = checkToken_(body.token);
   if (!session) throw new Error('401');
+  if (need && !stockAllow_(session, need)) throw new Error('403');
 
   var name = String(body.item || '').trim();
   var it = findStockItem_(name);
@@ -959,10 +993,8 @@ function stockPrepare_(body) {
 /** ของเข้าครัวกลาง — เสียบและแพ็คเสร็จแล้วลงยอด */
 function handleStockIn_(body) {
   var p;
-  try { p = stockPrepare_(body); }
-  catch (e) { return e.message === '401'
-    ? { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' }
-    : { success: false, message: e.message }; }
+  try { p = stockPrepare_(body, 'central'); }
+  catch (e) { return stockErr_(e); }
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
@@ -987,13 +1019,14 @@ function handleStockIn_(body) {
 /** ของเข้าร้าน — ส่งจากครัวกลางไปสาขา หักครัวกลางอัตโนมัติตอนคิดยอดคงเหลือ */
 function handleStockToShop_(body) {
   var p;
-  try { p = stockPrepare_(body); }
-  catch (e) { return e.message === '401'
-    ? { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' }
-    : { success: false, message: e.message }; }
+  try { p = stockPrepare_(body, 'branch'); }
+  catch (e) { return stockErr_(e); }
 
   var branch = String(body.location || '').trim();
-  if (!branch || branch === CENTRAL) return { success: false, message: 'กรุณาเลือกสาขาปลายทาง' };
+  if (!branch || branch === CENTRAL) return { success: false, message: 'กรุณาเลือกสาขา' };
+  if (!stockCanUseLoc_(p.session, branch)) {
+    return { success: false, code: 403, message: 'ลงของเข้าได้เฉพาะสาขาของตัวเอง' };
+  }
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
@@ -1021,12 +1054,13 @@ function handleStockToShop_(body) {
 function handleStockWaste_(body) {
   var p;
   try { p = stockPrepare_(body); }
-  catch (e) { return e.message === '401'
-    ? { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' }
-    : { success: false, message: e.message }; }
+  catch (e) { return stockErr_(e); }
 
   var loc = String(body.location || '').trim();
   if (!loc) return { success: false, message: 'กรุณาเลือกสถานที่' };
+  if (!stockCanUseLoc_(p.session, loc)) {
+    return { success: false, code: 403, message: 'บันทึกของเสียได้เฉพาะสถานที่ของตัวเอง' };
+  }
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WASTE);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_WASTE + '"' };
@@ -1060,9 +1094,11 @@ function handleStockWaste_(body) {
 function handleStockCount_(body) {
   var session = checkToken_(body.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
-
   var loc = String(body.location || '').trim();
   if (!loc) return { success: false, message: 'กรุณาเลือกสถานที่' };
+  if (!stockCanUseLoc_(session, loc)) {
+    return { success: false, code: 403, message: 'นับสต็อกได้เฉพาะสาขาของตัวเอง' };
+  }
 
   var rows = body.rows || [];
   var items = getStockItems_();
@@ -1131,7 +1167,9 @@ function handleStockBootstrap_(p) {
   Object.keys(bal).forEach(function (l) { if (locations.indexOf(l) === -1) locations.push(l); });
 
   // ยอดคงเหลือแปลงเป็นข้อความ "3 แพ็ค 5 ไม้" ให้หน้าเว็บแสดงได้เลย
-  var stock = locations.map(function (loc) {
+  var stock = locations.filter(function (loc) {
+    return stockCanUseLoc_(session, loc);
+  }).map(function (loc) {
     var m = bal[loc] || {};
     return {
       name: loc,
@@ -1145,7 +1183,8 @@ function handleStockBootstrap_(p) {
   });
 
   return { success: true, data: {
-    role: session.role, name: session.name, branch: session.branch,
+    role: session.role, stockRole: stockRoleOf_(session),
+    name: session.name, branch: session.branch,
     central: CENTRAL, locations: locations, items: items, stock: stock
   } };
 }

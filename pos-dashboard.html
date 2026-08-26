@@ -295,11 +295,19 @@
         <span class="w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
         เลือกสาขาและช่วงเช็คสต็อก
       </h2>
+      <div id="central-note" class="hidden mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <b>ครัวกลางไม่มียอดขาย</b> — ตัวเลข "ขายได้" ของครัวกลางคือ
+        <b>ของที่หายไปโดยไม่มีที่มา</b> (ยกมา + ของเข้า − ส่งเข้าสาขา − ของเสีย − ยอดนับล่าสุด)
+        ปกติควรใกล้ 0 ถ้าเป็นบวกเยอะแปลว่ามีของหายจากครัวกลาง
+        ส่วนช่องเงินไม่ต้องดู เพราะครัวกลางไม่ได้ขายของ
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-600 mb-1">สาขา <span class="text-red-500">*</span></label>
-          <select id="calc-branch" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl bg-white">
+          <select id="calc-branch" class="input-field w-full p-3 border-2 border-gray-200 rounded-xl bg-white" onchange="document.getElementById('central-note').classList.toggle('hidden', this.value !== 'ครัวกลาง')">
             <option value="">เลือกสาขา</option>
+            <option value="ครัวกลาง">ครัวกลาง</option>
             <option value="ตลาดทรัพย์พัฒนา">ตลาดทรัพย์พัฒนา</option>
             <option value="แบริ่ง">แบริ่ง</option>
           </select>
@@ -1015,6 +1023,23 @@ async function calculate() {
       if (!name) return;
       incomingTotals[name] = (incomingTotals[name] || 0) + qty;
     });
+
+    // ── ครัวกลาง: หักของที่ส่งเข้าสาขาออกด้วย ──
+    // แถว "ของเข้าร้าน" เก็บช่องสาขาเป็นชื่อสาขาปลายทาง ไม่ใช่ครัวกลาง
+    // ตัวกรองด้านบนเลยมองไม่เห็น ถ้าไม่หักตรงนี้ ครัวกลางจะดูเหมือน
+    // ของหายเท่ากับที่ส่งออกไปทั้งหมด ทั้งที่ของไปอยู่ที่สาขาเรียบร้อยแล้ว
+    const isCentralCalc = branch === 'ครัวกลาง';
+    if (isCentralCalc) {
+      incomingDataAll.forEach(row => {
+        if (String(row['ประเภท'] || '').trim() !== 'ของเข้าร้าน') return;
+        const rowDate = parseThaiDate(row['วันที่เวลา']);
+        if (!rowDate || !inWindow(toDateStr(rowDate))) return;
+        const name = row['รายการ'];
+        const qty  = parseFloat(row['จำนวน']) || 0;
+        if (!name) return;
+        incomingTotals[name] = (incomingTotals[name] || 0) - qty;
+      });
+    }
 
     // ── ของเสียในช่วงเดียวกัน ──
     const thisWeekWaste = {};
