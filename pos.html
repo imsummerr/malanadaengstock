@@ -928,7 +928,7 @@ var PromptPay = (function () {
 // URL ของ Web app (Apps Script) — ดูวิธีติดตั้งใน google-apps-script/POS-README.md
 // URL ของ Google Apps Script ของร้าน — ฝังไว้ให้ทุกเครื่องใช้ได้เลยไม่ต้องกรอก
 // ถ้า Deploy ใหม่แล้วได้ URL ใหม่ ให้แก้ตรงนี้ (และในไฟล์ pos-dashboard.html ด้วย)
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyyctCsEVpIQdcvOQcWz5YPCfkiijl9js6jqtn9FAA_QGtE7lMikBZ4JGAP7-gKPrWzmg/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxBYBkqM58bhPeRi17pHOthuGLiDPfFFdZbj06hlydOMpsFWiZebuP3uiTVOYD5C4tFRA/exec';
 
 // พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
 // QR รับเงินของแต่ละสาขา — ฝังไว้ให้ทุกเครื่องใช้ได้เลย ไม่ต้องอัปโหลดรูป
@@ -1176,6 +1176,14 @@ async function loadBills() {
     const bills = json.data.bills || [];
     try { sessionStorage.setItem(billsCacheKey(date), JSON.stringify(bills)); } catch (e) {}
     renderBills(bills, date);
+    // หลังบ้านรุ่นเก่าไม่ส่ง deliveryCount มา — เดลิเวอรี่จะไม่ขึ้นในรายการ บอกให้รู้ว่าต้อง Deploy ใหม่
+    if (json.data.deliveryCount === undefined) {
+      document.getElementById('bills-list').insertAdjacentHTML('afterbegin',
+        '<div class="qr-status warn" style="margin-bottom:10px;">' +
+        'ออเดอร์เดลิเวอรี่ยังไม่ขึ้นในรายการนี้ เพราะโค้ดหลังบ้านยังเป็นรุ่นเก่า<br>' +
+        'ต้องเอา <b>pos-backend.gs</b> ตัวล่าสุดไปวางใน Apps Script แล้ว Deploy เวอร์ชันใหม่' +
+        '</div>');
+    }
   } catch (e) {
     if (cached) { renderBills(cached, date); toast('อัปเดตไม่สำเร็จ — แสดงข้อมูลล่าสุดที่โหลดไว้'); }
     else { billsStatus('โหลดไม่สำเร็จ — ' + e.message); renderBills(null, date); }

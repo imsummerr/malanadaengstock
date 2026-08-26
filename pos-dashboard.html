@@ -414,7 +414,7 @@
    ตั้งค่า — ใช้ URL เดียวกับหน้า pos.html
    ════════════════════════════════════════════════ */
 // URL เดียวกับ pos.html — แก้ทั้งสองไฟล์ให้ตรงกันเสมอ
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyyctCsEVpIQdcvOQcWz5YPCfkiijl9js6jqtn9FAA_QGtE7lMikBZ4JGAP7-gKPrWzmg/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxBYBkqM58bhPeRi17pHOthuGLiDPfFFdZbj06hlydOMpsFWiZebuP3uiTVOYD5C4tFRA/exec';
 
 function apiUrl() {
   let s = {};
@@ -1189,7 +1189,38 @@ async function calculate() {
     showToast('✅ คำนวณสำเร็จ', 'success');
 
   } catch(e) {
-    showToast('❌ เกิดข้อผิดพลาด: ' + e.message, 'error');
+    // ชีตสต็อกยังไม่มีในไฟล์ Google Sheet — บอกให้ชัดว่าต้องทำอะไร ไม่ใช่โยน error ดิบ ๆ
+    const m = String(e.message).match(/ไม่พบชีต "([^"]+)"/);
+    if (m) {
+      document.getElementById('summary-box').classList.add('hidden');
+      document.getElementById('detail-box').classList.add('hidden');
+      document.getElementById('stats-box').classList.add('hidden');
+      document.getElementById('empty-state').innerHTML = `
+        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 text-left max-w-lg mx-auto">
+          <p class="font-semibold text-yellow-800 mb-2">📋 ยังคำนวณของหายไม่ได้ — ไม่มีชีต "${m[1]}"</p>
+          <p class="text-sm text-yellow-700 mb-2">
+            การคำนวณของหายต้องใช้ข้อมูลสต็อก ซึ่งเก็บอยู่คนละชีตกับยอดขาย
+            ตอนนี้ในไฟล์ Google Sheet ยังไม่มีชีตนี้
+          </p>
+          <p class="text-sm font-semibold text-yellow-800 mb-1">ต้องมีครบ 4 ชีตนี้ (ตั้งชื่อให้ตรงเป๊ะ):</p>
+          <ul class="text-sm text-yellow-700 list-disc pl-5 mb-2">
+            <li><b>จำนวนของเข้า</b> — ของที่รับเข้าร้าน</li>
+            <li><b>เช็คสต็อกรายสัปดาห์</b> — ผลนับสต็อกแต่ละรอบ</li>
+            <li><b>ของเสีย</b> — ของที่ทิ้ง</li>
+            <li><b>ยอดขาย</b> — สรุปยอดรายวัน (ไม่บังคับ)</li>
+          </ul>
+          <p class="text-sm text-yellow-700">
+            แต่ละชีตต้องมีคอลัมน์ <b>วันที่เวลา · สาขา · รายการ · จำนวน</b> เป็นอย่างน้อย
+          </p>
+          <p class="text-xs text-gray-500 mt-3">
+            ส่วนอื่นของระบบ (คิดเงิน · บิล · สรุปยอดขาย) ใช้งานได้ปกติ ไม่เกี่ยวกับชีตพวกนี้
+          </p>
+        </div>`;
+      document.getElementById('empty-state').classList.remove('hidden');
+      showToast('ยังไม่มีชีต "' + m[1] + '" ในไฟล์ Google Sheet', 'warn');
+    } else {
+      showToast('❌ เกิดข้อผิดพลาด: ' + e.message, 'error');
+    }
   } finally {
     showLoading(false);
   }
