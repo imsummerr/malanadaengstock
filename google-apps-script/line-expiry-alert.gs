@@ -79,13 +79,31 @@ function ss_() {
 // │ กลุ่มสาขา     ← ของเข้าสาขา · ของหมดอายุ 1 ทุ่ม · เช็คสต็อก · ของเสียสาขา │
 // └────────────────────────────────────────────────────────────┘
 // ถ้า 2 สาขาใช้กลุ่มเดียวกัน ใส่ Group ID เดียวกันทั้งคู่ได้เลย
-var BRANCH_LINE_GROUPS = {
-  'ครัวกลาง': '',           // ← ใส่ C... ของกลุ่มครัวกลาง
-  'ตลาดทรัพย์พัฒนา': '',   // ← ใส่ C... ของกลุ่มสาขา
-  'แบริ่ง': ''              // ← ใส่ C... ของกลุ่มสาขา
-};
+// ใช้ LINE channel access token "อันเดียว" ได้ทั้งหมด — token ผูกกับบอท (OA)
+// ไม่ได้ผูกกับกลุ่ม บอทตัวเดียวส่งเข้ากี่กลุ่มก็ได้ แยกด้วย Group ID ตอนส่ง
+// ขอแค่บอทตัวนั้นถูกเชิญเข้าทุกกลุ่มที่จะแจ้ง
+//
+// วิธีตั้งค่า — ไปที่ โปรเจกต์ > การตั้งค่าสคริปต์ > คุณสมบัติสคริปต์
+//   LINE_CHANNEL_ACCESS_TOKEN = token ของบอท
+//   LINE_GROUPS = {"ครัวกลาง":"Cxxxx","ตลาดทรัพย์พัฒนา":"Cyyyy"}
+// เก็บใน Script Properties ไม่ใช่ในโค้ด เพราะ repo นี้เป็น public
+// สาขาที่ยังไม่เปิดใช้ (เช่น แบริ่ง) ไม่ต้องใส่ ระบบจะข้ามการแจ้งไปเฉย ๆ
+var BRANCH_LINE_GROUPS = {};   // สำรอง — ปกติใช้ Script Property LINE_GROUPS แทน
+
+function lineGroups_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('LINE_GROUPS');
+  if (!raw) return BRANCH_LINE_GROUPS;
+  try {
+    var o = JSON.parse(raw);
+    return (o && typeof o === 'object') ? o : BRANCH_LINE_GROUPS;
+  } catch (e) {
+    Logger.log('LINE_GROUPS ไม่ใช่ JSON ที่ถูกต้อง: ' + e.message);
+    return BRANCH_LINE_GROUPS;
+  }
+}
+
 function getBranchTarget_(branch) {
-  return BRANCH_LINE_GROUPS[String(branch || '').trim()] || '';
+  return String(lineGroups_()[String(branch || '').trim()] || '').trim();
 }
 var TZ = 'Asia/Bangkok';
 var NOTIFY_HOUR = 19;                      // แจ้งของครบกำหนดทิ้งตอนกี่โมง (19 = 1 ทุ่ม)
@@ -343,14 +361,14 @@ function sendLine_(text, targetId) {
     throw new Error('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties (ดู README.md)');
   }
 
-  var url, body;
-  if (to) {
-    url  = 'https://api.line.me/v2/bot/message/push';
-    body = { to: to, messages: [{ type: 'text', text: text }] };
-  } else {
-    url  = 'https://api.line.me/v2/bot/message/broadcast';
-    body = { messages: [{ type: 'text', text: text }] };
+  // ไม่รู้ปลายทาง = ข้ามไป ห้าม broadcast เด็ดขาด
+  // broadcast ส่งหาเพื่อนของ OA ทุกคน ลูกค้าจะได้ข้อความสต็อกภายในร้านไปด้วย
+  if (!to) {
+    Logger.log('ข้ามการแจ้ง — ยังไม่ได้ตั้ง Group ID ปลายทาง\n' + text);
+    return;
   }
+  var url  = 'https://api.line.me/v2/bot/message/push';
+  var body = { to: to, messages: [{ type: 'text', text: text }] };
 
   var res = UrlFetchApp.fetch(url, {
     method: 'post',
@@ -405,22 +423,36 @@ function setupDailyTrigger() { setupTriggers(); }
  * ทดสอบส่งข้อความเข้า LINE (เช็คว่า token ถูกต้อง — ส่งไปปลายทางกลาง)
  */
 function testLineConnection() {
-  sendLine_('✅ ทดสอบระบบแจ้งเตือนของหมดอายุ — เชื่อมต่อ LINE สำเร็จ!');
-  Logger.log('ส่งข้อความทดสอบแล้ว เช็คใน LINE ได้เลย');
+  var props  = PropertiesService.getScriptProperties();
+  var token  = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  var groups = lineGroups_();
+  var names  = Object.keys(groups).filter(function (b) { return String(groups[b] || '').trim(); });
+
+  Logger.log('Token: ' + (token ? 'ตั้งค่าแล้ว' : '❌ ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN'));
+  Logger.log('ชีต: ' + (function () {
+    try { return ss_().getName(); } catch (e) { return '❌ ' + e.message; }
+  })());
+
+  if (!names.length) {
+    Logger.log('❌ ยังไม่ได้ตั้ง LINE_GROUPS — ไปที่ โปรเจกต์ > การตั้งค่าสคริปต์ > คุณสมบัติสคริปต์\n' +
+               '   ใส่ LINE_GROUPS = {"ครัวกลาง":"Cxxxx","ตลาดทรัพย์พัฒนา":"Cyyyy"}');
+    return;
+  }
+  names.forEach(function (b) {
+    sendLine_('✅ ทดสอบ: กลุ่มนี้จะได้รับแจ้งเตือนสต็อกของ "' + b + '"', groups[b]);
+    Logger.log('ส่งทดสอบเข้ากลุ่ม "' + b + '" แล้ว');
+  });
+  Logger.log('เช็คใน LINE ได้เลย — ส่งไป ' + names.length + ' กลุ่ม');
 }
 
-/**
- * ทดสอบส่งข้อความเข้ากลุ่มของทุกสาขาที่ใส่ Group ID ไว้ใน BRANCH_LINE_GROUPS
- */
-function testBranchGroups() {
-  Object.keys(BRANCH_LINE_GROUPS).forEach(function(b) {
-    var id = BRANCH_LINE_GROUPS[b];
-    if (id) {
-      sendLine_('✅ ทดสอบ: กลุ่มนี้จะได้รับแจ้งเตือนสต็อกของสาขา "' + b + '"', id);
-      Logger.log('ส่งทดสอบเข้ากลุ่มสาขา "' + b + '" แล้ว');
-    } else {
-      Logger.log('⚠️ สาขา "' + b + '" ยังไม่ได้ใส่ Group ID — แจ้งเตือนของสาขานี้จะไปปลายทางกลางแทน');
-    }
+/** ดูว่าตอนนี้ตั้ง Group ID ไว้กี่กลุ่ม โดยไม่ส่งข้อความจริง */
+function showLineGroups() {
+  var groups = lineGroups_();
+  var keys = Object.keys(groups);
+  if (!keys.length) { Logger.log('ยังไม่ได้ตั้ง LINE_GROUPS'); return; }
+  keys.forEach(function (b) {
+    var id = String(groups[b] || '').trim();
+    Logger.log((id ? '✅ ' : '⚠️ ') + b + ' → ' + (id ? id : 'ยังไม่ได้ใส่ Group ID (จะข้ามการแจ้ง)'));
   });
 }
 
