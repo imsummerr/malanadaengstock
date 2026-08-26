@@ -600,7 +600,8 @@ var HISTORY_SHEETS = {
   incoming: 'จำนวนของเข้า',
   weekly:   'เช็คสต็อกรายสัปดาห์',
   waste:    'ของเสีย',
-  sales:    'ยอดขาย'
+  sales:    'ยอดขาย',
+  delivery: SHEET_DELIVERY   // ออเดอร์เดลิเวอรี่ที่ POS บันทึกไว้ — ใช้หักตอนคำนวณของหาย
 };
 
 /**

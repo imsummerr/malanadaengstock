@@ -868,8 +868,39 @@ const SHEET_NAME_MAP = {
   incoming: 'จำนวนของเข้า',
   weekly:   'เช็คสต็อกรายสัปดาห์',
   waste:    'ของเสีย',
-  sales:    'ยอดขาย'
+  sales:    'ยอดขาย',
+  delivery: 'POS_Delivery'
 };
+
+/** เมนูเดลิเวอรี่ 1 ที่ ใช้ของกี่ชิ้น — ใช้หักออกจากของหาย
+ *  แก้ตัวเลขตรงนี้ได้ถ้าสูตรเปลี่ยน */
+const DELIVERY_PIECES = {
+  'อุด้ง':            6,
+  'หม่าล่าหน้าแดง':   13,
+  'หม่าล่าทะเล':      12,
+  'หม่าล่ารวม':       13
+};
+const ADDON_PIECES = 1;   // ของเพิ่ม 1 อย่าง = ของ 1 ชิ้น
+
+/** นับจำนวนชิ้นที่ออกไปกับเดลิเวอรี่ในช่วงที่คำนวณ */
+function deliveryPiecesIn(rows, inWindow, branch) {
+  let pieces = 0, orders = 0, unknown = {};
+  rows.forEach(row => {
+    if (branch && row['สาขา'] !== branch) return;
+    const d = parseThaiDate(row['วันที่'] || row['วันที่เวลา']);
+    if (!d || !inWindow(toDateStr(d))) return;
+    orders++;
+    let items = [];
+    try { items = JSON.parse(row['ข้อมูล'] || '[]'); } catch (e) {}
+    items.forEach(it => {
+      const per = DELIVERY_PIECES[it.name];
+      if (per === undefined) { unknown[it.name] = (unknown[it.name] || 0) + (Number(it.qty) || 0); return; }
+      pieces += (Number(it.qty) || 0) * per;
+    });
+    pieces += (parseFloat(row['ของเพิ่ม']) || 0) * ADDON_PIECES;
+  });
+  return { pieces, orders, unknown };
+}
 
 async function fetchAllHistory(type) {
   const token = auth.token;
@@ -932,11 +963,12 @@ async function calculate() {
     const currentSunday = new Date(yr, mo - 1, da);
     const currentSundayStr = toDateStr(currentSunday);
 
-    const [incomingDataAll, weeklyDataAll, wasteDataAll, salesDataAll] = await Promise.all([
+    const [incomingDataAll, weeklyDataAll, wasteDataAll, salesDataAll, deliveryDataAll] = await Promise.all([
       fetchAllHistory('incoming'),
       fetchAllHistory('weekly'),
       fetchAllHistory('waste'),
-      fetchAllHistory('sales').catch(() => []) // ยอดขายเป็น optional ถ้าดึงไม่ได้ไม่ต้อง error
+      fetchAllHistory('sales').catch(() => []),   // ยอดขายเป็น optional ถ้าดึงไม่ได้ไม่ต้อง error
+      fetchAllHistory('delivery').catch(() => []) // เดลิเวอรี่ก็เหมือนกัน (ชีตอาจยังไม่มี)
     ]);
 
     // ── กรองเฉพาะสาขาที่เลือก ──
@@ -1110,17 +1142,22 @@ async function calculate() {
 
     // ── ยอดขายจริง + รายการหักในช่วงเดียวกัน ──
     // Delivery/น้ำจิ้มแถม ใช้ของแต่ไม่มีเงินเข้า, ส่วนลดทำให้เงินเข้าน้อยกว่ามูลค่าของ
-    let weekSales = 0, salesDays = 0, deliveryBags = 0, weekDiscount = 0, freeSauce = 0;
+    let weekSales = 0, salesDays = 0, manualBags = 0, weekDiscount = 0, freeSauce = 0;
     salesData.forEach(row => {
       const rowDate = parseThaiDate(row['วันที่เวลา']);
       if (!rowDate) return;
       if (!inWindow(toDateStr(rowDate))) return;
       weekSales    += parseFloat(row['ยอดขายรวม (บาท)']) || 0;
-      deliveryBags += rowDeliveryBags(row);
+      manualBags   += rowDeliveryBags(row);
       weekDiscount += parseFloat(row['ส่วนลด (บาท)']) || 0;
       freeSauce    += parseFloat(row['น้ำจิ้มแถม (ชิ้น)']) || 0;
       salesDays++;
     });
+    // เดลิเวอรี่: ใช้ตัวเลขจาก POS_Delivery เป็นหลัก (คูณสูตรให้เอง)
+    // ถ้าช่วงนั้นไม่มีออเดอร์ในระบบเลย ค่อยใช้เลขที่กรอกมือในชีตยอดขาย
+    const dlv = deliveryPiecesIn(deliveryDataAll, inWindow, branch);
+    const deliveryAuto   = dlv.orders > 0;
+    const deliveryBags   = deliveryAuto ? dlv.pieces : manualBags;
     const deliveryValue  = deliveryBags * unitValue;
     const freeSauceValue = freeSauce * unitValue;
 
@@ -1133,7 +1170,8 @@ async function calculate() {
     };
 
     renderResults(details, totalQtyLost, totalValueLost, debugInfo, weekSales, salesDays,
-      { deliveryBags, deliveryValue, discount: weekDiscount, freeSauce, freeSauceValue });
+      { deliveryBags, deliveryValue, discount: weekDiscount, freeSauce, freeSauceValue,
+        deliveryAuto, deliveryOrders: dlv.orders, deliveryUnknown: dlv.unknown });
 
     // ── สรุปยอดขาย รายวัน/รายสัปดาห์/รายเดือน ──
     const allCheckDates = [...new Set(weeklyData
@@ -1196,9 +1234,19 @@ function renderResults(details, totalQty, totalValue, debugInfo, weekSales, sale
       boxCls  = 'bg-red-50 border-red-200 text-red-800';
     }
     const deductParts = [];
-    if (deduct.deliveryBags > 0) deductParts.push(`🛵 Delivery ${fmt(deduct.deliveryBags)} ถุง = ${fmt(deduct.deliveryValue)} บาท`);
+    if (deduct.deliveryBags > 0) {
+      deductParts.push(deduct.deliveryAuto
+        ? `🛵 Delivery ${fmt(deduct.deliveryOrders)} ออเดอร์ = ${fmt(deduct.deliveryBags)} ชิ้น = ${fmt(deduct.deliveryValue)} บาท`
+        : `🛵 Delivery ${fmt(deduct.deliveryBags)} ถุง = ${fmt(deduct.deliveryValue)} บาท (กรอกมือ)`);
+    }
     if (deduct.discount > 0)     deductParts.push(`🏷️ ส่วนลด ${fmt(deduct.discount)} บาท`);
     if (deduct.freeSauce > 0)    deductParts.push(`🥫 น้ำจิ้มแถม ${fmt(deduct.freeSauce)} ชิ้น = ${fmt(deduct.freeSauceValue)} บาท`);
+    // เมนูที่ยังไม่ได้ตั้งว่าใช้ของกี่ชิ้น — เตือนไว้ ไม่งั้นจะถูกนับเป็นของหาย
+    const unknownNames = Object.keys(deduct.deliveryUnknown || {});
+    if (unknownNames.length) {
+      deductParts.push(`<span class="text-red-700">⚠️ ยังไม่ได้ตั้งจำนวนของ: ${unknownNames.join(', ')}</span>`);
+    }
+
     const deductLine = deductParts.length
       ? `<p class="text-xs opacity-80 mb-2">หักรายการไม่มีเงินเข้า: ${deductParts.join(' + ')} → ที่ต้องได้เงิน = ${fmt(totalValue)} − ${fmt(totalDeduct)} = ${fmt(expectValue)} บาท</p>`
       : '';
