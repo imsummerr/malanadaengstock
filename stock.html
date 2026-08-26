@@ -222,8 +222,14 @@ function readAuth() {
   } catch (e) {}
 }
 function isOwner() { return auth.role === 'owner'; }
-/** ครัวกลางทำของเข้าครัวกลาง/ส่งเข้าร้านได้ สาขาทำได้แค่นับสต็อกกับของเสีย */
+/* สิทธิ์แบ่งตามช่อง "สาขา" ในชีตผู้ใช้งาน
+     สาขา = ครัวกลาง → พนักงานครัวกลาง  ทำสต็อกคงเหลือ / ของเข้าครัวกลาง / ของเสีย
+     สาขา = ชื่อสาขา  → พนักงานสาขา      ทำของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
+     เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
 function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
+function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
+function canSee(who) { return who === 'both' ? (isCentral() || isBranch())
+                            : who === 'central' ? isCentral() : isBranch(); }
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -324,6 +330,13 @@ let D = { items: [], locations: [], stock: [], central: 'ครัวกลา�
 
 const itemOf = n => D.items.find(i => i.name === n) || null;
 
+/** สถานที่ที่ผู้ใช้คนนี้ลงรายการได้ — เจ้าของทุกที่ ครัวกลางเฉพาะครัวกลาง สาขาเฉพาะสาขาตัวเอง */
+function allowedLocs() {
+  if (isOwner()) return D.locations;
+  if (auth.branch === 'ครัวกลาง') return [D.central];
+  return D.locations.filter(l => l === auth.branch);
+}
+
 function toBase(packs, rem, perPack) {
   const p = Number(packs) || 0, r = Number(rem) || 0;
   const per = Number(perPack) > 0 ? Number(perPack) : 1;
@@ -349,17 +362,18 @@ function balOf(loc, name) {
 
 /* ── แท็บ ── */
 const TABS = [
-  { id: 'stock',   label: '📦 สต็อกคงเหลือ', central: false },
-  { id: 'in',      label: '📥 ของเข้าครัวกลาง', central: true  },
-  { id: 'toshop',  label: '🏪 ของเข้าร้าน',   central: true  },
-  { id: 'count',   label: '📋 เช็คสต็อก',     central: false },
-  { id: 'waste',   label: '🗑️ ของเสีย',       central: false }
+  { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'central' },
+  { id: 'in',      label: '📥 ของเข้าครัวกลาง', who: 'central' },
+  { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
+  { id: 'count',   label: '📋 เช็คสต็อก',      who: 'branch'  },
+  { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    }
 ];
 let tab = 'stock';
 
+const myTabs = () => TABS.filter(t => canSee(t.who));
+
 function renderTabs() {
-  document.getElementById('tabs').innerHTML = TABS
-    .filter(t => !t.central || isCentral())
+  document.getElementById('tabs').innerHTML = myTabs()
     .map(t => `<button class="tab${t.id === tab ? ' on' : ''}" onclick="go('${t.id}')">${t.label}</button>`)
     .join('');
 }
@@ -413,17 +427,16 @@ function viewStock(v) {
 const MOVE = {
   in:     { title: '📥 ของเข้าครัวกลาง', lead: 'เสียบและแพ็คเสร็จแล้วลงยอดตรงนี้',
             action: 'stockIn', btn: 'บันทึกของเข้า', fixedLoc: true },
-  toshop: { title: '🏪 ของเข้าร้าน', lead: 'ส่งจากครัวกลางไปสาขา ระบบหักครัวกลางให้อัตโนมัติ',
-            action: 'stockToShop', btn: 'บันทึกส่งเข้าร้าน', branchOnly: true },
+  toshop: { title: '🏪 ของเข้าร้าน', lead: 'รับของที่ครัวกลางส่งมา ระบบหักออกจากครัวกลางให้อัตโนมัติ',
+            action: 'stockToShop', btn: 'บันทึกของเข้าร้าน', branchOnly: true },
   waste:  { title: '🗑️ ของเสีย', lead: 'ของที่ทิ้ง ระบบจะตัดออกจากสต็อกให้',
             action: 'stockWaste', btn: 'บันทึกของเสีย', reason: true }
 };
 
 function viewMove(v, kind) {
   const c = MOVE[kind];
-  let locs = D.locations;
+  let locs = allowedLocs();
   if (c.branchOnly) locs = locs.filter(l => l !== D.central);
-  if (!isCentral())  locs = locs.filter(l => l === auth.branch);
 
   const locField = c.fixedLoc
     ? `<input id="f-loc" value="${esc(D.central)}" readonly style="background:var(--bg)">`
@@ -544,8 +557,7 @@ async function submitMove(kind) {
 
 /* ── เช็คสต็อกรายสัปดาห์ — บังคับนับให้ครบ ── */
 function viewCount(v) {
-  let locs = D.locations;
-  if (!isCentral()) locs = locs.filter(l => l === auth.branch);
+  const locs = allowedLocs();
 
   v.innerHTML = `<div class="card">
     <h2>📋 เช็คสต็อกรายสัปดาห์</h2>
@@ -645,7 +657,8 @@ async function showApp() {
   readAuth();
   document.getElementById('login-page').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
-  if (!isCentral() && (tab === 'in' || tab === 'toshop')) tab = 'stock';
+  const mine = myTabs();
+  if (!mine.some(t => t.id === tab)) tab = mine.length ? mine[0].id : 'waste';
   renderTabs();
   document.getElementById('view').innerHTML = '<div class="card"><div class="empty">กำลังโหลด...</div></div>';
   try {
