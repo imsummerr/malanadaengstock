@@ -506,3 +506,93 @@ function findCol_(headers, candidates) {
   }
   return -1;
 }
+
+// ============================================================
+// เครื่องมือหา Group ID  (ใช้ชั่วคราวตอนตั้งค่ากลุ่มใหม่)
+// ============================================================
+//
+// วิธีใช้ — ทำครั้งเดียวตอนจะเพิ่มกลุ่มใหม่
+//   1) เชิญบอท (LINE OA) เข้ากลุ่มที่ต้องการก่อน
+//   2) Deploy โปรเจกต์นี้เป็นเว็บแอป  (ทำให้ใช้งานได้ > ทำให้ใช้งานได้ใหม่
+//      > ประเภท: เว็บแอป > ใครเข้าถึงได้: ทุกคน) แล้วคัดลอก URL
+//   3) เอา URL ไปใส่เป็น Webhook URL ใน LINE Developers > Messaging API
+//      แล้วเปิด "Use webhook"
+//      ⚠️ ถ้าเดิมมี Webhook URL อยู่แล้ว จดของเดิมไว้ก่อน เสร็จแล้วใส่กลับ
+//   4) พิมพ์ชื่อกลุ่มลงในกลุ่มนั้น เช่นพิมพ์คำว่า  ครัวกลาง
+//   5) กลับมารันฟังก์ชัน showFoundGroups() แล้วดูใน บันทึกการดำเนินการ
+//      จะเห็น Group ID คู่กับข้อความที่พิมพ์ไป
+//   6) รัน setLineGroup('ครัวกลาง', 'Cxxxx...') เพื่อบันทึกลง LINE_GROUPS
+//   7) เสร็จแล้ว ปิด Use webhook หรือใส่ Webhook URL เดิมกลับ
+//      แล้วรัน clearFoundGroups() ล้างข้อมูลชั่วคราวทิ้ง
+
+var PROP_FOUND = 'LINE_GROUPS_FOUND';
+
+/**
+ * รับ event จาก LINE แล้วจำ Group ID ของกลุ่มที่มีคนพิมพ์ข้อความ
+ * ทำหน้าที่แค่จดบันทึก ไม่ตอบกลับ ไม่ส่งอะไรเข้ากลุ่ม
+ */
+function doPost(e) {
+  try {
+    var body  = JSON.parse(e.postData.contents);
+    var props = PropertiesService.getScriptProperties();
+    var found = {};
+    try { found = JSON.parse(props.getProperty(PROP_FOUND) || '{}'); } catch (err) {}
+
+    (body.events || []).forEach(function (ev) {
+      var src = ev.source || {};
+      if (src.type !== 'group' || !src.groupId) return;
+      found[src.groupId] = {
+        at:   Utilities.formatDate(new Date(), TZ, 'd/M/yyyy HH:mm'),
+        text: (ev.message && ev.message.text) ? String(ev.message.text).slice(0, 40) : ''
+      };
+    });
+    props.setProperty(PROP_FOUND, JSON.stringify(found));
+  } catch (err) {
+    Logger.log('doPost: ' + err.message);
+  }
+  return ContentService.createTextOutput('OK');
+}
+
+/** ดู Group ID ที่จับได้ พร้อมข้อความที่พิมพ์ไว้ในกลุ่มนั้น */
+function showFoundGroups() {
+  var raw = PropertiesService.getScriptProperties().getProperty(PROP_FOUND);
+  var found = {};
+  try { found = JSON.parse(raw || '{}'); } catch (e) {}
+  var ids = Object.keys(found);
+  if (!ids.length) {
+    Logger.log('ยังไม่เจอกลุ่มไหนเลย — เช็คว่า:\n' +
+               '  • เชิญบอทเข้ากลุ่มแล้วหรือยัง\n' +
+               '  • ตั้ง Webhook URL เป็น URL ของโปรเจกต์นี้ และเปิด Use webhook แล้วหรือยัง\n' +
+               '  • พิมพ์ข้อความในกลุ่มหลังจากตั้ง webhook แล้วหรือยัง');
+    return;
+  }
+  Logger.log('เจอ ' + ids.length + ' กลุ่ม:');
+  ids.forEach(function (id) {
+    var f = found[id];
+    Logger.log('  ' + id + (f.text ? '   ← พิมพ์ว่า "' + f.text + '"' : '') + '   (' + f.at + ')');
+  });
+  Logger.log('\nบันทึกด้วย:  setLineGroup(\'ครัวกลาง\', \'' + ids[ids.length - 1] + '\')');
+}
+
+/** บันทึก Group ID ลง LINE_GROUPS โดยไม่ทับกลุ่มอื่นที่ตั้งไว้แล้ว */
+function setLineGroup(name, groupId) {
+  name = String(name || '').trim();
+  groupId = String(groupId || '').trim();
+  if (!name || !groupId) { Logger.log('ใส่ให้ครบ: setLineGroup(\'ครัวกลาง\', \'Cxxxx\')'); return; }
+
+  var props  = PropertiesService.getScriptProperties();
+  var groups = lineGroups_();
+  var next   = {};
+  Object.keys(groups).forEach(function (k) { next[k] = groups[k]; });
+  next[name] = groupId;
+  props.setProperty('LINE_GROUPS', JSON.stringify(next));
+
+  Logger.log('บันทึกแล้ว LINE_GROUPS = ' + JSON.stringify(next));
+  Logger.log('อย่าลืมไปใส่ค่าเดียวกันในโปรเจกต์ pos-backend ด้วย');
+}
+
+/** ล้างข้อมูลชั่วคราวทิ้งเมื่อตั้งค่าเสร็จแล้ว */
+function clearFoundGroups() {
+  PropertiesService.getScriptProperties().deleteProperty(PROP_FOUND);
+  Logger.log('ล้างแล้ว — ปิด Use webhook หรือใส่ Webhook URL เดิมกลับได้เลย');
+}
