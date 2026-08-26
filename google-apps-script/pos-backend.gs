@@ -375,9 +375,9 @@ function handleStats_(p) {
 
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
-    var date = r[idx['วันที่']];
+    var date = normDate_(r[idx['วันที่']]);
     if (!date || date < from || date > to) continue;
-    if (branch && r[idx['สาขา']] !== branch) continue;
+    if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     var total    = num_(r[idx['ยอดสุทธิ']]);
     var discount = num_(r[idx['ส่วนลด']]);
@@ -421,9 +421,9 @@ function addDeliveryStats_(stats, from, to, branch) {
 
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
-    var date = r[idx['วันที่']];
+    var date = normDate_(r[idx['วันที่']]);
     if (!date || date < from || date > to) continue;
-    if (branch && r[idx['สาขา']] !== branch) continue;
+    if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     stats.deliveryOrders++;
     stats.deliveryItemCount += num_(r[idx['รวมจำนวน']]);
@@ -440,6 +440,40 @@ function addDeliveryStats_(stats, from, to, branch) {
  * รายการบิลที่ขายไปแล้ว — ของสาขาที่ login อยู่เท่านั้น
  * ค่าเริ่มต้นคือของวันนี้ · ส่ง date มาเพื่อดูวันอื่น
  */
+
+/**
+ * ทำวันที่ให้เป็นรูปแบบเดียวกัน (yyyy-MM-dd)
+ * Google Sheets ชอบแปลงข้อความ "2026-08-26" เป็นวันที่จริง แล้วแสดงเป็น "26/8/2026"
+ * ถ้าเทียบตรง ๆ จะหาไม่เจอ — ฟังก์ชันนี้รับได้ทั้งสองแบบ (รวมทั้งปี พ.ศ.)
+ */
+function normDate_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+  var str = String(v == null ? '' : v).trim();
+  if (!str) return '';
+
+  var iso = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    var y = parseInt(iso[1], 10);
+    if (y > 2400) y -= 543;
+    return pad4_(y) + '-' + pad2_(iso[2]) + '-' + pad2_(iso[3]);
+  }
+  // d/M/yyyy (รูปแบบที่ Sheets ภาษาไทยแสดง)
+  var dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    var yy = parseInt(dmy[3], 10);
+    if (yy > 2400) yy -= 543;
+    return pad4_(yy) + '-' + pad2_(dmy[2]) + '-' + pad2_(dmy[1]);
+  }
+  return str;
+}
+function pad2_(n) { return ('0' + parseInt(n, 10)).slice(-2); }
+function pad4_(n) { return ('000' + n).slice(-4); }
+
+/** ชื่อสาขาบางทีมีเว้นวรรคติดมา เทียบแบบตัดช่องว่างหัวท้าย */
+function sameBranch_(a, b) {
+  return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim();
+}
+
 function handleBills_(p) {
   var session = checkToken_(p.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -448,7 +482,7 @@ function handleBills_(p) {
   if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_ORDERS + ' — รัน setupPos ก่อน' };
   if (sheet.getLastRow() < 2) return { success: true, data: { date: '', bills: [] } };
 
-  var date = String(p.date || '').trim() || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  var date = normDate_(p.date) || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   var branch = session.branch || '';
   var values = sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues();
   var idx = {};
@@ -457,8 +491,8 @@ function handleBills_(p) {
   var bills = [];
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
-    if (r[idx['วันที่']] !== date) continue;
-    if (branch && r[idx['สาขา']] !== branch) continue;
+    if (normDate_(r[idx['วันที่']]) !== date) continue;
+    if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     var sticks = [], mama = [];
     STICK_PRICES.forEach(function (price) {
@@ -503,8 +537,8 @@ function handleBills_(p) {
     dv[0].forEach(function (h, i) { di[h] = i; });
     for (var k = 1; k < dv.length; k++) {
       var d = dv[k];
-      if (d[di['วันที่']] !== date) continue;
-      if (branch && d[di['สาขา']] !== branch) continue;
+      if (normDate_(d[di['วันที่']]) !== date) continue;
+      if (branch && !sameBranch_(d[di['สาขา']], branch)) continue;
       var items = [];
       try { items = JSON.parse(d[di['ข้อมูล']] || '[]'); } catch (e) {}
       dlvCount++;
