@@ -1197,3 +1197,102 @@ function setupStock() {
              '  • เตือนเมื่อเหลือ(แพ็ค) = เหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
              'เสร็จแล้วอย่าลืม Deploy เวอร์ชันใหม่');
 }
+
+/* ───────────────────── ย้ายข้อมูลจากชีตของระบบเก่า ───────────────────── */
+
+/**
+ * ระบบเก่า (repo check-) แยกเป็น 2 ชีต "ของเข้าครัวกลาง" กับ "ของเข้าร้าน"
+ * ระบบนี้ใช้ "จำนวนของเข้า" ชีตเดียว แยกด้วยคอลัมน์ ประเภท
+ * เพราะบอทแจ้งวันหมดอายุกับแท็บคำนวณของหายอ่านชีตนั้นอยู่แล้ว
+ *
+ * ฟังก์ชันนี้ย้ายแถวจาก 2 ชีตเก่ามารวมไว้ที่ "จำนวนของเข้า"
+ * รันซ้ำได้ ไม่ย้ายซ้ำ (จำว่าย้ายถึงแถวไหนแล้ว) และไม่ลบชีตเก่าให้
+ * ดูผลว่าถูกต้องแล้วค่อยลบชีตเก่าเองทีหลัง
+ *
+ * ⚠️ ย้ายเสร็จแล้ว "ต้องไปรัน setupTriggers ในโปรเจกต์ line-expiry-alert ด้วย"
+ *    ไม่งั้นบอทจะเห็นแถวที่เพิ่งย้ายมาเป็นของเข้าใหม่ แล้วยิงไลน์ย้อนหลังทั้งกอง
+ */
+function migrateOldStockSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dest = ss.getSheetByName(SHEET_INCOMING);
+  if (!dest) { Logger.log('ไม่พบชีต "' + SHEET_INCOMING + '" — รัน setupStock ก่อน'); return; }
+  var dmap = ensureCols_(dest, MOVE_COLS);
+
+  var perPackOf = {}, subUnitOf = {};
+  getStockItems_().forEach(function (i) { perPackOf[i.name] = i.perPack; subUnitOf[i.name] = i.subUnit; });
+
+  var props = PropertiesService.getScriptProperties();
+  var total = 0;
+
+  [['ของเข้าครัวกลาง', 'ของเข้าครัวกลาง'], ['ของเข้าร้าน', 'ของเข้าร้าน']].forEach(function (pair) {
+    var srcName = pair[0], kind = pair[1];
+    var src = ss.getSheetByName(srcName);
+    if (!src || src.getLastRow() < 2) { Logger.log('ข้าม "' + srcName + '" — ไม่มีข้อมูล'); return; }
+
+    var values  = src.getDataRange().getValues();
+    var headers = values[0].map(function (h) { return String(h).trim(); });
+    function col() {
+      for (var a = 0; a < arguments.length; a++) {
+        var i = headers.indexOf(arguments[a]);
+        if (i !== -1) return i;
+      }
+      return -1;
+    }
+    var cDate = col('วันที่', 'วันที่เวลา'),
+        cItem = col('สินค้า', 'รายการ'),
+        cLoc  = col('สาขา', 'สถานที่'),
+        cPack = col('แพ็ค'),
+        cRem  = col('เศษ'),
+        cTot  = col('รวม(หน่วยย่อย)', 'จำนวน'),
+        cBy   = col('ผู้บันทึก', 'ผู้ตรวจ'),
+        cNote = col('หมายเหตุ');
+    if (cItem === -1) { Logger.log('ข้าม "' + srcName + '" — ไม่เจอคอลัมน์สินค้า'); return; }
+
+    var key  = 'MIGRATED_ROWS_' + srcName;
+    var from = parseInt(props.getProperty(key) || '1', 10);   // 1 = ข้ามหัวตาราง
+    var moved = 0;
+
+    for (var r = from; r < values.length; r++) {
+      var row  = values[r];
+      var name = String(row[cItem] || '').trim();
+      if (!name) continue;
+
+      var packs = cPack !== -1 ? Number(row[cPack]) || 0 : 0;
+      var rem   = cRem  !== -1 ? Number(row[cRem])  || 0 : 0;
+      var per   = perPackOf[name] || 0;
+      var tot   = cTot !== -1 ? Number(row[cTot]) || 0 : 0;
+      // ไม่มียอดรวมมาให้ ก็คำนวณจากแพ็ค+เศษ
+      if (!tot && per > 0) tot = toBase_(packs, rem, per);
+      // ไม่รู้ว่ากี่ไม้ต่อแพ็ค ก็ถอดกลับจากยอดรวมที่มี
+      if (!per && packs > 0 && tot > rem) per = Math.round((tot - rem) / packs);
+
+      var out = {};
+      out['วันที่เวลา'] = cDate !== -1 && row[cDate] ? row[cDate] : new Date();
+      out['สาขา']      = kind === 'ของเข้าครัวกลาง' ? CENTRAL
+                       : (cLoc !== -1 ? String(row[cLoc] || '').trim() : '');
+      out['ผู้ตรวจ']    = cBy !== -1 ? String(row[cBy] || '') : '';
+      out['รายการ']    = name;
+      out['จำนวน']     = tot;
+      out['หน่วย']     = subUnitOf[name] || 'ไม้';
+      out['แพ็ค']      = packs;
+      out['เศษ']       = rem;
+      out['ไม้ต่อแพ็ค'] = per;
+      out['ประเภท']    = kind;
+      out['หมายเหตุ']  = (cNote !== -1 ? String(row[cNote] || '') : '');
+      appendByCols_(dest, dmap, out);
+      moved++;
+    }
+
+    props.setProperty(key, String(values.length));
+    total += moved;
+    Logger.log('ย้ายจาก "' + srcName + '" ' + moved + ' แถว');
+  });
+
+  Logger.log('─────────────────────────────\n' +
+             'ย้ายมาที่ "' + SHEET_INCOMING + '" รวม ' + total + ' แถว\n\n' +
+             'ต่อไป:\n' +
+             '1) เปิดชีต "' + SHEET_INCOMING + '" ดูว่าข้อมูลถูกต้อง\n' +
+             '2) ไปรัน setupTriggers ในโปรเจกต์ line-expiry-alert\n' +
+             '   (สำคัญ ไม่งั้นบอทจะแจ้งไลน์ย้อนหลังทั้งกอง)\n' +
+             '3) ถูกต้องแล้วค่อยลบชีต "ของเข้าครัวกลาง" กับ "ของเข้าร้าน" ทิ้ง');
+}
