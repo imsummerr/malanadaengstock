@@ -60,7 +60,7 @@
     }
     .btn-red { background: var(--red); color: #fff; }
     .btn-red:active { background: var(--red-dark); }
-    .btn-red:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-red:disabled { background: var(--muted); opacity: .55; cursor: not-allowed; }
     .spinner-sm {
       width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35);
       border-top-color: #fff; border-radius: 50%; display: inline-block;
@@ -583,7 +583,7 @@ function viewCount(v) {
   <div class="card">
     <div class="counthead"><span>สินค้า</span><span id="c-h1">แพ็ค</span><span id="c-h2">เศษ</span></div>
     <div id="c-rows"></div>
-    <button class="key btn-red submit" id="c-btn" onclick="submitCount()">บันทึกผลนับ</button>
+    <button class="key btn-red submit" id="c-btn" onclick="submitCount()" disabled>บันทึกผลนับ</button>
     <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
   </div>`;
 
@@ -621,11 +621,20 @@ function paintProgress() {
     if (ok) done++;
     document.getElementById('cr-' + i).classList.toggle('done', ok);
   });
-  const pct = D.items.length ? Math.round(done / D.items.length * 100) : 0;
+  const total = D.items.length;
+  const left  = total - done;
+  const pct = total ? Math.round(done / total * 100) : 0;
   document.getElementById('c-bar').style.width = pct + '%';
-  document.getElementById('c-prog').innerHTML = done === D.items.length
+  document.getElementById('c-prog').innerHTML = left === 0
     ? `<b style="color:var(--green)">นับครบ ${done} รายการแล้ว ✓</b>`
-    : `นับแล้ว ${done} / ${D.items.length} — ยังขาด ${D.items.length - done}`;
+    : `นับแล้ว ${done} / ${total} — ยังขาด ${left}`;
+
+  // ปิดปุ่มไว้จนกว่าจะนับครบ กดไม่ได้เลย ไม่ใช่กดแล้วค่อยเด้งเตือน
+  const btn = document.getElementById('c-btn');
+  if (btn) {
+    btn.disabled = left > 0;
+    btn.textContent = left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
+  }
 }
 
 async function submitCount() {
@@ -655,6 +664,7 @@ async function submitCount() {
     toast('❌ ' + esc(e.message), 6000);
     btn.disabled = false;
     btn.innerHTML = 'บันทึกผลนับ';
+    paintProgress();          // เผื่อมีช่องว่างอยู่ ปุ่มจะได้ปิดกลับ
   }
 }
 
