@@ -1582,7 +1582,7 @@ var PRICE_LIST = {
   'เส้นอุด้ง': 10,
   'วุ้นเส้น': 10,
   'วุ้นเส้นเกาหลี': 10,
-  'มาม่า': 0,                    // ← ราคาไม่นิ่ง (10/15/20/35/45) กรอกเองในชีต
+  // 'มาม่า' ไม่อยู่ในนี้ — แยกเป็น มาม่า 10/15/20/35/45 ที่ splitMamaItems แทน
   'เต้าหู้ชีส': 10,
   'ชีสหลายสี': 10,
   'ฟองเต้าหู้สามเหลี่ยม': 10,
@@ -1661,4 +1661,149 @@ function applyPriceList() {
                '   อาจเลิกขายแล้ว หรือชื่อสะกดไม่ตรงกัน — ไม่ได้ลบให้ ตรวจเองก่อน:\n  ' + extra.join('\n  '));
   }
   Logger.log('\n⚠️ อย่าลืมเช็คช่อง "หน่วยย่อยต่อแพ็ค" ด้วย ราคาอย่างเดียวยังคำนวณของหายไม่ได้');
+}
+
+/* ───────────── รวมชื่อสินค้าที่เรียกไม่ตรงกันให้เป็นชื่อเดียว ───────────── */
+
+/**
+ * ชื่อเดิมในชีต → ชื่อที่จะใช้จริง
+ * ของเดียวกันแต่เรียกคนละชื่อ ถ้าปล่อยไว้ยอดคงเหลือจะแตกเป็นสองแถว
+ */
+var ITEM_RENAME = {
+  'ปลาดอลลี่':        'ดอลลี่',
+  'เห็ดเข็ม':          'เห็ดเข็มทอง',
+  'เห็ดออรินจิ':       'เห็ดออเร็นจิ',
+  'สาหร่าย':          'สาหร่ายกระปุก',
+  'วุ้นเส้นหม่าล่า':    'วุ้นเส้น',
+  'ไส้กรอกพันเบคอน':  'เบคอนพันไส้กรอก',
+  'ข้าวโพด':          'ข้าวโพดฝักใหญ่'
+};
+
+/** มาม่ามีหลายแบบ ราคาต่างกัน ต้องแยกเป็นคนละรายการถึงจะคิดของหายได้ */
+var MAMA_PRICES = [10, 15, 20, 35, 45];
+
+/** ชีตที่เก็บชื่อสินค้าไว้ในคอลัมน์ "รายการ" */
+function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE]; }
+
+/**
+ * เปลี่ยนชื่อสินค้าตาม ITEM_RENAME ทั้งในชีตรายการสินค้าและชีตประวัติ
+ *   • ถ้าชื่อใหม่ยังไม่มีในชีตสินค้า → เปลี่ยนชื่อแถวเดิมเลย
+ *   • ถ้ามีทั้งสองชื่อ → ยกค่าที่แถวใหม่ยังว่างจากแถวเดิมมาเติม แล้วลบแถวเดิมทิ้ง
+ *     (แถวเดิมมักมีหน่วย/หมายเหตุครบกว่า แถวใหม่มักมีแค่ชื่อกับราคา)
+ * รันซ้ำได้ รอบสองจะไม่เจออะไรให้เปลี่ยน
+ */
+function mergeItemNames() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+  var cName = map['สินค้า'];
+
+  var width = sh.getLastColumn();
+  var last  = sh.getLastRow();
+  if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
+
+  var vals = sh.getRange(2, 1, last - 1, width).getValues();
+  var rowOf = {};
+  vals.forEach(function (r, i) {
+    var n = String(r[cName] || '').trim();
+    if (n && !rowOf[n]) rowOf[n] = i + 2;      // เจอชื่อซ้ำ เอาแถวแรก
+  });
+
+  var renamed = [], merged = [], dropRows = [];
+
+  Object.keys(ITEM_RENAME).forEach(function (oldName) {
+    var newName = ITEM_RENAME[oldName];
+    var oldRow = rowOf[oldName], newRow = rowOf[newName];
+    if (!oldRow) return;                        // ไม่มีชื่อเดิมอยู่แล้ว
+
+    if (!newRow) {
+      sh.getRange(oldRow, cName + 1).setValue(newName);
+      renamed.push(oldName + ' → ' + newName);
+      return;
+    }
+    // มีทั้งสองชื่อ — เติมช่องที่แถวใหม่ยังว่าง จากแถวเดิม
+    var oldVals = vals[oldRow - 2], newVals = vals[newRow - 2];
+    for (var c = 0; c < width; c++) {
+      if (c === cName) continue;
+      var isBlank = newVals[c] === '' || newVals[c] === null;
+      if (isBlank && oldVals[c] !== '' && oldVals[c] !== null) {
+        sh.getRange(newRow, c + 1).setValue(oldVals[c]);
+      }
+    }
+    dropRows.push(oldRow);
+    merged.push(oldName + ' → ' + newName);
+  });
+
+  // ลบจากล่างขึ้นบน เลขแถวข้างบนจะได้ไม่ขยับ
+  dropRows.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+
+  // เปลี่ยนชื่อในชีตประวัติด้วย ไม่งั้นยอดคงเหลือจะแตกเป็นสองชื่อ
+  var histCount = 0;
+  historySheets_().forEach(function (name) {
+    var h = ss.getSheetByName(name);
+    if (!h || h.getLastRow() < 2) return;
+    var hmap = ensureCols_(h, MOVE_COLS);
+    var col = hmap['รายการ'];
+    var rng = h.getRange(2, col + 1, h.getLastRow() - 1, 1);
+    var v = rng.getValues();
+    var hit = 0;
+    for (var i = 0; i < v.length; i++) {
+      var n = String(v[i][0] || '').trim();
+      if (ITEM_RENAME[n]) { v[i][0] = ITEM_RENAME[n]; hit++; }
+    }
+    if (hit) { rng.setValues(v); histCount += hit; }
+    Logger.log('  "' + name + '" เปลี่ยนชื่อ ' + hit + ' แถว');
+  });
+
+  Logger.log('─────────────────────────────');
+  Logger.log('เปลี่ยนชื่อ ' + renamed.length + ' รายการ' + (renamed.length ? ':\n  ' + renamed.join('\n  ') : ''));
+  Logger.log('รวมแถวซ้ำ ' + merged.length + ' รายการ' + (merged.length ? ':\n  ' + merged.join('\n  ') : ''));
+  Logger.log('แก้ชื่อในชีตประวัติรวม ' + histCount + ' แถว');
+}
+
+/**
+ * แยกมาม่าเป็นรายการย่อยตามราคา — มาม่า 10 / 15 / 20 / 35 / 45
+ * ของเดิมชื่อ "มาม่า" เฉย ๆ ไม่ได้แตะ เพราะไม่มีทางรู้ว่าแถวเก่าเป็นแบบไหน
+ * ตรวจในชีตแล้วค่อยลบหรือแก้เอง
+ */
+function splitMamaItems() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+
+  var have = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, map['สินค้า'] + 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r) { have[String(r[0]).trim()] = true; });
+  }
+
+  var added = [];
+  MAMA_PRICES.forEach(function (p) {
+    var name = 'มาม่า ' + p;
+    if (have[name]) return;
+    var row = {};
+    row['สินค้า'] = name;
+    row['หน่วยย่อย'] = 'ห่อ';
+    row['หน่วยแพ็ค'] = 'แพ็ค';
+    row['ราคาขาย/หน่วยย่อย'] = p;
+    row['หมายเหตุ'] = 'แยกจาก "มาม่า" ตามราคา';
+    appendByCols_(sh, map, row);
+    added.push(name);
+  });
+
+  Logger.log('เพิ่มมาม่าแยกราคา ' + added.length + ' รายการ' + (added.length ? ': ' + added.join(', ') : ''));
+  if (have['มาม่า']) {
+    Logger.log('\n⚠️ ยังมีแถวชื่อ "มาม่า" เฉย ๆ อยู่ในชีต\n' +
+               '   ระบบไม่รู้ว่าของเก่าที่ลงไว้เป็นมาม่าแบบไหน จึงไม่แตะให้\n' +
+               '   ถ้าไม่ได้ใช้แล้วลบแถวนั้นทิ้งได้เลย');
+  }
+}
+
+/** รันทีเดียวจบ: รวมชื่อ → แยกมาม่า → ใส่ราคา */
+function fixItemList() {
+  mergeItemNames();
+  splitMamaItems();
+  applyPriceList();
 }
