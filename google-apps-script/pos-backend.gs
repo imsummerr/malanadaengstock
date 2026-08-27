@@ -1017,6 +1017,9 @@ function stockRoleOf_(session) {
   return String(session.branch || '').trim() === CENTRAL ? 'central' : 'branch';
 }
 
+/** ยอดคงเหลือและตัวเลขเทียบตอนนับสต็อก ให้เฉพาะเจ้าของร้าน */
+function isStockOwner_(session) { return stockRoleOf_(session) === 'owner'; }
+
 /** เจ้าของผ่านหมด นอกนั้นต้องตรงกับที่กำหนด */
 function stockAllow_(session, need) {
   var r = stockRoleOf_(session);
@@ -1223,8 +1226,9 @@ function handleStockBootstrap_(p) {
   });
   Object.keys(bal).forEach(function (l) { if (locations.indexOf(l) === -1) locations.push(l); });
 
-  // ยอดคงเหลือแปลงเป็นข้อความ "3 แพ็ค 5 ไม้" ให้หน้าเว็บแสดงได้เลย
-  var stock = locations.filter(function (loc) {
+  // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน ไม่ส่งให้พนักงานเลย
+  // ซ่อนแค่ฝั่งหน้าเว็บไม่พอ เปิด Network ในเบราว์เซอร์ก็อ่านคำตอบได้
+  var stock = !isStockOwner_(session) ? [] : locations.filter(function (loc) {
     return stockCanUseLoc_(session, loc);
   }).map(function (loc) {
     var m = bal[loc] || {};
