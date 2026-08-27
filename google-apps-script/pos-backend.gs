@@ -488,13 +488,16 @@ function handleBills_(p) {
 
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ORDERS);
   if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_ORDERS + ' — รัน setupPos ก่อน' };
-  if (sheet.getLastRow() < 2) return { success: true, data: { date: '', bills: [] } };
 
   var date = normDate_(p.date) || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   var branch = session.branch || '';
-  var values = sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues();
+
+  // วันที่ยังไม่มีบิลหน้าร้านเลย ก็ยังต้องไปอ่านเดลิเวอรี่ต่อ — อย่ารีบ return
+  var values = sheet.getLastRow() > 1
+    ? sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues()
+    : [];
   var idx = {};
-  values[0].forEach(function (h, i) { idx[h] = i; });
+  if (values.length) values[0].forEach(function (h, i) { idx[h] = i; });
 
   var bills = [];
   for (var i = 1; i < values.length; i++) {
