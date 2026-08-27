@@ -218,7 +218,12 @@ function checkToken_(token) {
     if (String(rows[i][0]) !== String(token)) continue;
     var created = new Date(rows[i][4]);
     if ((new Date() - created) > SESSION_HOURS * 3600 * 1000) { sheet.deleteRow(i + 1); return null; }
-    sheet.getRange(i + 1, 6).setValue(new Date());
+    // อัปเดต "ใช้งานล่าสุด" แค่ทุก 5 นาทีพอ — การเขียนชีตทุกครั้งที่เรียก API
+    // ทำให้ทุกคำขอช้าขึ้นโดยไม่จำเป็น (ค่านี้ใช้ดูเฉย ๆ ไม่ได้ใช้ตัดสิน session)
+    var seen = rows[i][5] ? new Date(rows[i][5]) : null;
+    if (!seen || isNaN(seen.getTime()) || (new Date() - seen) > 5 * 60 * 1000) {
+      sheet.getRange(i + 1, 6).setValue(new Date());
+    }
     return {
       username: rows[i][1], name: rows[i][2], branch: rows[i][3],
       role: rows[i][6] === 'owner' ? 'owner' : 'staff'
@@ -482,6 +487,44 @@ function sameBranch_(a, b) {
   return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim();
 }
 
+/**
+ * ดึงเฉพาะแถวของวันที่ที่ต้องการ แทนที่จะลากทั้งชีตมาทั้งก้อน
+ * อ่านคอลัมน์ "วันที่" ก่อน (คอลัมน์เดียว เบามาก) หาว่าแถวไหนตรงบ้าง
+ * แล้วค่อยดึงเฉพาะช่วงแถวนั้นมาเต็มความกว้าง
+ * ชีตโตขึ้นเท่าไหร่ ค่าใช้จ่ายก็ยังคงที่ เพราะบิลของวันหนึ่งมีไม่กี่สิบแถว
+ * คืน { idx: {ชื่อคอลัมน์ -> ลำดับ}, rows: [แถวที่วันที่ตรงแล้ว] }
+ */
+function rowsOfDate_(sheet, width, date) {
+  var out = { idx: {}, rows: [] };
+  if (!sheet || sheet.getLastRow() < 1) return out;
+
+  var head = sheet.getRange(1, 1, 1, width).getDisplayValues()[0];
+  head.forEach(function (h, i) { out.idx[h] = i; });
+
+  var last = sheet.getLastRow();
+  if (last < 2) return out;
+
+  var dateCol = out.idx['วันที่'];
+  if (dateCol === undefined) return out;
+
+  var dates = sheet.getRange(2, dateCol + 1, last - 1, 1).getDisplayValues();
+  var first = -1, lastHit = -1;
+  for (var i = 0; i < dates.length; i++) {
+    if (normDate_(dates[i][0]) !== date) continue;
+    if (first < 0) first = i;
+    lastHit = i;
+  }
+  if (first < 0) return out;
+
+  // บิลถูกเพิ่มต่อท้ายเรียงตามเวลา แถวของวันเดียวกันจึงติดกันเป็นช่วง
+  // แต่ยังกรองซ้ำอีกรอบ เผื่อมีคนไปแทรกแถวเองในชีต
+  var block = sheet.getRange(first + 2, 1, lastHit - first + 1, width).getDisplayValues();
+  for (var k = 0; k < block.length; k++) {
+    if (normDate_(block[k][dateCol]) === date) out.rows.push(block[k]);
+  }
+  return out;
+}
+
 function handleBills_(p) {
   var session = checkToken_(p.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -493,16 +536,12 @@ function handleBills_(p) {
   var branch = session.branch || '';
 
   // วันที่ยังไม่มีบิลหน้าร้านเลย ก็ยังต้องไปอ่านเดลิเวอรี่ต่อ — อย่ารีบ return
-  var values = sheet.getLastRow() > 1
-    ? sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues()
-    : [];
-  var idx = {};
-  if (values.length) values[0].forEach(function (h, i) { idx[h] = i; });
+  var pos = rowsOfDate_(sheet, ORDER_HEADERS.length, date);
+  var idx = pos.idx;
 
   var bills = [];
-  for (var i = 1; i < values.length; i++) {
-    var r = values[i];
-    if (normDate_(r[idx['วันที่']]) !== date) continue;
+  for (var i = 0; i < pos.rows.length; i++) {
+    var r = pos.rows[i];
     if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     var sticks = [], mama = [];
@@ -542,13 +581,11 @@ function handleBills_(p) {
   // (ไม่นับเข้ายอดขายหน้าร้าน เพราะเงินเข้าทางแพลตฟอร์ม)
   var dlvSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DELIVERY);
   var dlvCount = 0, dlvItems = 0;
-  if (dlvSheet && dlvSheet.getLastRow() > 1) {
-    var dv = dlvSheet.getRange(1, 1, dlvSheet.getLastRow(), DELIVERY_HEADERS.length).getDisplayValues();
-    var di = {};
-    dv[0].forEach(function (h, i) { di[h] = i; });
-    for (var k = 1; k < dv.length; k++) {
-      var d = dv[k];
-      if (normDate_(d[di['วันที่']]) !== date) continue;
+  if (dlvSheet) {
+    var dlv = rowsOfDate_(dlvSheet, DELIVERY_HEADERS.length, date);
+    var di = dlv.idx;
+    for (var k = 0; k < dlv.rows.length; k++) {
+      var d = dlv.rows[k];
       if (branch && !sameBranch_(d[di['สาขา']], branch)) continue;
       var items = [];
       try { items = JSON.parse(d[di['ข้อมูล']] || '[]'); } catch (e) {}
