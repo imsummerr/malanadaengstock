@@ -228,8 +228,12 @@ function isOwner() { return auth.role === 'owner'; }
      เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
 function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
 function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
-function canSee(who) { return who === 'both' ? (isCentral() || isBranch())
-                            : who === 'central' ? isCentral() : isBranch(); }
+function canSee(who) {
+  if (who === 'owner')   return isOwner();
+  if (who === 'both')    return isCentral() || isBranch();
+  if (who === 'central') return isCentral();
+  return isBranch();
+}
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -362,7 +366,7 @@ function balOf(loc, name) {
 
 /* ── แท็บ ── */
 const TABS = [
-  { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'central' },
+  { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'owner'   },
   { id: 'in',      label: '📥 ของเข้าครัวกลาง', who: 'central' },
   { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
   { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
@@ -511,15 +515,20 @@ function recalc() {
   const after = (tab === 'in') ? have + total : have - total;
 
   if (!(total > 0)) {
-    box.innerHTML = `<div class="sub">กรอกจำนวน — ตอนนี้ ${esc(from)} มี <b>${esc(fmtPack(have, it))}</b></div>`;
+    box.innerHTML = isOwner()
+      ? `<div class="sub">กรอกจำนวน — ตอนนี้ ${esc(from)} มี <b>${esc(fmtPack(have, it))}</b></div>`
+      : '<div class="sub">กรอกจำนวน</div>';
     return;
   }
+  // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน พนักงานเห็นแค่ผลแปลงหน่วยของที่ตัวเองกำลังกรอก
   const over = (tab !== 'in') && after < 0;
   box.innerHTML =
     `<div class="big">${esc(fmtPack(total, it))}</div>` +
     (it.perPack > 1 ? `<div class="sub">= ${total} ${esc(it.subUnit)} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)})</div>` : '') +
-    `<div class="sub">${esc(from)} ${esc(fmtPack(have, it))} → เหลือ <b>${esc(fmtPack(after, it))}</b>` +
-    (over ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
+    (isOwner()
+      ? `<div class="sub">${esc(from)} ${esc(fmtPack(have, it))} → เหลือ <b>${esc(fmtPack(after, it))}</b>` +
+        (over ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>'
+      : '');
 }
 
 async function submitMove(kind) {
@@ -580,7 +589,7 @@ function viewCount(v) {
 
   document.getElementById('c-rows').innerHTML = D.items.map((it, i) => `
     <div class="countrow" id="cr-${i}">
-      <div class="nm">${esc(it.name)}<small>ระบบว่ามี <span id="cs-${i}">–</span></small></div>
+      <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${it.perPack > 1 ? esc(it.packUnit) : '–'}"
              ${it.perPack > 1 ? '' : 'disabled'} oninput="paintProgress()">
@@ -594,7 +603,11 @@ function viewCount(v) {
 function paintCount() {
   const loc = document.getElementById('c-loc').value;
   D.items.forEach((it, i) => {
-    document.getElementById('cs-' + i).textContent = fmtPack(balOf(loc, it.name), it);
+    // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
+    // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
+    document.getElementById('cs-' + i).innerHTML = isOwner()
+      ? 'ระบบว่ามี ' + esc(fmtPack(balOf(loc, it.name), it))
+      : '&nbsp;';
   });
   paintProgress();
 }
