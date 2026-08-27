@@ -88,6 +88,14 @@ function getOrCreateSheet_(ss, name) {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
+
+    // ถ้าโปรเจกต์นี้มีสคริปต์แจ้งเตือน LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
+    // (Apps Script มี doPost ได้ตัวเดียวต่อโปรเจกต์ ตัวนี้จึงทำหน้าที่เป็นตัวแยกทาง)
+    if (body.destination || body.events) {
+      if (typeof handleLineWebhook_ === 'function') return handleLineWebhook_(body);
+      return ContentService.createTextOutput('OK');
+    }
+
     switch (body.action) {
       case 'login':    return json_(handleLogin_(body));
       case 'logout':   return json_(handleLogout_(body));

@@ -531,9 +531,10 @@ var PROP_FOUND = 'LINE_GROUPS_FOUND';
  * รับ event จาก LINE แล้วจำ Group ID ของกลุ่มที่มีคนพิมพ์ข้อความ
  * ทำหน้าที่แค่จดบันทึก ไม่ตอบกลับ ไม่ส่งอะไรเข้ากลุ่ม
  */
-function doPost(e) {
+// เดิมชื่อ doPost — เปลี่ยนชื่อเพื่อไม่ให้ชนกับ doPost ของ pos-backend.gs
+// เวลาอยู่โปรเจกต์เดียวกัน doPost ใน pos-backend.gs จะเรียกฟังก์ชันนี้ให้เอง
+function handleLineWebhook_(body) {
   try {
-    var body  = JSON.parse(e.postData.contents);
     var props = PropertiesService.getScriptProperties();
     var found = {};
     try { found = JSON.parse(props.getProperty(PROP_FOUND) || '{}'); } catch (err) {}
@@ -548,7 +549,7 @@ function doPost(e) {
     });
     props.setProperty(PROP_FOUND, JSON.stringify(found));
   } catch (err) {
-    Logger.log('doPost: ' + err.message);
+    Logger.log('handleLineWebhook_: ' + err.message);
   }
   return ContentService.createTextOutput('OK');
 }

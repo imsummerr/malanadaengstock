@@ -1692,6 +1692,11 @@ async function readApiJson(res) {
       throw new Error('Apps Script ตอบกลับมาเป็นหน้าเว็บ ไม่ใช่ข้อมูล — ' +
                       'มักเกิดจากโค้ดหลังบ้านมี error หรือยังไม่ได้ Deploy เวอร์ชันใหม่');
     }
+    if (/^ok$/i.test(head.trim())) {
+      throw new Error('Apps Script ตอบว่า "OK" แทนที่จะเป็นข้อมูล — โปรเจกต์ Apps Script นี้ ' +
+                      'มีสคริปต์อื่นที่มี doPost อยู่ด้วย (เช่นสคริปต์แจ้งเตือน LINE) มันเลยไปทับกัน ' +
+                      'ให้วางโค้ด pos-backend.gs เวอร์ชันล่าสุดทับของเดิม แล้ว Deploy เวอร์ชันใหม่');
+    }
     throw new Error('อ่านคำตอบจาก Server ไม่ได้: ' + head.slice(0, 120));
   }
 }
