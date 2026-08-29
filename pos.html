@@ -1742,13 +1742,74 @@ async function postApi(body) {
 /* ════════════════════════════════════════════════════════════
    Login
    ════════════════════════════════════════════════════════════ */
-const auth = { token: '', name: '', branch: '', role: 'staff' };
+const auth = { token: '', name: '', branch: '', role: 'staff', demo: false };
+
+/* ── เก็บการล็อกอินไว้ในเครื่อง ล็อกอินวันละครั้งพอ ──
+   เดิมเก็บใน sessionStorage ซึ่งหายทันทีที่ปิดแอป กลางวันปิดแอปทีก็ต้องล็อกอินใหม่ที
+   ลูกค้ายืนรอหน้าร้าน ย้ายมาเก็บใน localStorage พร้อมวันหมดอายุ
+   ปิด-เปิดแอปกี่รอบก็เข้าได้เลย พอขึ้นวันใหม่ค่อยล็อกอินอีกครั้ง
+   โหมดทดลองเก็บแยกไว้ใน sessionStorage เพื่อไม่ให้ค้างข้ามการเปิดแอป */
+const AUTH_KEY = 'pos_auth';
+const DEMO_KEY = 'pos_demo_auth';
+
+/** ตี 4 ของรอบถัดไป — ใช้เป็นเส้นแบ่งวัน เพราะร้านปิดหลังเที่ยงคืนได้ */
+function authExpiry() {
+  const d = new Date();
+  if (d.getHours() >= 4) d.setDate(d.getDate() + 1);
+  d.setHours(4, 0, 0, 0);
+  return d.getTime();
+}
+
+function saveAuth(a) {
+  const rec = { token: a.token, name: a.name, branch: a.branch, role: a.role };
+  try {
+    if (a.demo) sessionStorage.setItem(DEMO_KEY, JSON.stringify(rec));
+    else { rec.exp = authExpiry(); localStorage.setItem(AUTH_KEY, JSON.stringify(rec)); }
+  } catch (e) {}
+}
+
+function clearAuth() {
+  try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
+  try { sessionStorage.removeItem(DEMO_KEY); } catch (e) {}
+  // คีย์แบบเก่า — ล้างด้วย ไม่งั้นกดออกจากระบบแล้วมันย้อนกลับมาอีก
+  ['pos_token', 'pos_name', 'pos_branch', 'pos_role', 'pos_demo']
+    .forEach(function (k) { try { sessionStorage.removeItem(k); } catch (e) {} });
+}
 
 function readAuth() {
-  auth.token  = sessionStorage.getItem('pos_token')  || '';
-  auth.name   = sessionStorage.getItem('pos_name')   || '';
-  auth.branch = sessionStorage.getItem('pos_branch') || '';
-  auth.role   = sessionStorage.getItem('pos_role')   || 'staff';
+  auth.token = ''; auth.name = ''; auth.branch = ''; auth.role = 'staff'; auth.demo = false;
+
+  let saved = null, isDemoRec = false;
+  try { saved = JSON.parse(sessionStorage.getItem(DEMO_KEY) || 'null'); } catch (e) {}
+  if (saved) isDemoRec = true;
+  else { try { saved = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); } catch (e) {} }
+
+  // เคยล็อกอินค้างไว้ด้วยเว็บรุ่นก่อน — ย้ายมาที่เก็บใหม่ให้เลย
+  // จะได้ไม่โดนเด้งออกตอนเว็บอัปเดต ทั้งที่กำลังขายอยู่
+  if (!saved) {
+    const legacy = sessionStorage.getItem('pos_token');
+    if (legacy) {
+      isDemoRec = sessionStorage.getItem('pos_demo') === '1';
+      saved = {
+        token:  legacy,
+        name:   sessionStorage.getItem('pos_name')   || '',
+        branch: sessionStorage.getItem('pos_branch') || '',
+        role:   sessionStorage.getItem('pos_role')   || 'staff'
+      };
+      saveAuth({ token: saved.token, name: saved.name, branch: saved.branch,
+                 role: saved.role, demo: isDemoRec });
+    }
+  }
+
+  if (!saved || !saved.token) return;
+  // ข้ามวันแล้ว — ให้ล็อกอินใหม่รอบเช้า
+  if (saved.exp && Date.now() > saved.exp) { clearAuth(); return; }
+
+  auth.token  = saved.token;
+  auth.name   = saved.name || '';
+  auth.branch = saved.branch || '';
+  auth.role   = saved.role === 'owner' ? 'owner' : 'staff';
+  auth.demo   = isDemoRec;
 }
 
 /** เจ้าของร้านเท่านั้นที่เห็นปุ่มตั้งค่าและหน้าสรุปยอด */
@@ -1777,10 +1838,8 @@ async function doLogin() {
   try {
     const data = await postApi({ action: 'login', username, password });
     if (data.success) {
-      sessionStorage.setItem('pos_token', data.token);
-      sessionStorage.setItem('pos_name', data.name);
-      sessionStorage.setItem('pos_branch', data.branch);
-      sessionStorage.setItem('pos_role', data.role === 'owner' ? 'owner' : 'staff');
+      saveAuth({ token: data.token, name: data.name, branch: data.branch,
+                 role: data.role === 'owner' ? 'owner' : 'staff' });
       showApp();
     } else {
       errEl.textContent = data.message || 'Login ไม่สำเร็จ';
@@ -1796,13 +1855,9 @@ async function doLogin() {
 }
 
 function doLogout() {
-  const token = sessionStorage.getItem('pos_token');
+  const token = auth.token;
   const demo  = isDemo();
-  sessionStorage.removeItem('pos_token');
-  sessionStorage.removeItem('pos_name');
-  sessionStorage.removeItem('pos_branch');
-  sessionStorage.removeItem('pos_role');
-  sessionStorage.removeItem('pos_demo');
+  clearAuth();
   if (!demo && token && apiUrl()) {
     fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'logout', token }) }).catch(() => {});
@@ -1830,7 +1885,7 @@ function showApp() {
 /* ════════════════════════════════════════════════════════════
    โหมดทดลอง — กดเล่นได้ทั้งระบบโดยไม่ต้องตั้ง Apps Script
    ════════════════════════════════════════════════════════════ */
-function isDemo() { return sessionStorage.getItem('pos_demo') === '1'; }
+function isDemo() { return auth.demo === true; }
 
 function toggleDemoPanel() {
   const panel = document.getElementById('demo-panel');
@@ -1843,11 +1898,12 @@ function toggleDemoPanel() {
 }
 
 function startDemo() {
-  sessionStorage.setItem('pos_demo', '1');
-  sessionStorage.setItem('pos_token', 'DEMO');
-  sessionStorage.setItem('pos_name', document.getElementById('demo-name').value.trim() || 'ทดลอง');
-  sessionStorage.setItem('pos_branch', document.getElementById('demo-branch').value || '');
-  sessionStorage.setItem('pos_role', document.getElementById('demo-role').value);
+  saveAuth({
+    demo: true, token: 'DEMO',
+    name:   document.getElementById('demo-name').value.trim() || 'ทดลอง',
+    branch: document.getElementById('demo-branch').value || '',
+    role:   document.getElementById('demo-role').value
+  });
   showApp();
   toast('เริ่มโหมดทดลองแล้ว — ยอดขายจะไม่ถูกบันทึก');
 }

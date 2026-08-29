@@ -17,7 +17,10 @@ var SHEET_USERS    = 'ผู้ใช้งาน';     // username / password /
 var SHEET_SESSIONS = 'Sessions';     // token ที่ยัง login อยู่
 var SHEET_DELIVERY = 'POS_Delivery'; // ออเดอร์เดลิเวอรี่ (แพลตฟอร์มเก็บเงินให้แล้ว)
 
-var SESSION_HOURS = 16;              // token หมดอายุกี่ชั่วโมง
+var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
+                                     // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
+                                     // ช่วงห่างที่ยาวที่สุดคือเกือบ 24 ชม. ตั้ง 26 ไว้เผื่อ
+                                     // ไม่ให้ฝั่ง Server หมดอายุก่อนจนเด้งออกกลางวันขาย
 var MAMA_PRICES   = [10, 15, 20, 35, 45];
 var STICK_PRICES  = [10, 15];
 
