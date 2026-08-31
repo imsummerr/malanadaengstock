@@ -148,10 +148,15 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
 
-    // ถ้าโปรเจกต์นี้มีสคริปต์แจ้งเตือน LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
+    // ถ้าโปรเจกต์นี้มีสคริปต์ LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
     // (Apps Script มี doPost ได้ตัวเดียวต่อโปรเจกต์ ตัวนี้จึงทำหน้าที่เป็นตัวแยกทาง)
     if (body.destination || body.events) {
-      if (typeof handleLineWebhook_ === 'function') return handleLineWebhook_(body);
+      // line-expiry-alert.gs — จด Group ID ของกลุ่มที่มีคนพิมพ์ ไว้ใช้ตอนตั้งค่า
+      if (typeof handleLineWebhook_ === 'function') {
+        try { handleLineWebhook_(body); } catch (e) { Logger.log('handleLineWebhook_: ' + e.message); }
+      }
+      // line-intake.gs — อ่านข้อความ/รูปที่ส่งมา แล้วบันทึกลงชีต
+      if (typeof handleLineIntake_ === 'function') return handleLineIntake_(body);
       return ContentService.createTextOutput('OK');
     }
 
