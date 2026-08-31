@@ -312,6 +312,12 @@
       </div>
       <div class="grid-mama" id="mama-grid"></div>
 
+      <div class="sec-head" style="margin-top:20px;">
+        <h2>🍘 ของอื่น</h2>
+        <div class="note">รวม <b id="extra-count" class="digits">0</b> ชิ้น</div>
+      </div>
+      <div class="grid-2" id="extra-grid"></div>
+
       <div class="card opt-card">
         <h3 id="head-soup">🍲 น้ำซุป <span class="req">* ต้องเลือก</span></h3>
         <div class="chips" id="soup-chips"></div>
@@ -941,6 +947,11 @@ const DEFAULT_BRANCH_QR = {
 
 const STICK_PRICES = [10, 15];               // ราคาไม้ (บาท/ไม้)
 const MAMA_PRICES  = [10, 15, 20, 35, 45];   // ราคามาม่า (บาท/ห่อ)
+// สินค้าอื่นที่ขายเป็นชิ้น ไม่ใช่ไม้และไม่ใช่มาม่า — ไม่เข้าเงื่อนไขส่วนลดไม้
+// เพิ่มเมนูใหม่ได้ที่นี่ ต้องตรงกับ EXTRAS ใน pos-backend.gs
+const EXTRAS = [
+  { name: 'สาหร่ายแผ่น', price: 20 }
+];
 
 // ส่วนลด: ครบทุก ๆ 10 ไม้ ลด 5 บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
 const DISCOUNT = { perSticks: 10, baht: 5 };
@@ -974,24 +985,27 @@ function apiUrl() { return (settings.apiUrl || '').trim(); }
    ════════════════════════════════════════════════════════════ */
 // น้ำซุป · ความเผ็ด · น้ำจิ้ม เริ่มต้นเป็นค่าว่าง — บังคับให้พนักงานกดเลือกทุกบิล
 const order = {
-  sticks: {}, mama: {},
+  sticks: {}, mama: {}, extras: {},
   soup: '', spice: '', sauce: '', method: ''
 };
 STICK_PRICES.forEach(p => order.sticks[p] = 0);
 MAMA_PRICES.forEach(p => order.mama[p] = 0);
+EXTRAS.forEach((e, i) => order.extras[i] = 0);
 
 function totals() {
   let stickCount = 0, stickAmount = 0, mamaCount = 0, mamaAmount = 0, sauceCount = 0;
+  let extraCount = 0, extraAmount = 0;
   STICK_PRICES.forEach(p => { stickCount += order.sticks[p]; stickAmount += order.sticks[p] * p; });
   MAMA_PRICES.forEach(p => { mamaCount += order.mama[p]; mamaAmount += order.mama[p] * p; });
+  EXTRAS.forEach((e, i) => { extraCount += order.extras[i]; extraAmount += order.extras[i] * e.price; });
   sauceCount = (order.sauce && order.sauce !== 'ไม่เอาน้ำจิ้ม') ? 1 : 0;   // แถมฟรี นับไว้ดูต้นทุน
 
   // นับเฉพาะจำนวนไม้ — มาม่าไม่นับเข้าส่วนลด
   const discountUnits = Math.floor(stickCount / DISCOUNT.perSticks);
   const discount = discountUnits * DISCOUNT.baht;
-  const subtotal = stickAmount + mamaAmount;
+  const subtotal = stickAmount + mamaAmount + extraAmount;
   return {
-    stickCount, stickAmount, mamaCount, mamaAmount, sauceCount,
+    stickCount, stickAmount, mamaCount, mamaAmount, sauceCount, extraCount, extraAmount,
     subtotal, discountUnits, discount, total: Math.max(0, subtotal - discount)
   };
 }
@@ -1025,7 +1039,15 @@ function renderMamaGrid() {
   document.getElementById('mama-grid').innerHTML =
     MAMA_PRICES.map(p => qtyCard('mama', p, `มาม่า <span>${p}฿</span>`, '0 ฿')).join('');
 }
-function store(kind) { return kind === 'stick' ? order.sticks : order.mama; }
+function renderExtraGrid() {
+  document.getElementById('extra-grid').innerHTML =
+    EXTRAS.map((e, i) => qtyCard('extra', i, `${e.name} <span>${e.price}฿</span>`, '0 ฿')).join('');
+}
+function store(kind) {
+  if (kind === 'stick') return order.sticks;
+  if (kind === 'extra') return order.extras;
+  return order.mama;
+}
 
 function bump(kind, key, delta) {
   const s = store(kind);
@@ -1075,11 +1097,14 @@ function pick(field, value) { order[field] = value; refreshChips(); refresh(); }
 function refresh() {
   const t = totals();
 
-  [['stick', STICK_PRICES], ['mama', MAMA_PRICES]].forEach(([kind, keys]) => {
+  [['stick', STICK_PRICES], ['mama', MAMA_PRICES],
+   ['extra', EXTRAS.map((e, i) => i)]].forEach(([kind, keys]) => {
     keys.forEach(k => {
       const qty = store(kind)[k];
       const id = kind + '-' + k;
-      document.getElementById('sub-' + id).textContent = (qty * Number(k)).toLocaleString('th-TH') + ' ฿';
+      // ไม้กับมาม่าใช้ราคาเป็น key ได้เลย ส่วนของอื่นต้องไปดูราคาจากเมนู
+      const price = kind === 'extra' ? EXTRAS[k].price : Number(k);
+      document.getElementById('sub-' + id).textContent = (qty * price).toLocaleString('th-TH') + ' ฿';
       document.getElementById('qty-' + id).classList.toggle('has', qty > 0);
       document.getElementById('card-' + id).classList.toggle('on', qty > 0);
     });
@@ -1087,6 +1112,7 @@ function refresh() {
 
   document.getElementById('stick-count').textContent = t.stickCount;
   document.getElementById('mama-count').textContent = t.mamaCount;
+  document.getElementById('extra-count').textContent = t.extraCount;
   document.getElementById('sum-subtotal').textContent = t.subtotal.toLocaleString('th-TH') + ' ฿';
   document.getElementById('sum-total').innerHTML = t.total.toLocaleString('th-TH') + '<small> ฿</small>';
 
@@ -1125,6 +1151,7 @@ function refresh() {
 function clearOrder() {
   STICK_PRICES.forEach(p => { order.sticks[p] = 0; document.getElementById('qty-stick-' + p).value = 0; });
   MAMA_PRICES.forEach(p => { order.mama[p] = 0; document.getElementById('qty-mama-' + p).value = 0; });
+  EXTRAS.forEach((e, i) => { order.extras[i] = 0; document.getElementById('qty-extra-' + i).value = 0; });
   refresh();
 }
 
@@ -1226,6 +1253,8 @@ function pendingBillsOf(date) {
       stickCount: r.stickCount, stickAmount: r.stickAmount,
       mama: (r.mama || []).filter(x => x.qty > 0),
       mamaCount: r.mamaCount, mamaAmount: r.mamaAmount,
+      extras: (r.extras || []).filter(x => x.qty > 0).map(x => x.name + ' x' + x.qty).join(', '),
+      extraCount: r.extraCount, extraAmount: r.extraAmount,
       subtotal: r.subtotal, discount: r.discount, total: r.total,
       soup: r.soup, spice: r.spice, sauce: r.sauce, method: r.method,
       pending: true
@@ -1262,6 +1291,10 @@ function renderBills(bills, date) {
       lines.push('<div class="bill-grp">มาม่า</div>');
       b.mama.forEach(x => lines.push(row('ห่อละ ' + x.price + ' ฿ × ' + x.qty, x.price * x.qty + ' ฿')));
     }
+    if (b.extras) {
+      lines.push('<div class="bill-grp">ของอื่น</div>');
+      lines.push(row(b.extras, (Number(b.extraAmount) || 0).toLocaleString('th-TH') + ' ฿'));
+    }
     lines.push('<div class="bill-grp">รายละเอียด</div>');
     lines.push(row('น้ำซุป', b.soup || '—'));
     lines.push(row('ความเผ็ด', b.spice || '—'));
@@ -1279,6 +1312,7 @@ function renderBills(bills, date) {
     const qty = [];
     if (b.stickCount) qty.push(b.stickCount + ' ไม้');
     if (b.mamaCount) qty.push('มาม่า ' + b.mamaCount);
+    if (b.extraCount) qty.push('ของอื่น ' + b.extraCount);
 
     return '<div class="bill' + (b.pending ? ' bill-pend' : '') + '">' +
       '<div class="bill-head" onclick="toggleBill(' + i + ')">' +
@@ -1615,6 +1649,8 @@ function confirmPaid() {
     stickCount: t.stickCount, stickAmount: t.stickAmount,
     mama: MAMA_PRICES.map(p => ({ price: p, qty: order.mama[p] })),
     mamaCount: t.mamaCount, mamaAmount: t.mamaAmount,
+    extras: EXTRAS.map((e, i) => ({ name: e.name, price: e.price, qty: order.extras[i] })),
+    extraCount: t.extraCount, extraAmount: t.extraAmount,
     subtotal: t.subtotal, discount: t.discount, total: t.total,
     soup: order.soup, spice: order.spice, method: order.method,
     sauce: order.sauce, sauceCount: t.sauceCount
@@ -2206,6 +2242,7 @@ function toast(msg) {
    ════════════════════════════════════════════════════════════ */
 renderStickGrid();
 renderMamaGrid();
+renderExtraGrid();
 renderChips('soup-chips', SOUPS, 'soup');
 renderChips('spice-chips', SPICES, 'spice');
 renderChips('sauce-chips', SAUCES, 'sauce');

@@ -24,6 +24,12 @@ var SESSION_HOURS = 26;              // token หมดอายุกี่ช�
 var MAMA_PRICES   = [10, 15, 20, 35, 45];
 var STICK_PRICES  = [10, 15];
 
+// สินค้าอื่นที่ขายเป็นชิ้น ไม่ใช่ไม้และไม่ใช่มาม่า
+// เพิ่มรายการใหม่ได้ที่นี่ ต้องตรงกับ EXTRAS ใน pos.html
+var EXTRAS = [
+  { name: 'สาหร่ายแผ่น', price: 20 }
+];
+
 var DELIVERY_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน',
   'ของเพิ่ม', 'ข้อมูล', 'order_id'
@@ -35,8 +41,40 @@ var ORDER_HEADERS = [
   'มาม่า 10฿', 'มาม่า 15฿', 'มาม่า 20฿', 'มาม่า 35฿', 'มาม่า 45฿', 'รวมมาม่า', 'ยอดมาม่า',
   'ยอดรวม', 'ส่วนลด', 'ยอดสุทธิ',
   'น้ำซุป', 'ความเผ็ด', 'น้ำจิ้ม', 'จำนวนน้ำจิ้ม',
-  'วิธีชำระเงิน', 'order_id'
+  'วิธีชำระเงิน', 'order_id',
+  // ต่อท้ายไว้ ไม่แทรกกลาง เพื่อไม่ให้คอลัมน์ของข้อมูลเก่าเลื่อนความหมาย
+  'ของอื่น', 'รวมของอื่น', 'ยอดของอื่น'
 ];
+
+/**
+ * เติมหัวตารางที่ยังไม่มีให้ชีตที่สร้างไว้ก่อนหน้า
+ * เวลามีเมนูใหม่แล้วคอลัมน์เพิ่ม ชีตเก่าจะได้ใช้ต่อได้โดยไม่ต้องสร้างใหม่
+ */
+function ensureHeaders_(sheet, headers) {
+  if (!sheet) return;
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+  if (sheet.getLastRow() === 0) return;
+  var head = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  var missing = [];
+  for (var i = 0; i < headers.length; i++) {
+    if (String(head[i] || '').trim() !== headers[i]) missing.push(i);
+  }
+  if (!missing.length) return;
+  // เขียนเฉพาะช่องที่ยังว่าง จะได้ไม่ไปทับชื่อคอลัมน์เดิมที่มีข้อมูลอยู่
+  missing.forEach(function (i) {
+    if (String(head[i] || '').trim() === '') {
+      sheet.getRange(1, i + 1).setValue(headers[i])
+        .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+    }
+  });
+}
+
+/** ความกว้างที่อ่านได้จริง — ชีตเก่าที่ยังไม่ถูกเติมคอลัมน์จะแคบกว่า headers */
+function readWidth_(sheet, headers) {
+  return Math.min(headers.length, sheet.getMaxColumns());
+}
 
 // ══════════════════════════════════════════════════════════════
 //  ติดตั้งครั้งแรก — รันฟังก์ชันนี้ 1 ครั้ง
@@ -45,6 +83,7 @@ function setupPos() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   var orders = getOrCreateSheet_(ss, SHEET_ORDERS);
+  ensureHeaders_(orders, ORDER_HEADERS);
   if (orders.getLastRow() === 0) {
     orders.appendRow(ORDER_HEADERS);
     orders.getRange(1, 1, 1, ORDER_HEADERS.length)
@@ -269,6 +308,20 @@ function handleOrder_(body) {
     var mamaQty = {}; MAMA_PRICES.forEach(function (p) { mamaQty[p] = 0; });
     (o.mama || []).forEach(function (m) { mamaQty[m.price] = Number(m.qty) || 0; });
 
+    // ของอื่น เก็บเป็นข้อความสรุปช่องเดียว เพิ่มเมนูใหม่แล้วไม่ต้องเพิ่มคอลัมน์อีก
+    var extraText = [], extraCount = 0, extraAmount = 0;
+    (o.extras || []).forEach(function (x) {
+      var q = Number(x.qty) || 0;
+      if (q <= 0) return;
+      extraText.push(x.name + ' x' + q);
+      extraCount += q;
+      extraAmount += q * (Number(x.price) || 0);
+    });
+    if (o.extraCount !== undefined) extraCount = Number(o.extraCount) || 0;
+    if (o.extraAmount !== undefined) extraAmount = Number(o.extraAmount) || 0;
+
+    ensureHeaders_(sheet, ORDER_HEADERS);
+
 
     var row = [
       Utilities.formatDate(now, TZ, 'yyyy-MM-dd'),
@@ -284,6 +337,7 @@ function handleOrder_(body) {
     row.push(Number(o.subtotal) || 0, Number(o.discount) || 0, Number(o.total) || 0);
     row.push(o.soup || '', o.spice || '', o.sauce || '', Number(o.sauceCount) || 0,
              o.method || '', o.orderId || '');
+    row.push(extraText.join(', '), extraCount, extraAmount);
 
     var orderNo = nextOrderNo_(sheet, row[0]);
     row[2] = orderNo;
@@ -377,7 +431,7 @@ function handleStats_(p) {
     return { success: true, data: only };
   }
 
-  var values = sheet.getRange(1, 1, sheet.getLastRow(), ORDER_HEADERS.length).getDisplayValues();
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), readWidth_(sheet, ORDER_HEADERS)).getDisplayValues();
   var head = values[0];
   var idx = {};
   head.forEach(function (h, i) { idx[h] = i; });
@@ -539,7 +593,7 @@ function handleBills_(p) {
   var branch = session.branch || '';
 
   // วันที่ยังไม่มีบิลหน้าร้านเลย ก็ยังต้องไปอ่านเดลิเวอรี่ต่อ — อย่ารีบ return
-  var pos = rowsOfDate_(sheet, ORDER_HEADERS.length, date);
+  var pos = rowsOfDate_(sheet, readWidth_(sheet, ORDER_HEADERS), date);
   var idx = pos.idx;
 
   var bills = [];
@@ -570,6 +624,9 @@ function handleBills_(p) {
       subtotal:   num_(r[idx['ยอดรวม']]),
       discount:   num_(r[idx['ส่วนลด']]),
       total:      num_(r[idx['ยอดสุทธิ']]),
+      extras:     r[idx['ของอื่น']] || '',
+      extraCount: num_(r[idx['รวมของอื่น']]),
+      extraAmount:num_(r[idx['ยอดของอื่น']]),
       soup:       r[idx['น้ำซุป']],
       spice:      r[idx['ความเผ็ด']],
       sauce:      r[idx['น้ำจิ้ม']],
