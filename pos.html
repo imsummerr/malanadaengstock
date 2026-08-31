@@ -467,6 +467,13 @@
         <h2>📋 ที่บันทึกไว้วันนี้</h2>
         <div class="note" id="exp-count">0 รายการ</div>
       </div>
+
+      <div id="exp-warn" class="qr-status warn hidden" style="margin-bottom:10px;">
+        <div id="exp-warn-text"></div>
+        <button onclick="retryExpenses()" id="btn-retry-expense" class="key btn-dark"
+          style="width:100%;padding:10px;font-size:13.5px;margin-top:8px;">↻ ลองส่งใหม่</button>
+      </div>
+
       <div id="exp-list"></div>
     </div>
   </div>
@@ -1003,7 +1010,7 @@ var PromptPay = (function () {
 // URL ของ Web app (Apps Script) — ดูวิธีติดตั้งใน google-apps-script/POS-README.md
 // URL ของ Google Apps Script ของร้าน — ฝังไว้ให้ทุกเครื่องใช้ได้เลยไม่ต้องกรอก
 // ถ้า Deploy ใหม่แล้วได้ URL ใหม่ ให้แก้ตรงนี้ (และในไฟล์ pos-dashboard.html ด้วย)
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyPjq_mWq8lSkaMMgNtax4Oaei5a0YpVDN0VcdXs6VmGzwZTp-nZbNwd8x4CrZ09kT4mw/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxIqmfGDfWhKwU7HnbR2Yd18tRha3bGw_BVEuj7bAQdmTxUgpPptKmO8vSxTLwKoJ1rhw/exec';
 
 // พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
 // QR รับเงินของแต่ละสาขา — ฝังไว้ให้ทุกเครื่องใช้ได้เลย ไม่ต้องอัปโหลดรูป
@@ -1736,6 +1743,7 @@ function goQR() {
    ════════════════════════════════════════════════════════════ */
 let expenseType = '';
 let todayExpenses = [];   // ที่บันทึกไว้วันนี้ (รวมที่ยังค้างส่ง)
+let expenseError = '';    // สาเหตุที่ส่งขึ้น Sheets ไม่ได้ (ถ้ามี)
 
 function renderExpenseChips() {
   document.getElementById('exp-type-chips').innerHTML = EXPENSE_TYPES.map(t =>
@@ -1765,6 +1773,16 @@ function refreshExpense() {
   document.getElementById('exp-today').textContent = total.toLocaleString('th-TH');
   document.getElementById('exp-count').textContent = todayExpenses.length + ' รายการ';
 
+  // มีของค้างส่ง — โชว์ปุ่มให้กดส่งใหม่ พร้อมสาเหตุถ้ารู้
+  const waiting = todayExpenses.filter(x => x.pending).length;
+  const warn = document.getElementById('exp-warn');
+  warn.classList.toggle('hidden', waiting === 0);
+  if (waiting) {
+    document.getElementById('exp-warn-text').innerHTML =
+      'มี <b>' + waiting + ' รายการ</b> ยังไม่ได้ส่งขึ้น Google Sheets'
+      + (expenseError ? '<br>สาเหตุ: ' + escapeText(expenseError) : '');
+  }
+
   const box = document.getElementById('exp-list');
   if (!todayExpenses.length) {
     box.innerHTML = '<div class="note" style="text-align:center;padding:20px 0;">' +
@@ -1776,6 +1794,8 @@ function refreshExpense() {
       '<div style="min-width:0;flex:1;">' +
         '<div class="bill-no">' + escapeText(x.type || 'อื่น ๆ') +
           (x.pending ? ' <span style="color:#b45309;">⏳ ยังไม่ได้ส่ง</span>' : '') + '</div>' +
+        (x.pending && x.reason
+          ? '<div class="bill-time" style="color:#b3121f;">' + escapeText(x.reason) + '</div>' : '') +
         '<div class="bill-time">' + escapeText(x.time || '') +
           (x.staff ? ' · ' + escapeText(x.staff) : '') + '</div>' +
         (x.note ? '<div class="bill-time">' + escapeText(x.note) + '</div>' : '') +
@@ -1787,6 +1807,7 @@ function refreshExpense() {
 
 function openExpense() {
   expenseType = '';
+  expenseError = '';
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-note').value = '';
   document.querySelectorAll('#exp-type-chips .chip').forEach(el => el.classList.remove('on'));
@@ -1852,13 +1873,46 @@ async function saveExpense() {
       loadExpenses();
       return;
     }
-    throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
+    // Server รับคำขอแล้วแต่ปฏิเสธ — เก็บไว้ในเครื่องก็จริง แต่ต้องบอกสาเหตุ
+    // ไม่งั้นจะค้างว่า "รอส่ง" ไปเรื่อย ๆ โดยไม่มีใครรู้ว่าติดตรงไหน
+    queueExpense(record, (json && json.message) || 'บันทึกไม่สำเร็จ');
   } catch (e) {
-    queuePending(record);
-    todayExpenses.unshift(Object.assign({ pending: true }, record));
-    resetExpenseForm();
-    toast('⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว');
+    queueExpense(record, e.message, true);
   }
+}
+
+/** เก็บค่าใช้จ่ายไว้ในเครื่อง พร้อมบอกเหตุผลที่ส่งไม่ได้ */
+function queueExpense(record, reason, offline) {
+  queuePending(record);
+  todayExpenses.unshift(Object.assign({ pending: true, reason: reason }, record));
+  resetExpenseForm();
+  expenseError = reason || '';
+  refreshExpense();
+  toast(offline
+    ? '⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว'
+    : '⚠️ Server ไม่รับข้อมูล: ' + reason);
+}
+
+/** กดส่งใหม่เอง — ไม่ต้องรอให้ขายบิลถัดไปถึงจะลองส่ง */
+async function retryExpenses() {
+  const btn = document.getElementById('btn-retry-expense');
+  btn.disabled = true;
+  btn.textContent = 'กำลังส่ง…';
+  expenseError = '';
+  await flushPending();
+  const left = getPending().filter(r => r.kind === 'expense').length;
+  btn.disabled = false;
+  btn.textContent = '↻ ลองส่งใหม่';
+  if (!left) {
+    toast('ส่งค่าใช้จ่ายที่ค้างขึ้น Sheets แล้ว');
+    delete billsInflight[isoDate(new Date())];
+  } else {
+    expenseError = lastFlushError || 'ยังส่งไม่สำเร็จ';
+    toast('⚠️ ยังส่งไม่ได้: ' + expenseError);
+  }
+  todayExpenses = pendingExpensesOf(isoDate(new Date()));
+  refreshExpense();
+  loadExpenses();
 }
 
 function resetExpenseForm() {
@@ -2118,7 +2172,10 @@ function setPending(list) {
 }
 function queuePending(record) { const l = getPending(); l.push(record); setPending(l); }
 
+let lastFlushError = '';   // เหตุผลล่าสุดที่ส่งของค้างไม่สำเร็จ
+
 async function flushPending() {
+  lastFlushError = '';
   const list = getPending();
   if (!list.length || !auth.token || isDemo()) return;
   const remain = [];
@@ -2131,8 +2188,11 @@ async function flushPending() {
         const action = rec.kind === 'delivery' ? 'posDelivery' : 'posOrder';
         json = await postApi({ action: action, token: auth.token, order: rec });
       }
-      if (!json || !json.success) remain.push(rec);
-    } catch (e) { remain.push(rec); }
+      if (!json || !json.success) {
+        lastFlushError = (json && json.message) || 'บันทึกไม่สำเร็จ';
+        remain.push(rec);
+      }
+    } catch (e) { lastFlushError = e.message; remain.push(rec); }
   }
   setPending(remain);
   if (list.length && !remain.length) toast('ส่งออเดอร์ที่ค้างไว้ ' + list.length + ' รายการขึ้น Sheets แล้ว');

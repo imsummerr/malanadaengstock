@@ -421,8 +421,15 @@ function handleExpense_(body) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
-    if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_EXPENSE + ' — รัน setupPos ก่อน' };
+    // สร้างชีตให้เองถ้ายังไม่มี — ไม่งั้นเงินที่จ่ายไปแล้วจะค้างอยู่ในเครื่อง
+    // รอส่งไปเรื่อย ๆ โดยไม่มีวันสำเร็จ เพราะปลายทางไม่มีที่ให้ลง
+    var sheet = getOrCreateSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_EXPENSE);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(EXPENSE_HEADERS);
+      sheet.getRange(1, 1, 1, EXPENSE_HEADERS.length)
+        .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+      sheet.setFrozenRows(1);
+    }
     ensureHeaders_(sheet, EXPENSE_HEADERS);
 
     var existing = findRowByOrderId_(sheet, e.expenseId, EXPENSE_HEADERS);
