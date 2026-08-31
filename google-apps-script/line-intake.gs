@@ -5,8 +5,10 @@
  * บอทจะอ่าน แล้วลงชีต "ซื้อของเข้า" ให้ทันที พร้อมตอบกลับว่าบันทึกอะไรไป
  *
  * ── ทำอะไรได้บ้าง ──
- *   ข้อความ  ฟรี ไม่ต้องใช้ API key      อ่านด้วยตัวแยกคำในไฟล์นี้
- *   รูป      ต้องตั้ง ANTHROPIC_API_KEY  อ่านด้วย Claude (คิดตามจริง ราว ๆ 1 บาท/รูป)
+ *   ข้อความ  ฟรี                อ่านด้วยตัวแยกคำในไฟล์นี้
+ *   รูป      ฟรี (ค่าเริ่มต้น)   OCR ของ Google Drive — แค่เปิดบริการ Drive API ในโปรเจกต์
+ *            แม่นกว่าแต่เสียเงิน ตั้ง ANTHROPIC_API_KEY ให้ Claude อ่าน (~1 บาท/รูป)
+ *            เลือกทางได้ที่ Script Property ชื่อ INTAKE_IMAGE_MODE
  *
  * ── คำสั่งที่พิมพ์ในไลน์ได้ ──
  *   ลบ / ยกเลิก      ลบรายการล่าสุดที่ตัวเองเพิ่งบันทึก
@@ -147,19 +149,34 @@ function intakeOnText_(ev, ctx) {
   intakeReply_(ctx, intakeSaveAndSummarize_(items, ctx, 'ข้อความ', raw));
 }
 
-/** รูป — โหลดรูปจาก LINE แล้วให้ Claude อ่านออกมาเป็นรายการ */
+/**
+ * เลือกทางอ่านรูป ตาม Script Property ชื่อ INTAKE_IMAGE_MODE
+ *   auto (ค่าเริ่มต้น)  มี ANTHROPIC_API_KEY ใช้ Claude / ไม่มีก็ใช้ OCR ฟรีของ Google
+ *   ocr                 ใช้ OCR ฟรีอย่างเดียว ไม่เสียเงิน
+ *   claude              ใช้ Claude อย่างเดียว
+ *   off                 ไม่อ่านรูปเลย
+ */
+function intakeImageMode_() {
+  var m = String(intakeProp_('INTAKE_IMAGE_MODE', 'auto')).toLowerCase();
+  if (m === 'ocr' || m === 'claude' || m === 'off') return m;
+  return intakeProp_('ANTHROPIC_API_KEY', '') ? 'claude' : 'ocr';
+}
+
+/** รูป — โหลดรูปจาก LINE แล้วอ่านออกมาเป็นรายการ */
 function intakeOnImage_(ev, ctx) {
-  var key = intakeProp_('ANTHROPIC_API_KEY', '');
-  if (!key) {
-    intakeReply_(ctx, '📷 ได้รับรูปแล้ว แต่ยังอ่านรูปไม่ได้ครับ\n\n' +
-                      'ต้องตั้ง ANTHROPIC_API_KEY ใน Script Properties ก่อน (ดู LINE-INTAKE-README.md)\n' +
-                      'ระหว่างนี้พิมพ์เป็นข้อความมาได้เลย เช่น "ปลาดอลลี่ 68 บาท 800 กรัม"');
+  var mode = intakeImageMode_();
+  if (mode === 'off') {
+    intakeReply_(ctx, '📷 ได้รับรูปแล้ว แต่ระบบปิดการอ่านรูปไว้ครับ\n' +
+                      'พิมพ์เป็นข้อความมาได้เลย เช่น "ปลาดอลลี่ 68 บาท 800 กรัม"');
     return;
   }
 
   var read;
   try {
-    read = intakeReadImage_(intakeFetchImage_(ctx.msgId), key);
+    var blob = intakeFetchImage_(ctx.msgId);
+    read = (mode === 'claude')
+      ? intakeReadImage_(blob, intakeProp_('ANTHROPIC_API_KEY', ''))
+      : intakeOcrImage_(blob);
   } catch (err) {
     intakeReply_(ctx, '📷 อ่านรูปไม่สำเร็จครับ: ' + (err && err.message ? err.message : err) +
                       '\n\nพิมพ์เป็นข้อความมาแทนได้เลย');
@@ -536,7 +553,7 @@ function intakeMatchItem_(rawName, names) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  อ่านรูปด้วย Claude
+//  อ่านรูป
 // ══════════════════════════════════════════════════════════════
 
 /** โหลดไฟล์รูปที่คนส่งมาจาก LINE — ใหญ่เกินก็เอารูปย่อแทน */
@@ -559,6 +576,79 @@ function intakeFetchImage_(messageId) {
   }
   return blob;
 }
+
+/* ──────────────── ทางฟรี: OCR ของ Google Drive ──────────────── */
+
+/**
+ * บรรทัดในบิลที่ไม่ใช่รายการของ — ยอดรวม ภาษี เงินทอน หัวบิล ท้ายบิล
+ * ถ้าไม่กรองทิ้ง "รวมทั้งสิ้น 348" จะถูกบันทึกเป็นของชื่อ "รวมทั้งสิ้น"
+ */
+var INTAKE_OCR_SKIP = new RegExp(
+  'รวม|ทั้งสิ้น|สุทธิ|ยอด|เงินสด|เงินทอน|ทอน|ส่วนลด|ภาษี|มูลค่าเพิ่ม|จำนวนเงิน' +
+  '|ใบเสร็จ|ใบกำกับ|ใบส่งของ|ใบเสนอ|เลขที่|วันที่|เวลา|โทร|สาขา|ผู้รับ|ผู้ขาย|ลูกค้า|ขอบคุณ' +
+  '|total|subtotal|cash|change|discount|vat|net|tel|invoice|receipt|thank', 'i');
+
+/**
+ * อ่านรูปฟรีด้วย OCR ของ Google Drive
+ * อัปโหลดรูปเข้า Drive แบบสั่งให้แปลงเป็น Google Docs — Google จะ OCR ให้ตอนแปลง
+ * อ่านข้อความออกมาแล้วลบไฟล์ทิ้งทันที ไม่เสียเงิน ใช้โควต้า Drive ของบัญชีที่รันสคริปต์
+ *
+ * ต้องเปิดบริการ Drive API ในโปรเจกต์ก่อน (บริการ → Drive API) ไม่งั้น Drive จะ undefined
+ */
+function intakeOcrImage_(blob) {
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    throw new Error('ยังไม่ได้เปิดบริการ Drive API ในโปรเจกต์ (ดูวิธีใน LINE-INTAKE-README.md)');
+  }
+
+  var name  = 'line-intake-ocr-' + new Date().getTime();
+  var docId = '';
+  var text  = '';
+  try {
+    var resource = { mimeType: 'application/vnd.google-apps.document' };
+    if (typeof Drive.Files.create === 'function') {          // Drive API v3
+      resource.name = name;
+      docId = Drive.Files.create(resource, blob, { ocrLanguage: 'th' }).id;
+    } else {                                                  // Drive API v2
+      resource.title = name;
+      docId = Drive.Files.insert(resource, blob, { ocr: true, ocrLanguage: 'th' }).id;
+    }
+    text = DocumentApp.openById(docId).getBody().getText();
+  } finally {
+    // ลบไฟล์ชั่วคราวเสมอ ไม่งั้น Drive จะรกขึ้นเรื่อย ๆ ทุกรูปที่ส่งมา
+    if (docId) { try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {} }
+  }
+
+  var items = intakeOcrItems_(text);
+  return {
+    items: items,
+    note: items.length
+      ? 'อ่านด้วย OCR ฟรี ตัวเลขอาจเพี้ยนได้ ตรวจสอบอีกทีนะครับ'
+      : (String(text).trim() ? 'อ่านตัวหนังสือได้ แต่ไม่เจอบรรทัดที่มีทั้งชื่อของและราคา'
+                             : 'OCR อ่านตัวหนังสือในรูปไม่ออกเลย')
+  };
+}
+
+/** ข้อความดิบจาก OCR → รายการของ (กรองบรรทัดขยะของบิลออกก่อน) */
+function intakeOcrItems_(text) {
+  var lines = String(text || '').split(/[\n\r]+/);
+  var keep  = [];
+
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (!t) continue;
+    if (INTAKE_OCR_SKIP.test(t)) continue;
+    if (/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}/.test(t)) continue;   // วันที่
+    if (/^\d{1,2}:\d{2}/.test(t)) continue;                       // เวลา
+    if (!/[ก-๙a-z]/i.test(t)) continue;                           // ไม่มีตัวหนังสือเลย
+    keep.push(t);
+  }
+
+  return intakeParseText_(keep.join('\n')).filter(function (it) {
+    return String(it.raw).length >= 2;   // เศษตัวอักษรเดี่ยว ๆ จาก OCR ไม่ใช่ชื่อของ
+  });
+}
+
+/* ──────────────── ทางเสียเงิน: อ่านด้วย Claude ──────────────── */
 
 /** รูปแบบคำตอบที่บังคับให้ Claude ตอบกลับมา */
 var INTAKE_SCHEMA = {
@@ -966,12 +1056,35 @@ function setupLineIntake() {
   Logger.log('\nWebhook URL ที่ต้องเอาไปใส่ใน LINE Developers Console:\n  ' +
              (url || '(ยังไม่ได้ Deploy — กด Deploy → New deployment → Web app ก่อน)'));
 
-  var need = [];
-  if (!intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '')) need.push('LINE_CHANNEL_ACCESS_TOKEN (จำเป็น)');
-  if (!intakeProp_('ANTHROPIC_API_KEY', ''))         need.push('ANTHROPIC_API_KEY (ใส่ถ้าจะให้อ่านรูปได้)');
-  Logger.log(need.length ? '\nยังไม่ได้ตั้ง Script Property:\n  • ' + need.join('\n  • ')
-                         : '\nตั้ง Script Properties ครบแล้ว ✅');
-  Logger.log('\nรุ่นที่ใช้อ่านรูป: ' + intakeProp_('INTAKE_MODEL', INTAKE_MODEL_DEFAULT));
+  Logger.log(intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '')
+    ? '\nLINE_CHANNEL_ACCESS_TOKEN ✅'
+    : '\n⚠️ ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN — บอทจะตอบกลับไม่ได้');
+
+  var mode = intakeImageMode_();
+  Logger.log('\nการอ่านรูป: โหมด "' + mode + '"');
+  if (mode === 'ocr') {
+    Logger.log(typeof Drive !== 'undefined' && Drive.Files
+      ? '  ใช้ OCR ของ Google Drive — ฟรี ✅'
+      : '  ⚠️ ยังเปิดบริการ Drive API ไม่ครบ — ไปที่ "บริการ (Services)" ทางซ้าย\n' +
+        '     กด + แล้วเลือก Drive API → เพิ่ม แล้วรันฟังก์ชันนี้ใหม่');
+  } else if (mode === 'claude') {
+    Logger.log('  ใช้ Claude รุ่น ' + intakeProp_('INTAKE_MODEL', INTAKE_MODEL_DEFAULT) +
+               ' — คิดเงินตามจริง ราว ๆ 1 บาท/รูป');
+  } else {
+    Logger.log('  ปิดการอ่านรูปไว้ (INTAKE_IMAGE_MODE = off)');
+  }
+}
+
+/** ลอง OCR ฟรีกับรูปในไดรฟ์ 1 ไฟล์ — ใส่ File ID ของรูปบิลที่อัปโหลดไว้ */
+function testIntakeOcr(fileId) {
+  if (!fileId) { Logger.log('ใส่ File ID ของรูปด้วย เช่น testIntakeOcr(\'1AbC...\')'); return; }
+  var read = intakeOcrImage_(DriveApp.getFileById(fileId).getBlob());
+  Logger.log('อ่านได้ ' + read.items.length + ' รายการ  (' + read.note + ')');
+  var names = intakeItemNames_();
+  read.items.forEach(function (it) {
+    var hit = intakeMatchItem_(it.raw, names);
+    Logger.log('  • ' + hit.name + (hit.matched ? '' : ' (ไม่ตรงชีต)') + '  |  ' + intakeAmountText_(it));
+  });
 }
 
 /** ลองแยกข้อความโดยไม่ต้องส่งไลน์จริง — ดูผลใน บันทึกการดำเนินการ */
