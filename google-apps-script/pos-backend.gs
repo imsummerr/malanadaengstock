@@ -1639,6 +1639,11 @@ var PRICE_LIST = {
   'กระเจี๊ยบ': 10,
   'สาหร่ายกระปุก': 10,
   'สาหร่ายแผ่น': 20,
+  // 3 ตัวนี้เจ้าของบอกว่ายังขายอยู่ แต่ไม่ได้อยู่ในรายการราคาที่ให้มา
+  // ตั้ง 10 ไว้ก่อนตามราคาส่วนใหญ่ ถ้าไม่ใช่ให้แก้ในชีตได้เลย
+  'ฟองเต้าหู้ม้วน': 10,
+  'ควิซ': 10,
+  'เห็ดชิเมจิ': 10,
   'เส้นมันเทศ': 10,
   'เส้นอุด้ง': 10,
   'วุ้นเส้น': 10,
@@ -1737,7 +1742,8 @@ var ITEM_RENAME = {
   'สาหร่าย':          'สาหร่ายกระปุก',
   'วุ้นเส้นหม่าล่า':    'วุ้นเส้น',
   'ไส้กรอกพันเบคอน':  'เบคอนพันไส้กรอก',
-  'ข้าวโพด':          'ข้าวโพดฝักใหญ่'
+  'ข้าวโพด':          'ข้าวโพดฝักใหญ่',
+  'ฟองเต้าหู้':        'ฟองเต้าหู้ม้วน'
 };
 
 /** มาม่ามีหลายแบบ ราคาต่างกัน ต้องแยกเป็นคนละรายการถึงจะคิดของหายได้ */
@@ -1864,7 +1870,116 @@ function splitMamaItems() {
 
 /** รันทีเดียวจบ: รวมชื่อ → แยกมาม่า → ใส่ราคา */
 function fixItemList() {
-  mergeItemNames();
-  splitMamaItems();
-  applyPriceList();
+  mergeItemNames();            // รวมชื่อที่เรียกไม่ตรงกัน
+  removeDiscontinuedItems();   // ลบของที่เลิกขาย
+  splitMamaItems();            // แยกมาม่าตามราคา
+  applyPriceList();            // ใส่ราคา
+  applyItemUnits();            // ตั้งหน่วยขาย — ต้องมาหลังใส่ราคา
+}
+
+/* ───────────── ตั้งหน่วยขายให้ตรงกับที่ขายจริง ───────────── */
+
+/**
+ * ของที่ไม่ได้ขายเป็นไม้ ต้องตั้งหน่วยให้ตรงกับที่ขายจริง
+ * ไม่งั้นราคาจะคูณผิดตอนคิดของหาย เช่น ตั้งหน่วยเป็นกรัมแล้วใส่ราคา 10
+ * ระบบจะคิดเป็น 10 บาทต่อกรัม → ผักกาดขาว 1 ถุง (100 กรัม) = 1,000 บาท
+ *
+ * perPack = หน่วยย่อยต่อ 1 แพ็ค  (ปกติ 1 คือไม่ได้แพ็ครวม)
+ */
+var ITEM_UNITS = {
+  // ผักจัดเซ็ตใส่ถุง ขายถุงละ 10
+  'ผักกาดขาว':     { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'ผักบุ้ง':        { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'กวางตุ้ง':       { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'เห็ดเข็มทอง':    { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+
+  // เส้นมัดขาย มัดละ 10
+  'เส้นมันเทศ':     { sub: 'มัด', pack: 'แพ็ค', perPack: 1, note: 'มัดละ 10 บาท' },
+  'เส้นอุด้ง':      { sub: 'มัด', pack: 'แพ็ค', perPack: 1, note: 'มัดละ 10 บาท' },
+
+  // ตักจากกระปุก ที่ละ 5 กรัม
+  'สาหร่ายกระปุก':  { sub: 'ที่',  pack: 'กระปุก', perPack: 1, note: 'ที่ละ 5 กรัม' },
+
+  // 1 ฝักผ่าได้ 2 อัน ขายอันละ 10 → นับเป็นอัน แพ็คคือฝัก
+  'ข้าวโพดฝักใหญ่': { sub: 'อัน', pack: 'ฝัก',  perPack: 2, note: '1 ฝักแบ่ง 2 อัน อันละ 10 บาท' }
+};
+
+/** ของที่เลิกขายแล้ว — ลบออกจากชีตรายการสินค้า */
+var ITEM_DISCONTINUED = ['เนื้อแดง', 'หมึก', 'รากบัว', 'กะหล่ำ'];
+
+/**
+ * ตั้งหน่วยขายตาม ITEM_UNITS
+ * เขียนทับช่องหน่วยเดิม เพราะของเดิมตั้งเป็นกรัมไว้ซึ่งทำให้ราคาเพี้ยน
+ * ช่องหมายเหตุจะเขียนทับเฉพาะตอนที่ยังว่างหรือเป็นข้อความน้ำหนักเดิม
+ */
+function applyItemUnits() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+  var last = sh.getLastRow();
+  if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
+
+  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  var done = [], missing = [];
+
+  Object.keys(ITEM_UNITS).forEach(function (name) {
+    var u = ITEM_UNITS[name];
+    var idx = -1;
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][map['สินค้า']] || '').trim() === name) { idx = i; break; }
+    }
+    if (idx === -1) { missing.push(name); return; }
+
+    var row = idx + 2;
+    sh.getRange(row, map['หน่วยย่อย'] + 1).setValue(u.sub);
+    sh.getRange(row, map['หน่วยแพ็ค'] + 1).setValue(u.pack);
+    sh.getRange(row, map['หน่วยย่อยต่อแพ็ค'] + 1).setValue(u.perPack);
+    var oldNote = String(vals[idx][map['หมายเหตุ']] || '').trim();
+    if (!oldNote || /กรัม|ต่อไม้/.test(oldNote)) {
+      sh.getRange(row, map['หมายเหตุ'] + 1).setValue(u.note);
+    }
+    done.push(name + ' → ' + u.sub + (u.perPack > 1 ? ' (1 ' + u.pack + ' = ' + u.perPack + ' ' + u.sub + ')' : ''));
+  });
+
+  Logger.log('ตั้งหน่วยแล้ว ' + done.length + ' รายการ:\n  ' + done.join('\n  '));
+  if (missing.length) Logger.log('ไม่เจอในชีต: ' + missing.join(', '));
+}
+
+/**
+ * ลบสินค้าที่เลิกขายออกจากชีตรายการสินค้า
+ * ไม่แตะชีตประวัติ ของเก่าที่เคยลงไว้ยังอยู่ครบ ไว้ดูย้อนหลังได้
+ */
+function removeDiscontinuedItems() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+  var last = sh.getLastRow();
+  if (last < 2) return;
+
+  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  var drop = [], names = [];
+  vals.forEach(function (r, i) {
+    var n = String(r[map['สินค้า']] || '').trim();
+    if (ITEM_DISCONTINUED.indexOf(n) !== -1) { drop.push(i + 2); names.push(n); }
+  });
+  drop.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+
+  // เตือนถ้าของที่ลบยังมีประวัติค้างอยู่
+  var withHistory = [];
+  historySheets_().forEach(function (sname) {
+    var h = ss.getSheetByName(sname);
+    if (!h || h.getLastRow() < 2) return;
+    var hmap = ensureCols_(h, MOVE_COLS);
+    h.getRange(2, hmap['รายการ'] + 1, h.getLastRow() - 1, 1).getValues().forEach(function (r) {
+      var n = String(r[0] || '').trim();
+      if (ITEM_DISCONTINUED.indexOf(n) !== -1 && withHistory.indexOf(n) === -1) withHistory.push(n);
+    });
+  });
+
+  Logger.log('ลบสินค้าที่เลิกขาย ' + names.length + ' รายการ' + (names.length ? ': ' + names.join(', ') : ''));
+  if (withHistory.length) {
+    Logger.log('หมายเหตุ: ' + withHistory.join(', ') + ' ยังมีประวัติเก่าค้างในชีตประวัติ\n' +
+               '  ไม่ได้ลบให้ เก็บไว้ดูย้อนหลังได้ และไม่กระทบยอดคงเหลือ');
+  }
 }
