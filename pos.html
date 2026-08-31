@@ -297,6 +297,8 @@
           style="padding:13px 8px;font-size:14.5px;">🛵 ออเดอร์เดลิเวอรี่</button>
         <button onclick="openBills()" class="key btn-ghost" id="btn-bills"
           style="padding:13px 8px;font-size:14.5px;">🧾 บิลที่ขายไป</button>
+        <button onclick="openHeld()" class="key btn-ghost hidden" id="btn-held"
+          style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">⏸️ บิลที่พักไว้</button>
       </div>
 
       <div class="sec-head">
@@ -335,6 +337,9 @@
           <span id="sum-discount-label">ส่วนลด</span><span class="digits" id="sum-discount">-0 ฿</span>
         </div>
         <p id="pay-need" class="pay-need hidden"></p>
+        <button onclick="holdOrder()" id="btn-hold" class="key btn-ghost hidden"
+          style="width:100%;padding:11px;font-size:13.5px;margin-bottom:10px;">
+          ⏸️ พักบิลนี้ไว้ก่อน — ค่อยมาคิดเงินทีหลัง</button>
         <div class="total-row">
           <div>
             <div class="total-label">ยอดสุทธิ</div>
@@ -416,6 +421,23 @@
 
       <div id="bills-status" class="note" style="text-align:center;padding:18px 0;">กำลังโหลด…</div>
       <div id="bills-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ บิลที่พักไว้ — ลูกค้าเลือกของแล้วแต่ยังไม่จ่าย ═══ -->
+  <div id="screen-held" class="screen">
+    <div class="panel fade-in" style="max-width:620px;">
+      <button onclick="showScreen('cart')" class="key back">← กลับหน้าคิดเงิน</button>
+
+      <div class="sec-head">
+        <h2>⏸️ บิลที่พักไว้</h2>
+        <div class="note" id="held-count">0 บิล</div>
+      </div>
+      <p class="note" style="margin:-4px 0 14px;">
+        บิลที่ลูกค้าเลือกของไว้แล้วแต่ยังไม่จ่ายเงิน กดที่บิลเพื่อเปิดขึ้นมาคิดเงินต่อ
+      </p>
+
+      <div id="held-list"></div>
     </div>
   </div>
 
@@ -1146,6 +1168,8 @@ function refresh() {
     needBox.classList.add('hidden');
   }
   document.getElementById('btn-pay').disabled = t.total <= 0 || missing.length > 0;
+  // พักบิลได้ตั้งแต่เลือกของแล้ว ไม่ต้องรอเลือกน้ำซุป/ความเผ็ด/น้ำจิ้มครบ
+  document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0);
 }
 
 function clearOrder() {
@@ -1157,6 +1181,7 @@ function clearOrder() {
 
 function newOrder() {
   clearOrder();
+  resumedHeldId = null;
   order.soup = ''; order.spice = ''; order.sauce = ''; order.method = '';
   refreshChips();
   clearInterval(countdownTimer);
@@ -1630,6 +1655,166 @@ function goQR() {
   showScreen('qr');
 }
 
+
+/* ══════════════════════════════════════════════════════════
+   บิลที่พักไว้ — ลูกค้าเลือกของแล้ว แต่ยังไม่เลือกน้ำจิ้ม / ยังไม่จ่าย
+   เก็บในเครื่อง ไม่ส่งขึ้น Sheets เพราะยังไม่ใช่ยอดขาย
+   ════════════════════════════════════════════════════════════ */
+const HELD_KEY = 'pos_held_orders';
+const HELD_MAX = 40;
+let resumedHeldId = null;   // บิลที่พักไว้ซึ่งกำลังเปิดคิดเงินอยู่
+
+function getHeld() {
+  try {
+    const list = JSON.parse(localStorage.getItem(HELD_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+}
+
+function setHeld(list) {
+  try { localStorage.setItem(HELD_KEY, JSON.stringify(list.slice(0, HELD_MAX))); } catch (e) {}
+  refreshHeldButton();
+}
+
+function refreshHeldButton() {
+  const n = getHeld().length;
+  const btn = document.getElementById('btn-held');
+  if (!btn) return;
+  btn.classList.toggle('hidden', n === 0);
+  btn.textContent = '⏸️ บิลที่พักไว้ (' + n + ')';
+}
+
+/** ถ่ายรูปตะกร้าปัจจุบันเก็บไว้ — เก็บทั้งที่เลือกแล้วและที่ยังไม่ได้เลือก */
+function snapshotOrder() {
+  const t = totals();
+  const now = new Date();
+  return {
+    id: 'H' + now.getTime() + Math.floor(Math.random() * 1000),
+    at: now.getTime(),
+    time: pad2(now.getHours()) + ':' + pad2(now.getMinutes()),
+    staff: auth.name || '',
+    branch: auth.branch || '',
+    sticks: Object.assign({}, order.sticks),
+    mama: Object.assign({}, order.mama),
+    extras: Object.assign({}, order.extras),
+    soup: order.soup, spice: order.spice, sauce: order.sauce,
+    stickCount: t.stickCount, mamaCount: t.mamaCount, extraCount: t.extraCount,
+    total: t.total
+  };
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+/** พักบิลปัจจุบัน แล้วเริ่มออเดอร์ใหม่ */
+function holdOrder(silent) {
+  if (totals().total <= 0) { if (!silent) toast('ยังไม่ได้เลือกของ'); return false; }
+  const snap = snapshotOrder();
+  const list = getHeld();
+  // ถ้ากำลังแก้บิลที่พักไว้อยู่ ให้ทับใบเดิม ไม่ใช่เพิ่มใบใหม่
+  const at = resumedHeldId ? list.findIndex(h => h.id === resumedHeldId) : -1;
+  if (at >= 0) { snap.id = resumedHeldId; list[at] = snap; }
+  else list.unshift(snap);
+  setHeld(list);
+  resumedHeldId = null;
+  newOrder();
+  if (!silent) toast('พักบิลไว้แล้ว — กด "บิลที่พักไว้" เพื่อเปิดขึ้นมาคิดเงินต่อ');
+  return true;
+}
+
+function openHeld() { renderHeld(); showScreen('held'); }
+
+function heldSummary(h) {
+  const parts = [];
+  if (h.stickCount) parts.push(h.stickCount + ' ไม้');
+  if (h.mamaCount) parts.push('มาม่า ' + h.mamaCount);
+  if (h.extraCount) parts.push('ของอื่น ' + h.extraCount);
+  return parts.join(' · ') || 'ยังไม่ได้เลือกของ';
+}
+
+function renderHeld() {
+  const list = getHeld();
+  document.getElementById('held-count').textContent = list.length + ' บิล';
+  const box = document.getElementById('held-list');
+  if (!list.length) {
+    box.innerHTML = '<div class="note" style="text-align:center;padding:26px 0;">' +
+      'ยังไม่มีบิลที่พักไว้<br>เลือกของในหน้าคิดเงินแล้วกด "⏸️ พักบิลนี้ไว้ก่อน"</div>';
+    return;
+  }
+  box.innerHTML = list.map(h => {
+    const chosen = [h.soup, h.spice, h.sauce].filter(Boolean).join(' · ');
+    const waiting = REQUIRED.filter(r => !h[r.field]).map(r => r.label);
+    return '<div class="bill bill-pend">' +
+      '<div class="bill-head" style="cursor:default;">' +
+        '<div style="min-width:0;flex:1;">' +
+          '<div class="bill-no">⏸️ พักไว้ ' + escapeText(h.time) +
+            (h.staff ? ' · ' + escapeText(h.staff) : '') + '</div>' +
+          '<div class="bill-time">' + escapeText(heldSummary(h)) + '</div>' +
+          (chosen ? '<div class="bill-time">' + escapeText(chosen) + '</div>' : '') +
+          (waiting.length
+            ? '<div class="bill-time" style="color:#b3121f;">ยังไม่ได้เลือก ' +
+              escapeText(waiting.join(' · ')) + '</div>'
+            : '') +
+        '</div>' +
+        '<div class="digits" style="font-weight:800;white-space:nowrap;">' +
+          h.total.toLocaleString('th-TH') + ' ฿</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;padding:0 15px 13px;">' +
+        '<button onclick="resumeHeld(\'' + h.id + '\')" class="key btn-red"' +
+          ' style="flex:1;padding:11px;font-size:14px;">เปิดคิดเงินต่อ →</button>' +
+        '<button onclick="dropHeld(\'' + h.id + '\')" class="key btn-ghost"' +
+          ' style="padding:11px 14px;font-size:14px;">ลบ</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+/** เปิดบิลที่พักไว้กลับขึ้นมาคิดเงินต่อ */
+function resumeHeld(id) {
+  const list = getHeld();
+  const h = list.find(x => x.id === id);
+  if (!h) { renderHeld(); return; }
+
+  // ของที่ค้างอยู่ในตะกร้าตอนนี้ ห้ามหาย — พักเก็บไว้ให้ก่อน
+  let parked = false;
+  if (totals().total > 0) parked = holdOrder(true);
+
+  clearOrder();
+  STICK_PRICES.forEach(p => { order.sticks[p] = Number(h.sticks[p]) || 0; });
+  MAMA_PRICES.forEach(p => { order.mama[p] = Number(h.mama[p]) || 0; });
+  EXTRAS.forEach((e, i) => { order.extras[i] = Number((h.extras || {})[i]) || 0; });
+  STICK_PRICES.forEach(p => { document.getElementById('qty-stick-' + p).value = order.sticks[p]; });
+  MAMA_PRICES.forEach(p => { document.getElementById('qty-mama-' + p).value = order.mama[p]; });
+  EXTRAS.forEach((e, i) => { document.getElementById('qty-extra-' + i).value = order.extras[i]; });
+
+  order.soup = h.soup || ''; order.spice = h.spice || ''; order.sauce = h.sauce || '';
+  order.method = '';
+  resumedHeldId = h.id;
+
+  refreshChips();
+  refresh();
+  showScreen('cart');
+
+  const waiting = missingChoices();
+  toast(parked
+    ? 'พักบิลที่ค้างอยู่ให้แล้ว — เปิดบิลนี้ขึ้นมาแทน'
+    : (waiting.length ? 'เปิดบิลขึ้นมาแล้ว — ยังไม่ได้เลือก ' + waiting.join(' · ')
+                      : 'เปิดบิลขึ้นมาแล้ว — คิดเงินได้เลย'));
+}
+
+function dropHeld(id) {
+  setHeld(getHeld().filter(x => x.id !== id));
+  if (resumedHeldId === id) resumedHeldId = null;
+  renderHeld();
+  toast('ลบบิลที่พักไว้แล้ว');
+}
+
+/** คิดเงินจบแล้ว — เอาออกจากรายการบิลที่พักไว้ */
+function clearResumedHeld() {
+  if (!resumedHeldId) return;
+  setHeld(getHeld().filter(x => x.id !== resumedHeldId));
+  resumedHeldId = null;
+}
+
 /* ════════════════════════════════════════════════════════════
    บันทึกการขาย
    ════════════════════════════════════════════════════════════ */
@@ -1655,6 +1840,8 @@ function confirmPaid() {
     soup: order.soup, spice: order.spice, method: order.method,
     sauce: order.sauce, sauceCount: t.sauceCount
   };
+
+  clearResumedHeld();   // บิลนี้คิดเงินไปแล้ว ไม่ต้องค้างอยู่ในรายการที่พักไว้อีก
 
   document.getElementById('success-total').textContent = t.total.toLocaleString('th-TH') + ' ฿';
   document.getElementById('success-method').textContent = order.method;
@@ -2243,6 +2430,7 @@ function toast(msg) {
 renderStickGrid();
 renderMamaGrid();
 renderExtraGrid();
+refreshHeldButton();
 renderChips('soup-chips', SOUPS, 'soup');
 renderChips('spice-chips', SPICES, 'spice');
 renderChips('sauce-chips', SAUCES, 'sauce');
