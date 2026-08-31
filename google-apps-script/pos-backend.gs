@@ -16,6 +16,7 @@ var SHEET_ORDERS   = 'POS_Orders';   // ข้อมูลการขายร�
 var SHEET_USERS    = 'ผู้ใช้งาน';     // username / password / ชื่อ / สาขา
 var SHEET_SESSIONS = 'Sessions';     // token ที่ยัง login อยู่
 var SHEET_DELIVERY = 'POS_Delivery'; // ออเดอร์เดลิเวอรี่ (แพลตฟอร์มเก็บเงินให้แล้ว)
+var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่ายออกจากร้าน เช่น ค่าที่ ค่าไม้เสียบ
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -34,6 +35,13 @@ var DELIVERY_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน',
   'ของเพิ่ม', 'ข้อมูล', 'order_id'
 ];
+
+var EXPENSE_HEADERS = [
+  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id'
+];
+
+// ประเภทค่าใช้จ่ายที่เลือกได้ ต้องตรงกับ EXPENSE_TYPES ใน pos.html
+var EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
 
 var ORDER_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน',
@@ -99,6 +107,15 @@ function setupPos() {
     delivery.setFrozenRows(1);
   }
 
+  var expense = getOrCreateSheet_(ss, SHEET_EXPENSE);
+  ensureHeaders_(expense, EXPENSE_HEADERS);
+  if (expense.getLastRow() === 0) {
+    expense.appendRow(EXPENSE_HEADERS);
+    expense.getRange(1, 1, 1, EXPENSE_HEADERS.length)
+      .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+    expense.setFrozenRows(1);
+  }
+
   var users = getOrCreateSheet_(ss, SHEET_USERS);
   if (users.getLastRow() === 0) {
     users.appendRow(['username', 'password', 'ชื่อ', 'สาขา', 'ใช้งาน', 'สิทธิ์']);
@@ -144,6 +161,7 @@ function doPost(e) {
       case 'posOrder':    return json_(handleOrder_(body));
       case 'posDelivery': return json_(handleDelivery_(body));
       case 'posBills':    return json_(handleBills_(body));
+      case 'posExpense':  return json_(handleExpense_(body));
       case 'stockIn':     return json_(handleStockIn_(body));
       case 'stockToShop': return json_(handleStockToShop_(body));
       case 'stockWaste':  return json_(handleStockWaste_(body));
@@ -388,6 +406,49 @@ function handleDelivery_(body) {
   }
 }
 
+/**
+ * บันทึกเงินสดที่จ่ายออกจากร้าน เช่น ค่าที่ ค่าไม้เสียบ
+ * เก็บแยกชีต ไม่ปนกับยอดขาย แล้วค่อยเอาไปหักตอนสรุปเงินสดปลายวัน
+ */
+function handleExpense_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+
+  var e = body.expense || {};
+  var amount = num_(e.amount);
+  if (!(amount > 0)) return { success: false, message: 'จำนวนเงินต้องมากกว่า 0' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
+    if (!sheet) return { success: false, message: 'ไม่พบชีต ' + SHEET_EXPENSE + ' — รัน setupPos ก่อน' };
+    ensureHeaders_(sheet, EXPENSE_HEADERS);
+
+    var existing = findRowByOrderId_(sheet, e.expenseId, EXPENSE_HEADERS);
+    if (existing) return { success: true, orderNo: existing, duplicated: true };
+
+    var now = new Date();
+    var dateStr = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
+    var no = nextOrderNo_(sheet, dateStr, 'E');
+
+    sheet.appendRow([
+      dateStr,
+      Utilities.formatDate(now, TZ, 'HH:mm:ss'),
+      no,
+      e.branch || session.branch || '',
+      e.staff || session.name || '',
+      e.type || 'อื่น ๆ',
+      e.note || '',
+      amount,
+      e.expenseId || ''
+    ]);
+    return { success: true, orderNo: no };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** เลขที่ออเดอร์ = วันที่ + ลำดับของวันนั้น เช่น 20260823-014 */
 function nextOrderNo_(sheet, dateStr, prefix) {
   var last = sheet.getLastRow();
@@ -428,6 +489,7 @@ function handleStats_(p) {
   if (!sheet || sheet.getLastRow() < 2) {
     var only = emptyStats_();
     addDeliveryStats_(only, p.from || '0000-01-01', p.to || '9999-12-31', p.branch || '');
+    addExpenseStats_(only, p.from || '0000-01-01', p.to || '9999-12-31', p.branch || '');
     return { success: true, data: only };
   }
 
@@ -473,6 +535,7 @@ function handleStats_(p) {
   }
 
   addDeliveryStats_(stats, from, to, branch);
+  addExpenseStats_(stats, from, to, branch);
 
   stats.avgTicket = stats.orders ? Math.round(stats.revenue / stats.orders * 100) / 100 : 0;
   stats.byDate = Object.keys(byDate).sort().map(function (d) { return byDate[d]; });
@@ -504,6 +567,30 @@ function addDeliveryStats_(stats, from, to, branch) {
       });
     } catch (e) {}
   }
+}
+
+/** สรุปเงินสดที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ) */
+function addExpenseStats_(stats, from, to, branch) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
+  if (!sheet || sheet.getLastRow() < 2) { stats.netCash = stats.revenue || 0; return; }
+
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), readWidth_(sheet, EXPENSE_HEADERS)).getDisplayValues();
+  var idx = {};
+  values[0].forEach(function (h, i) { idx[h] = i; });
+
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    var date = normDate_(r[idx['วันที่']]);
+    if (!date || date < from || date > to) continue;
+    if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
+
+    var amt = num_(r[idx['จำนวนเงิน']]);
+    stats.expenseTotal += amt;
+    stats.expenseCount++;
+    addTo_(stats.expenseByType, r[idx['ประเภท']] || 'อื่น ๆ', amt);
+  }
+  // เงินสดสุทธิ = ยอดขายหน้าร้าน ลบเงินที่จ่ายออกไป
+  stats.netCash = (stats.revenue || 0) - stats.expenseTotal;
 }
 
 /**
@@ -665,6 +752,29 @@ function handleBills_(p) {
     }
   }
 
+  // ── เงินสดที่จ่ายออกจากร้านวันเดียวกัน — เอาไปหักตอนนับเงินปลายวัน ──
+  var expSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
+  var expenses = [], expenseTotal = 0;
+  if (expSheet) {
+    var ex = rowsOfDate_(expSheet, readWidth_(expSheet, EXPENSE_HEADERS), date);
+    var xi = ex.idx;
+    for (var m = 0; m < ex.rows.length; m++) {
+      var x = ex.rows[m];
+      if (branch && !sameBranch_(x[xi['สาขา']], branch)) continue;
+      var amt = num_(x[xi['จำนวนเงิน']]);
+      expenseTotal += amt;
+      expenses.push({
+        no:     x[xi['เลขที่']],
+        time:   x[xi['เวลา']],
+        staff:  x[xi['พนักงาน']],
+        type:   x[xi['ประเภท']],
+        note:   x[xi['รายละเอียด']],
+        amount: amt
+      });
+    }
+    expenses.sort(function (a, b) { return String(b.time).localeCompare(String(a.time)); });
+  }
+
   // เรียงตามเวลา บิลล่าสุดอยู่บนสุด (คละบิลหน้าร้านกับเดลิเวอรี่)
   // เวลาชนกันได้ถ้าขายติด ๆ กันในวินาทีเดียว จึงตัดสินด้วยเลขที่ออเดอร์ต่อ
   bills.sort(function (a, b) {
@@ -677,6 +787,8 @@ function handleBills_(p) {
     date: date, branch: branch,
     count: posCount, revenue: sum,
     deliveryCount: dlvCount, deliveryItems: dlvItems,
+    expenses: expenses, expenseTotal: expenseTotal,
+    netCash: sum - expenseTotal,
     bills: bills
   } };
 }
@@ -685,6 +797,7 @@ function emptyStats_() {
   return {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
+    expenseTotal: 0, expenseCount: 0, expenseByType: {}, netCash: 0,
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };
@@ -743,7 +856,8 @@ var HISTORY_SHEETS = {
   weekly:   'เช็คสต็อกรายสัปดาห์',
   waste:    'ของเสีย',
   sales:    'ยอดขาย',
-  delivery: SHEET_DELIVERY   // ออเดอร์เดลิเวอรี่ที่ POS บันทึกไว้ — ใช้หักตอนคำนวณของหาย
+  delivery: SHEET_DELIVERY,  // ออเดอร์เดลิเวอรี่ที่ POS บันทึกไว้ — ใช้หักตอนคำนวณของหาย
+  expense:  SHEET_EXPENSE    // เงินสดที่จ่ายออกจากร้าน
 };
 
 /**

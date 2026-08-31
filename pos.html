@@ -297,6 +297,8 @@
           style="padding:13px 8px;font-size:14.5px;">🛵 ออเดอร์เดลิเวอรี่</button>
         <button onclick="openBills()" class="key btn-ghost" id="btn-bills"
           style="padding:13px 8px;font-size:14.5px;">🧾 บิลที่ขายไป</button>
+        <button onclick="openExpense()" class="key btn-ghost" id="btn-expense"
+          style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">💸 บันทึกค่าใช้จ่าย</button>
         <button onclick="openHeld()" class="key btn-ghost hidden" id="btn-held"
           style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">⏸️ บิลที่พักไว้</button>
       </div>
@@ -417,10 +419,55 @@
         <div class="cap">ยอดขายวันนี้</div>
         <div class="big digits" id="bills-total">0<small> ฿</small></div>
         <div class="meta" id="bills-count">0 บิล</div>
+        <div id="bills-cash" class="hidden"
+             style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.18);">
+          <div class="meta" id="bills-expense">ค่าใช้จ่าย 0 ฿</div>
+          <div class="meta" id="bills-net" style="font-weight:800;">เงินสดคงเหลือ 0 ฿</div>
+        </div>
       </div>
 
       <div id="bills-status" class="note" style="text-align:center;padding:18px 0;">กำลังโหลด…</div>
       <div id="bills-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ ค่าใช้จ่าย — เงินสดที่จ่ายออกจากร้าน ═══ -->
+  <div id="screen-expense" class="screen">
+    <div class="panel fade-in" style="max-width:620px;">
+      <button onclick="showScreen('cart')" class="key back">← กลับหน้าคิดเงิน</button>
+
+      <div class="sec-head">
+        <h2>💸 บันทึกค่าใช้จ่าย</h2>
+        <div class="note">วันนี้จ่ายไป <b id="exp-today" class="digits">0</b> ฿</div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:-4px 0 14px;">
+        เงินสดที่จ่ายออกจากร้าน เช่น ค่าที่ ค่าไม้เสียบ — บันทึกไว้จะได้รู้ว่าปลายวันเหลือเงินเท่าไหร่
+      </p>
+
+      <div class="card opt-card">
+        <h3 id="head-exptype">📌 ประเภท <span class="req">* ต้องเลือก</span></h3>
+        <div class="chips" id="exp-type-chips"></div>
+
+        <h3 style="margin-top:16px;">💵 จำนวนเงิน</h3>
+        <input id="exp-amount" class="login-input digits" type="number" min="0" step="1" inputmode="decimal"
+               placeholder="0" onfocus="this.select()" oninput="refreshExpense()"
+               style="width:100%;padding:14px;font-size:20px;font-weight:800;text-align:center;">
+
+        <h3 style="margin-top:16px;">📝 รายละเอียด <span class="note">(ไม่ใส่ก็ได้)</span></h3>
+        <input id="exp-note" class="login-input" type="text" maxlength="80"
+               placeholder="เช่น ค่าที่เดือนนี้ / ไม้เสียบ 2 มัด"
+               style="width:100%;padding:12px;font-size:14px;">
+      </div>
+
+      <button onclick="saveExpense()" id="btn-save-expense" class="key btn-red"
+        style="width:100%;padding:16px;font-size:16.5px;margin-top:16px;" disabled>✓ บันทึกค่าใช้จ่าย</button>
+      <p class="note" style="text-align:center;">ไม่นับเป็นยอดขาย เก็บแยกไว้หักตอนนับเงินปลายวัน</p>
+
+      <div class="sec-head" style="margin-top:22px;">
+        <h2>📋 ที่บันทึกไว้วันนี้</h2>
+        <div class="note" id="exp-count">0 รายการ</div>
+      </div>
+      <div id="exp-list"></div>
     </div>
   </div>
 
@@ -981,6 +1028,8 @@ const DISCOUNT = { perSticks: 10, baht: 5 };
 const SOUPS  = ['น้ำใส', 'กระดูกหมู', 'ดั้งเดิม', 'กระดูกหมูหม่าล่า', 'หม่าล่านม', 'น้ำดำ', 'น้ำดำหม่าล่า', 'ไม่เอาซุป'];
 const SPICES = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดกลาง', 'เผ็ดมาก', 'เผ็ดพิเศษ'];
 const SAUCES = ['น้ำจิ้มงา', 'น้ำจิ้มสุกี้', 'ไม่เอาน้ำจิ้ม'];
+// ประเภทเงินสดที่จ่ายออกจากร้าน ต้องตรงกับ EXPENSE_TYPES ใน pos-backend.gs
+const EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
 
 // เมนูเดลิเวอรี่ — เพิ่มเองในแอปได้ (ปุ่ม "เพิ่มเมนู") ค่าที่เพิ่มจะจำไว้ในเครื่อง
 const DEFAULT_DELIVERY_MENU = ['อุด้ง', 'หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวม'];
@@ -1207,6 +1256,13 @@ function billsStatus(msg) {
 /** เก็บผลล่าสุดไว้ในเครื่อง เปิดหน้ามาจะได้เห็นทันทีระหว่างรอของใหม่ */
 function billsCacheKey(date) { return 'pos_bills_' + (auth.branch || '') + '_' + date; }
 
+function billsCashKey(date) { return 'pos_cash_' + (auth.branch || '') + '_' + date; }
+
+function readBillsCash(date) {
+  try { return JSON.parse(sessionStorage.getItem(billsCashKey(date)) || 'null'); }
+  catch (e) { return null; }
+}
+
 function readBillsCache(date) {
   try { return JSON.parse(sessionStorage.getItem(billsCacheKey(date)) || 'null'); }
   catch (e) { return null; }
@@ -1247,13 +1303,15 @@ async function loadBills() {
 
   // โชว์ของที่เคยโหลดไว้ก่อนเลย แล้วค่อยไปดึงของใหม่มาทับ
   const cached = readBillsCache(date);
-  if (cached) { renderBills(cached, date); billsStatus('กำลังอัปเดต…'); }
+  if (cached) { renderBills(cached, date, readBillsCash(date)); billsStatus('กำลังอัปเดต…'); }
   else { document.getElementById('bills-list').innerHTML = ''; billsStatus('กำลังโหลด…'); }
 
   try {
     const json = await fetchBills(date);
     const bills = json.data.bills || [];
-    renderBills(bills, date);
+    try { sessionStorage.setItem(billsCashKey(date), JSON.stringify({
+      expenses: json.data.expenses || [], expenseTotal: json.data.expenseTotal || 0 })); } catch (e) {}
+    renderBills(bills, date, json.data);
     // หลังบ้านรุ่นเก่าไม่ส่ง deliveryCount มา — เดลิเวอรี่จะไม่ขึ้นในรายการ บอกให้รู้ว่าต้อง Deploy ใหม่
     if (json.data.deliveryCount === undefined) {
       document.getElementById('bills-list').insertAdjacentHTML('afterbegin',
@@ -1263,7 +1321,7 @@ async function loadBills() {
         '</div>');
     }
   } catch (e) {
-    if (cached) { renderBills(cached, date); toast('อัปเดตไม่สำเร็จ — แสดงข้อมูลล่าสุดที่โหลดไว้'); }
+    if (cached) { renderBills(cached, date, readBillsCash(date)); toast('อัปเดตไม่สำเร็จ — แสดงข้อมูลล่าสุดที่โหลดไว้'); }
     else { billsStatus('โหลดไม่สำเร็จ — ' + e.message); renderBills(null, date); }
   }
 }
@@ -1286,7 +1344,7 @@ function pendingBillsOf(date) {
     }));
 }
 
-function renderBills(bills, date) {
+function renderBills(bills, date, cash) {
   const pend = pendingBillsOf(date);
   const all = (bills || []).concat(pend);
 
@@ -1298,6 +1356,21 @@ function renderBills(bills, date) {
     + (dlv.length ? ' · 🛵 เดลิเวอรี่ ' + dlv.length + ' ออเดอร์' : '')
     + (pend.length ? ' · ' + pend.length + ' บิลยังรอส่ง' : '');
   document.getElementById('bills-summary').classList.toggle('hidden', bills === null && !all.length);
+
+  // เงินสดที่จ่ายออกจากร้านวันนี้ — เอามาหักให้เห็นว่าปลายวันควรเหลือเท่าไหร่
+  const spent = (cash && Number(cash.expenseTotal)) || 0;
+  const cashBox = document.getElementById('bills-cash');
+  cashBox.classList.toggle('hidden', spent <= 0);
+  if (spent > 0) {
+    const posOnly = all.filter(b => b.kind !== 'delivery')
+                       .reduce((s2, b) => s2 + (Number(b.total) || 0), 0);
+    document.getElementById('bills-expense').textContent =
+      'ค่าใช้จ่าย ' + spent.toLocaleString('th-TH') + ' ฿'
+      + (cash.expenses && cash.expenses.length
+          ? ' (' + cash.expenses.length + ' รายการ)' : '');
+    document.getElementById('bills-net').textContent =
+      'เงินสดคงเหลือ ' + (posOnly - spent).toLocaleString('th-TH') + ' ฿';
+  }
 
   if (!all.length) {
     billsStatus(bills === null ? 'โหลดไม่สำเร็จ และไม่มีบิลค้างในเครื่อง' : 'วันนี้ยังไม่มีบิล');
@@ -1656,6 +1729,146 @@ function goQR() {
 }
 
 
+
+/* ══════════════════════════════════════════════════════════
+   ค่าใช้จ่าย — เงินสดที่จ่ายออกจากร้าน เช่น ค่าที่ ค่าไม้เสียบ
+   เก็บแยกจากยอดขาย เอาไว้หักตอนนับเงินปลายวัน
+   ════════════════════════════════════════════════════════════ */
+let expenseType = '';
+let todayExpenses = [];   // ที่บันทึกไว้วันนี้ (รวมที่ยังค้างส่ง)
+
+function renderExpenseChips() {
+  document.getElementById('exp-type-chips').innerHTML = EXPENSE_TYPES.map(t =>
+    '<button onclick="pickExpenseType(\'' + t + '\')" data-opt="' + t +
+    '" class="chip key">' + t + '</button>').join('');
+}
+
+function pickExpenseType(t) {
+  expenseType = t;
+  document.querySelectorAll('#exp-type-chips .chip')
+    .forEach(el => el.classList.toggle('on', el.dataset.opt === t));
+  refreshExpense();
+}
+
+function expenseAmount() {
+  const v = parseFloat(document.getElementById('exp-amount').value);
+  return isNaN(v) || v < 0 ? 0 : v;
+}
+
+function refreshExpense() {
+  const ok = !!expenseType && expenseAmount() > 0;
+  document.getElementById('btn-save-expense').disabled = !ok;
+  document.getElementById('exp-type-chips').classList.toggle('need', !expenseType);
+  document.getElementById('head-exptype').classList.toggle('done', !!expenseType);
+
+  const total = todayExpenses.reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+  document.getElementById('exp-today').textContent = total.toLocaleString('th-TH');
+  document.getElementById('exp-count').textContent = todayExpenses.length + ' รายการ';
+
+  const box = document.getElementById('exp-list');
+  if (!todayExpenses.length) {
+    box.innerHTML = '<div class="note" style="text-align:center;padding:20px 0;">' +
+      'วันนี้ยังไม่ได้บันทึกค่าใช้จ่าย</div>';
+    return;
+  }
+  box.innerHTML = todayExpenses.map(x =>
+    '<div class="bill"><div class="bill-head" style="cursor:default;">' +
+      '<div style="min-width:0;flex:1;">' +
+        '<div class="bill-no">' + escapeText(x.type || 'อื่น ๆ') +
+          (x.pending ? ' <span style="color:#b45309;">⏳ ยังไม่ได้ส่ง</span>' : '') + '</div>' +
+        '<div class="bill-time">' + escapeText(x.time || '') +
+          (x.staff ? ' · ' + escapeText(x.staff) : '') + '</div>' +
+        (x.note ? '<div class="bill-time">' + escapeText(x.note) + '</div>' : '') +
+      '</div>' +
+      '<div class="digits" style="font-weight:800;white-space:nowrap;color:var(--red);">-' +
+        (Number(x.amount) || 0).toLocaleString('th-TH') + ' ฿</div>' +
+    '</div></div>').join('');
+}
+
+function openExpense() {
+  expenseType = '';
+  document.getElementById('exp-amount').value = '';
+  document.getElementById('exp-note').value = '';
+  document.querySelectorAll('#exp-type-chips .chip').forEach(el => el.classList.remove('on'));
+  todayExpenses = pendingExpensesOf(isoDate(new Date()));
+  refreshExpense();
+  showScreen('expense');
+  loadExpenses();
+}
+
+/** ค่าใช้จ่ายที่ยังส่งขึ้น Sheets ไม่สำเร็จ — เอามาแสดงด้วย จะได้ไม่ลืม */
+function pendingExpensesOf(date) {
+  return getPending()
+    .filter(r => r.kind === 'expense' && r.date === date)
+    .map(r => ({ type: r.type, note: r.note, amount: r.amount, time: r.time,
+                 staff: r.staff, pending: true }));
+}
+
+async function loadExpenses() {
+  const date = isoDate(new Date());
+  if (isDemo()) return;
+  try {
+    const json = await fetchBills(date);
+    const fromSheet = (json.data && json.data.expenses) || [];
+    todayExpenses = fromSheet.concat(pendingExpensesOf(date));
+    refreshExpense();
+  } catch (e) { /* ออฟไลน์ — โชว์เฉพาะที่ค้างในเครื่อง */ }
+}
+
+async function saveExpense() {
+  const amount = expenseAmount();
+  if (!expenseType || amount <= 0) return;
+
+  const now = new Date();
+  const record = {
+    kind: 'expense',
+    expenseId: 'EXP' + now.getTime(),
+    date: isoDate(now),
+    time: pad2(now.getHours()) + ':' + pad2(now.getMinutes()),
+    branch: auth.branch || '',
+    staff: auth.name || '',
+    type: expenseType,
+    note: document.getElementById('exp-note').value.trim(),
+    amount: amount
+  };
+
+  const btn = document.getElementById('btn-save-expense');
+  btn.disabled = true;
+
+  if (isDemo()) {
+    todayExpenses.unshift(Object.assign({}, record));
+    resetExpenseForm();
+    toast('🧪 โหมดทดลอง — ไม่ได้บันทึกลง Google Sheets');
+    return;
+  }
+
+  try {
+    const json = await postApi({ action: 'posExpense', token: auth.token, expense: record });
+    if (json && json.success) {
+      resetExpenseForm();
+      toast('บันทึกค่าใช้จ่าย ' + record.type + ' ' + amount.toLocaleString('th-TH') + ' ฿ แล้ว');
+      delete billsInflight[record.date];        // แคชบิลเก่าไม่มีรายการนี้ ต้องดึงใหม่
+      flushPending();
+      loadExpenses();
+      return;
+    }
+    throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
+  } catch (e) {
+    queuePending(record);
+    todayExpenses.unshift(Object.assign({ pending: true }, record));
+    resetExpenseForm();
+    toast('⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว');
+  }
+}
+
+function resetExpenseForm() {
+  expenseType = '';
+  document.getElementById('exp-amount').value = '';
+  document.getElementById('exp-note').value = '';
+  document.querySelectorAll('#exp-type-chips .chip').forEach(el => el.classList.remove('on'));
+  refreshExpense();
+}
+
 /* ══════════════════════════════════════════════════════════
    บิลที่พักไว้ — ลูกค้าเลือกของแล้ว แต่ยังไม่เลือกน้ำจิ้ม / ยังไม่จ่าย
    เก็บในเครื่อง ไม่ส่งขึ้น Sheets เพราะยังไม่ใช่ยอดขาย
@@ -1911,8 +2124,13 @@ async function flushPending() {
   const remain = [];
   for (const rec of list) {
     try {
-      const action = rec.kind === 'delivery' ? 'posDelivery' : 'posOrder';
-      const json = await postApi({ action: action, token: auth.token, order: rec });
+      let json;
+      if (rec.kind === 'expense') {
+        json = await postApi({ action: 'posExpense', token: auth.token, expense: rec });
+      } else {
+        const action = rec.kind === 'delivery' ? 'posDelivery' : 'posOrder';
+        json = await postApi({ action: action, token: auth.token, order: rec });
+      }
       if (!json || !json.success) remain.push(rec);
     } catch (e) { remain.push(rec); }
   }
@@ -2430,6 +2648,7 @@ function toast(msg) {
 renderStickGrid();
 renderMamaGrid();
 renderExtraGrid();
+renderExpenseChips();
 refreshHeldButton();
 renderChips('soup-chips', SOUPS, 'soup');
 renderChips('spice-chips', SPICES, 'spice');

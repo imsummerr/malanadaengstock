@@ -250,6 +250,11 @@
             <div id="chart-soup"></div>
           </div>
           <div class="card chart-card">
+            <h2>ค่าใช้จ่ายแยกตามประเภท</h2>
+            <p class="sub">เงินสดที่จ่ายออกจากร้าน (บาท)</p>
+            <div id="chart-expense"></div>
+          </div>
+          <div class="card chart-card">
             <h2>ระดับความเผ็ด</h2>
             <p class="sub">เรียงจากมากไปน้อย (จำนวนออเดอร์)</p>
             <div id="chart-spice"></div>
@@ -644,7 +649,9 @@ function render() {
     ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', ''],
     ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', ''],
     ['ออเดอร์เดลิเวอรี่', Number(stats.deliveryOrders || 0).toLocaleString('th-TH'), 'ออเดอร์', '🛵', ''],
-    ['ของเพิ่มที่ลูกค้าแอด', Number(stats.deliveryAddons || 0).toLocaleString('th-TH'), 'อย่าง', '➕', '']
+    ['ของเพิ่มที่ลูกค้าแอด', Number(stats.deliveryAddons || 0).toLocaleString('th-TH'), 'อย่าง', '➕', ''],
+    ['ค่าใช้จ่าย', baht(stats.expenseTotal || 0), 'บาท', '💸', ''],
+    ['เงินสดคงเหลือ', baht(stats.netCash !== undefined ? stats.netCash : stats.revenue), 'บาท', '🧮', '']
   ].map(([label, value, unit, icon, extra]) => `
     <div class="card kpi${extra}">
       <div class="label">${icon} ${label}</div>
@@ -658,6 +665,7 @@ function render() {
 
   drawDaily(stats.byDate);
   drawRanked('chart-soup',   stats.soup,   'ออเดอร์');
+  drawRanked('chart-expense', stats.expenseByType || {}, '฿');
   drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
   drawRanked('chart-method', stats.method, 'ออเดอร์', stats.methodRevenue);
   drawRanked('chart-sauce',  stats.sauce,  'ออเดอร์');
@@ -908,6 +916,12 @@ function demoStats() {
     deliveryAddons: Math.round(orders * 0.21),
     deliveryItems: share({ 'หม่าล่ารวม': .09, 'หม่าล่าหน้าแดง': .07, 'อุด้ง': .06, 'หม่าล่าทะเล': .05 }, orders),
     avgTicket: Math.round(revenue / orders * 100) / 100,
+    expenseTotal: Math.round(revenue * 0.09),
+    expenseCount: Math.round(orders * 0.02),
+    expenseByType: share({ 'ค่าที่': .40, 'ค่าไม้เสียบ': .20, 'ค่าของสด': .18,
+                           'ค่าแก๊ส': .10, 'ค่าน้ำแข็ง': .08, 'อื่น ๆ': .04 },
+                         Math.round(revenue * 0.09)),
+    netCash: revenue - Math.round(revenue * 0.09),
     soup:   share({ 'กระดูกหมูหม่าล่า': .30, 'น้ำใส': .22, 'หม่าล่านม': .15, 'กระดูกหมู': .12, 'ดั้งเดิม': .08, 'น้ำดำหม่าล่า': .07, 'น้ำดำ': .04, 'ไม่เอาซุป': .02 }, orders),
     spice:  share({ 'เผ็ดกลาง': .40, 'เผ็ดน้อย': .26, 'ไม่เผ็ด': .18, 'เผ็ดมาก': .13, 'เผ็ดพิเศษ': .03 }, orders),
     sauce:  share({ 'น้ำจิ้มงา': .57, 'น้ำจิ้มสุกี้': .33, 'ไม่เอาน้ำจิ้ม': .10 }, orders),
