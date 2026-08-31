@@ -18,6 +18,10 @@ var SHEET_SESSIONS = 'Sessions';     // token ที่ยัง login อยู
 var SHEET_DELIVERY = 'POS_Delivery'; // ออเดอร์เดลิเวอรี่ (แพลตฟอร์มเก็บเงินให้แล้ว)
 var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่ายออกจากร้าน เช่น ค่าที่ ค่าไม้เสียบ
 
+// รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
+// ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
+var BACKEND_VERSION = '2026-08-31 · ค่าใช้จ่าย + ของอื่น + พักบิล';
+
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
                                      // ช่วงห่างที่ยาวที่สุดคือเกือบ 24 ชม. ตั้ง 26 ไว้เผื่อ
@@ -176,6 +180,7 @@ function doPost(e) {
 function doGet(e) {
   try {
     var p = e.parameter || {};
+    if (p.action === 'version')  return json_(handleVersion_());
     if (p.action === 'posStats') return json_(handleStats_(p));
     if (p.action === 'posBills') return json_(handleBills_(p));
     if (p.action === 'history')  return json_(handleHistory_(p));
@@ -184,6 +189,28 @@ function doGet(e) {
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
   }
+}
+
+/**
+ * บอกว่าโค้ดหลังบ้านที่ Deploy อยู่เป็นรุ่นไหน และมีชีตอะไรแล้วบ้าง
+ * เปิดในเบราว์เซอร์ได้เลยไม่ต้อง login — ไม่คืนข้อมูลการขายหรือรหัสผ่านใด ๆ
+ * ใช้เช็คหลัง Deploy ว่าวางโค้ดใหม่ครบแล้วจริง
+ */
+function handleVersion_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = {};
+  [SHEET_ORDERS, SHEET_DELIVERY, SHEET_EXPENSE, SHEET_USERS, SHEET_SESSIONS]
+    .forEach(function (n) { sheets[n] = !!ss.getSheetByName(n); });
+  return {
+    success: true,
+    version: BACKEND_VERSION,
+    actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense',
+              'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
+              'stockBootstrap'],
+    expenseTypes: EXPENSE_TYPES,
+    extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
+    sheets: sheets
+  };
 }
 
 function json_(obj) {
