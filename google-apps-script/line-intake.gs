@@ -132,6 +132,7 @@ function intakeOnText_(ev, ctx) {
     case 'help':  intakeReply_(ctx, intakeHelpText_());        return;
     case 'undo':  intakeReply_(ctx, intakeUndo_(ctx));         return;
     case 'today': intakeReply_(ctx, intakeTodaySummary_());    return;
+    case 'pl':    intakeReply_(ctx, intakeMonthlyPL_());       return;
   }
 
   var stripped = intakeStripPrefix_(raw);
@@ -306,6 +307,7 @@ function intakeCommandOf_(text) {
   var t = String(text).trim().toLowerCase().replace(/[?？!。.]+$/, '');
   if (/^(ลบ|ลบล่าสุด|ยกเลิก|undo)$/.test(t))                   return 'undo';
   if (/^(ยอดวันนี้|สรุป|สรุปวันนี้|วันนี้ซื้ออะไร)$/.test(t))  return 'today';
+  if (/^(งบ|งบเดือนนี้|บัญชี|กำไร|กำไรเดือนนี้)$/.test(t))     return 'pl';
   if (/^(ช่วย|ช่วยด้วย|วิธีใช้|help|\?)$/.test(t))             return 'help';
   return '';
 }
@@ -333,7 +335,10 @@ function intakeHelpText_() {
          '3) ถ่ายรูปบิล/ป้ายราคาส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
          'ในกลุ่มต้องขึ้นต้นด้วย "ซื้อ" ก่อน เช่น\n' +
          '   ซื้อ ปลาดอลลี่ 68 บาท 800 กรัม\n\n' +
-         'คำสั่งอื่น: "ลบ" ลบรายการล่าสุด · "ยอดวันนี้" ดูยอดรวม';
+         'คำสั่งอื่น\n' +
+         '   ลบ          ลบรายการล่าสุด\n' +
+         '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
+         '   งบ          ดูกำไรขาดทุนเดือนนี้';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1006,6 +1011,19 @@ function intakeTodaySummary_() {
 
   return '📊 ยอดซื้อวันนี้ (' + Utilities.formatDate(new Date(), intakeTz_(), 'd/M/yyyy') + ')\n\n' +
          lines.join('\n') + '\n\nรวม ' + intakeMoney_(sum) + ' บาท';
+}
+
+/** งบกำไรขาดทุนเดือนนี้ — ต้องมี accounting.gs อยู่ในโปรเจกต์ด้วย */
+function intakeMonthlyPL_() {
+  if (typeof accMonthSummary_ !== 'function') {
+    return 'ยังไม่ได้ติดตั้งส่วนบัญชีครับ\n' +
+           'เอาไฟล์ accounting.gs เข้าโปรเจกต์นี้ก่อน (ดู ACCOUNTING-README.md)';
+  }
+  try {
+    return accMonthSummary_(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy-MM'));
+  } catch (err) {
+    return 'คิดงบไม่สำเร็จครับ: ' + (err && err.message ? err.message : err);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
