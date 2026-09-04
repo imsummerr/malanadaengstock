@@ -2131,3 +2131,67 @@ function removeDiscontinuedItems() {
                '  ไม่ได้ลบให้ เก็บไว้ดูย้อนหลังได้ และไม่กระทบยอดคงเหลือ');
   }
 }
+
+/* ───────────── ล้างยอดคงเหลือของสถานที่ให้เป็นศูนย์ ───────────── */
+
+/** สถานที่ที่จะตั้งยอดเป็น 0 — แก้ตรงนี้แล้วรัน zeroOutStock() */
+var ZERO_LOCATION = 'ตลาดทรัพย์พัฒนา';
+
+/**
+ * บันทึกผลนับ = 0 ให้ทุกสินค้าของสถานที่นั้น
+ *
+ * ใช้เมื่อ: ระบบขึ้นว่ามีของ แต่ของจริงไม่มี เพราะมีแถวของเข้าเก่าค้างอยู่
+ * ไม่ได้ลบข้อมูลเก่าทิ้ง แค่บันทึกว่า "วันนี้นับได้ 0" ซึ่งกลายเป็นยอดตั้งต้นใหม่
+ * ระบบจะข้ามทุกอย่างที่เกิดก่อนหน้านี้ไปเอง และมีหลักฐานว่าใครตั้งเมื่อไหร่
+ *
+ * นับรวมสินค้าที่ลบออกจากรายการแล้วแต่ยังมีประวัติค้างด้วย
+ * ไม่งั้นของพวกนั้นจะยังค้างอยู่ในยอดคงเหลือ
+ *
+ * ไม่แจ้ง LINE เพราะเป็นการตั้งค่าระบบ ไม่ใช่การนับจริง
+ */
+function zeroOutStock() {
+  var ss  = SpreadsheetApp.getActiveSpreadsheet();
+  var loc = String(ZERO_LOCATION || '').trim();
+  if (!loc) { Logger.log('ยังไม่ได้ตั้ง ZERO_LOCATION'); return; }
+
+  var sh = ss.getSheetByName(SHEET_COUNT);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_COUNT + '"'); return; }
+  var map = ensureCols_(sh, MOVE_COLS);
+
+  // สินค้าที่ยังอยู่ในรายการ
+  var items = getStockItems_();
+  var unitOf = {};
+  items.forEach(function (i) { unitOf[i.name] = i.subUnit; });
+
+  // บวกสินค้าที่ลบออกจากรายการแล้วแต่ยังมีประวัติที่สถานที่นี้
+  // ถ้าไม่ตั้ง 0 ให้ด้วย ของพวกนี้จะค้างอยู่ในยอดคงเหลือตลอดไป
+  [SHEET_INCOMING, SHEET_WASTE].forEach(function (sname) {
+    var h = ss.getSheetByName(sname);
+    if (!h || h.getLastRow() < 2) return;
+    var hmap = ensureCols_(h, MOVE_COLS);
+    h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).getValues().forEach(function (r) {
+      var n = String(r[hmap['รายการ']] || '').trim();
+      var l = String(r[hmap['สาขา']] || '').trim();
+      if (!n || l !== loc || unitOf[n] !== undefined) return;
+      unitOf[n] = String(r[hmap['หน่วย']] || 'ไม้').trim();
+    });
+  });
+
+  var names = Object.keys(unitOf);
+  if (!names.length) { Logger.log('ไม่มีสินค้าให้ตั้งยอด'); return; }
+
+  var now = new Date();
+  names.forEach(function (name) {
+    appendByCols_(sh, map, {
+      'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': 'ระบบ',
+      'รายการ': name, 'จำนวน': 0, 'หน่วย': unitOf[name],
+      'แพ็ค': 0, 'เศษ': 0, 'ไม้ต่อแพ็ค': '',
+      'ประเภท': 'เช็คสต็อก',
+      'หมายเหตุ': 'ตั้งยอดเริ่มต้นเป็น 0 — ล้างของเก่าที่ค้างในระบบ'
+    });
+  });
+
+  Logger.log('ตั้งยอด "' + loc + '" เป็น 0 แล้ว ' + names.length + ' รายการ\n' +
+             'เปิดแท็บสต็อกคงเหลือดูได้เลย ควรไม่เหลืออะไรแล้ว\n\n' +
+             'ของที่เข้ามาหลังจากนี้จะนับปกติ ส่วนของเก่าก่อนหน้านี้ระบบข้ามให้เอง');
+}
