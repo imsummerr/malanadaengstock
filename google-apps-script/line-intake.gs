@@ -36,7 +36,37 @@ var INTAKE_SHEET = 'ซื้อของเข้า';
 var INTAKE_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่', 'สถานที่', 'ผู้บันทึก',
   'รายการ', 'ชื่อที่พิมพ์มา', 'จำนวนเงิน', 'น้ำหนัก(กรัม)', 'บาท/กก.',
-  'จำนวน', 'หน่วย', 'ที่มา', 'ข้อความต้นฉบับ', 'messageId'
+  'จำนวน', 'หน่วย', 'ที่มา', 'ข้อความต้นฉบับ', 'messageId', 'วิธีจ่าย'
+];
+
+/* ── ค่าใช้จ่ายรายวัน (ค่าที่ ค่าแก๊ส ฯลฯ) ────────────────────────
+   ลงชีตเดียวกับที่หน้า POS ใช้ ข้อมูลจะได้อยู่ที่เดียว
+   หน้าสรุปยอดขายและระบบบัญชีเห็นทันทีโดยไม่ต้องแก้อะไรเพิ่ม           */
+var INTAKE_EXPENSE_SHEET = 'POS_Expenses';
+
+var INTAKE_EXPENSE_HEADERS = [
+  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id',
+  'วิธีจ่าย'
+];
+
+/** ต้องตรงกับ EXPENSE_TYPES ใน pos-backend.gs */
+var INTAKE_EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
+
+/** คำที่คนเรียกกันเอง → ประเภทค่าใช้จ่ายในระบบ */
+var INTAKE_EXPENSE_ALIAS = {
+  'ค่าเช่า': 'ค่าที่', 'ค่าเช่าที่': 'ค่าที่', 'ค่าแผง': 'ค่าที่', 'ค่าล็อค': 'ค่าที่', 'ค่าล็อก': 'ค่าที่',
+  'ค่าไม้': 'ค่าไม้เสียบ', 'ค่าแก้ส': 'ค่าแก๊ส', 'ค่าน้ำแข็งเปล่า': 'ค่าน้ำแข็ง',
+  'ค่าจ้าง': 'ค่าแรง', 'ค่าลูกจ้าง': 'ค่าแรง', 'ค่าแรงงาน': 'ค่าแรง'
+};
+
+/**
+ * วิธีจ่าย — เรียงตามลำดับที่ตรวจ เจอตัวไหนก่อนใช้ตัวนั้น
+ * ไม่ใส่คำว่า "สด" เดี่ยว ๆ เพราะไปชนกับ "ค่าของสด"
+ */
+var INTAKE_PAY_PATTERNS = [
+  { re: /บัตรเครดิต|เครดิต|บัตร|credit\s*card|credit/gi, name: 'บัตรเครดิต' },
+  { re: /โอนจ่าย|จ่ายโอน|โอน|พร้อมเพย์|promptpay|transfer/gi, name: 'โอน' },
+  { re: /เงินสด|cash/gi, name: 'เงินสด' }
 ];
 
 /**
@@ -132,7 +162,8 @@ function intakeOnText_(ev, ctx) {
     case 'help':  intakeReply_(ctx, intakeHelpText_());        return;
     case 'undo':  intakeReply_(ctx, intakeUndo_(ctx));         return;
     case 'today': intakeReply_(ctx, intakeTodaySummary_());    return;
-    case 'pl':    intakeReply_(ctx, intakeMonthlyPL_());       return;
+    case 'pl':    intakeReply_(ctx, intakeAccounting_('month')); return;
+    case 'card':  intakeReply_(ctx, intakeAccounting_('card'));  return;
   }
 
   var stripped = intakeStripPrefix_(raw);
@@ -308,6 +339,7 @@ function intakeCommandOf_(text) {
   if (/^(ลบ|ลบล่าสุด|ยกเลิก|undo)$/.test(t))                   return 'undo';
   if (/^(ยอดวันนี้|สรุป|สรุปวันนี้|วันนี้ซื้ออะไร)$/.test(t))  return 'today';
   if (/^(งบ|งบเดือนนี้|บัญชี|กำไร|กำไรเดือนนี้)$/.test(t))     return 'pl';
+  if (/^(บัตร|บัตรเครดิต|รอบบัตร|ยอดบัตร)$/.test(t))           return 'card';
   if (/^(ช่วย|ช่วยด้วย|วิธีใช้|help|\?)$/.test(t))             return 'help';
   return '';
 }
@@ -326,19 +358,28 @@ function intakeStripPrefix_(text) {
 }
 
 function intakeHelpText_() {
-  return '📥 วิธีบันทึกของเข้าผ่านไลน์\n\n' +
-         '1) พิมพ์ชื่อของ ตามด้วยราคาและน้ำหนัก\n' +
+  return '📥 วิธีบันทึกผ่านไลน์\n\n' +
+         '🛒 ซื้อของ — พิมพ์ชื่อของ ตามด้วยราคาและน้ำหนัก\n' +
          '   ปลาดอลลี่ 68 บาท 800 กรัม\n' +
          '   หมูสันคอ 2 กก. 350\n' +
          '   ผักกาดขาว 3 ถุง 60 บาท\n\n' +
-         '2) หลายรายการ พิมพ์บรรทัดละอย่าง หรือคั่นด้วยจุลภาค\n\n' +
-         '3) ถ่ายรูปบิล/ป้ายราคาส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
+         '🧾 ค่าใช้จ่าย — ขึ้นต้นด้วยคำว่า "ค่า"\n' +
+         '   ค่าที่ 200\n' +
+         '   ค่าแก๊ส 450\n' +
+         '   ค่าไม้เสียบ 300\n\n' +
+         '💳 รูดบัตร — เติมคำว่า "บัตร" ต่อท้าย\n' +
+         '   ค่าแก๊ส 450 บัตร\n' +
+         '   ปลาดอลลี่ 68 บาท 800 กรัม บัตร\n' +
+         '   (โอนก็พิมพ์ "โอน" · ไม่พิมพ์อะไร = เงินสด)\n\n' +
+         'หลายรายการ พิมพ์บรรทัดละอย่าง หรือคั่นด้วยจุลภาค\n' +
+         'ถ่ายรูปบิลส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
          'ในกลุ่มต้องขึ้นต้นด้วย "ซื้อ" ก่อน เช่น\n' +
-         '   ซื้อ ปลาดอลลี่ 68 บาท 800 กรัม\n\n' +
+         '   ซื้อ ค่าที่ 200\n\n' +
          'คำสั่งอื่น\n' +
          '   ลบ          ลบรายการล่าสุด\n' +
          '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
-         '   งบ          ดูกำไรขาดทุนเดือนนี้';
+         '   งบ          สรุปรายรับรายจ่ายเดือนนี้\n' +
+         '   บัตร        ยอดบัตรเครดิตที่ต้องจ่าย';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -372,6 +413,37 @@ function intakeNum_(s) {
 }
 
 /**
+ * ตัดคำบอกวิธีจ่ายออกจากข้อความ แล้วบอกว่าเจอวิธีไหน
+ * คืน method = '' ถ้าไม่ได้บอกมา (ให้ตัวเรียกตัดสินใจเอง)
+ */
+function intakePayOf_(text) {
+  var t = String(text || '');
+  for (var i = 0; i < INTAKE_PAY_PATTERNS.length; i++) {
+    var p = INTAKE_PAY_PATTERNS[i];
+    var next = t.replace(p.re, ' ');
+    if (next !== t) return { method: p.name, text: next };
+  }
+  return { method: '', text: t };
+}
+
+/** ขึ้นต้นด้วย "ค่า" = ค่าใช้จ่ายรายวัน ไม่ใช่ของที่ซื้อเข้าสต็อก */
+function intakeIsExpense_(name) { return /^ค่า/.test(String(name || '').trim()); }
+
+/** "ค่าเช่าแผง" → ประเภท "ค่าที่" · ไม่เข้าพวกไหนเลย → "อื่น ๆ" */
+function intakeExpenseType_(name) {
+  var n = intakeNorm_(name);
+  var keys = Object.keys(INTAKE_EXPENSE_ALIAS), i;
+  for (i = 0; i < keys.length; i++) {
+    if (n.indexOf(intakeNorm_(keys[i])) !== -1) return INTAKE_EXPENSE_ALIAS[keys[i]];
+  }
+  for (i = 0; i < INTAKE_EXPENSE_TYPES.length; i++) {
+    var t = INTAKE_EXPENSE_TYPES[i];
+    if (t !== 'อื่น ๆ' && n.indexOf(intakeNorm_(t)) !== -1) return t;
+  }
+  return 'อื่น ๆ';
+}
+
+/**
  * ข้อความทั้งก้อน → รายการของ
  * แยกทีละบรรทัด/ทีละจุลภาค เพราะคนพิมพ์หลายรายการรวดเดียวบ่อย
  * ต้องเอาจุลภาคคั่นหลักพันออกก่อน ไม่งั้น "1,200 บาท" จะโดนตัดเป็นสองรายการ
@@ -385,6 +457,13 @@ function intakeParseText_(text) {
     var one = intakeParseLine_(parts[i]);
     if (one) out.push(one);
   }
+
+  // บอกวิธีจ่ายไว้บรรทัดเดียว = หมายถึงทั้งข้อความ
+  // ("ปลาดอลลี่ 68, ปูอัด 120 บัตร" คือรูดบัตรทั้งคู่ ไม่ใช่เฉพาะปูอัด)
+  var told = '';
+  for (i = 0; i < out.length; i++) if (out[i].pay) { told = out[i].pay; break; }
+  for (i = 0; i < out.length; i++) out[i].pay = out[i].pay || told || 'เงินสด';
+
   return out;
 }
 
@@ -399,6 +478,11 @@ function intakeParseLine_(line) {
 
   var stripped = intakeStripPrefix_(text);
   if (stripped !== null) text = stripped;
+  if (!text) return null;
+
+  // ตัดคำว่า "บัตร" / "โอน" ออกก่อน ไม่งั้นมันจะไปติดอยู่ในชื่อของ
+  var pay = intakePayOf_(text);
+  text = pay.text.trim();
   if (!text) return null;
 
   var baht = 0, gram = 0, qty = 0, unit = '', bare = [];
@@ -429,7 +513,10 @@ function intakeParseLine_(line) {
   // ไม่มีตัวเลขเลย = เป็นประโยคคุยกันเฉย ๆ ไม่ใช่รายการของ
   if (!baht && !gram && !qty) return null;
 
-  return { raw: name, baht: baht, gram: gram, qty: qty, unit: unit };
+  return {
+    raw: name, baht: baht, gram: gram, qty: qty, unit: unit,
+    pay: pay.method, expense: intakeIsExpense_(name)
+  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -831,67 +918,137 @@ function intakeDateKeys_(sheet) {
   });
 }
 
-/** บันทึกทุกรายการรวดเดียว แล้วคืนข้อความสรุปที่จะตอบกลับไลน์ */
+/**
+ * ชีตค่าใช้จ่าย — ตัวเดียวกับที่หน้า POS ใช้
+ * ชีตเดิมยังไม่มีคอลัมน์ "วิธีจ่าย" ก็ต่อท้ายให้ ไม่แตะคอลัมน์เดิม
+ */
+function intakeExpenseSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(INTAKE_EXPENSE_SHEET) || ss.insertSheet(INTAKE_EXPENSE_SHEET);
+
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(INTAKE_EXPENSE_HEADERS);
+    sh.getRange(1, 1, 1, INTAKE_EXPENSE_HEADERS.length)
+      .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
+    sh.setFrozenRows(1);
+  } else if (typeof ensureHeaders_ === 'function') {
+    ensureHeaders_(sh, INTAKE_EXPENSE_HEADERS);
+  }
+  return sh;
+}
+
+/** เขียนหลายแถวรวดเดียวโดยไม่ให้ล้นขอบชีต — คืนเลขแถวแรกที่เขียน */
+function intakeAppendRows_(sh, rows, width) {
+  var firstRow = sh.getLastRow() + 1;
+
+  // setValues เขียนเลยขอบชีตไม่ได้ (ต่างจาก appendRow ที่ต่อแถวให้เอง)
+  var short = firstRow + rows.length - 1 - sh.getMaxRows();
+  if (short > 0) sh.insertRowsAfter(sh.getMaxRows(), short);
+
+  // วันที่/เวลาต้องเป็น "ข้อความ" ไม่ให้ Sheets แปลงเป็นวันที่แล้วแสดงตามภาษาเครื่อง
+  // ถ้าปล่อยให้กลายเป็นวันที่ การเทียบ "วันนี้" จะพลาดเงียบ ๆ
+  sh.getRange(firstRow, 1, rows.length, 2).setNumberFormat('@');
+  sh.getRange(firstRow, 1, rows.length, width).setValues(rows);
+  return firstRow;
+}
+
+/** มีของวันนี้อยู่ในชีตนั้นกี่แถวแล้ว — ใช้ไล่เลขที่เอกสาร */
+function intakeSeqOf_(sh, date) {
+  var keys = intakeDateKeys_(sh);
+  var seq = 0;
+  for (var i = 0; i < keys.length; i++) if (keys[i] === date) seq++;
+  return seq;
+}
+
+function intakePayTag_(pay) {
+  if (pay === 'บัตรเครดิต') return ' 💳';
+  if (pay === 'โอน')        return ' 🏦';
+  return '';
+}
+
+/**
+ * บันทึกทุกรายการรวดเดียว แล้วคืนข้อความสรุปที่จะตอบกลับไลน์
+ * แยกสองทางตามที่แยกไว้ตอนอ่านข้อความ:
+ *   ของที่ซื้อเข้าร้าน  → ชีต "ซื้อของเข้า"
+ *   ค่าใช้จ่ายรายวัน    → ชีต POS_Expenses ชีตเดียวกับที่หน้า POS ลง
+ */
 function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   var names = intakeItemNames_();
-  var lines = [];
-  var total = 0;
+  var buyLines = [], expLines = [];
+  var buyTotal = 0, expTotal = 0, cardTotal = 0;
   var unmatched = false;
-  var firstRow, count;
+  var saved = { p: [], e: [], msgId: ctx.msgId };
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sh   = intakeSheet_();
     var now  = new Date();
     var date = intakeTodayKey_();
     var time = Utilities.formatDate(now, intakeTz_(), 'HH:mm:ss');
+    var stamp = date.replace(/-/g, '');
 
-    // นับของวันนี้ครั้งเดียว แล้วไล่เลขเอง — ไม่ต้องอ่านชีตซ้ำทุกแถว
-    var keys = intakeDateKeys_(sh);
-    var seq = 0;
-    for (var k = 0; k < keys.length; k++) if (keys[k] === date) seq++;
+    var buySheet = null, expSheet = null, buySeq = 0, expSeq = 0;
+    var buyRows = [], expRows = [], i, it;
 
-    var rows = [];
-    for (var i = 0; i < items.length; i++) {
-      var it    = items[i];
-      var hit   = intakeMatchItem_(it.raw, names);
-      var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
+    for (i = 0; i < items.length; i++) {
+      it = items[i];
+      if (it.baht > 0 && it.pay === 'บัตรเครดิต') cardTotal += it.baht;
 
-      seq++;
-      rows.push([
-        date, time, 'L' + date.replace(/-/g, '') + '-' + ('00' + seq).slice(-3),
-        ctx.location, ctx.who,
-        hit.name, it.raw, it.baht || '', it.gram || '', perKg,
-        it.qty || '', it.unit, source, rawText, ctx.msgId
-      ]);
+      if (it.expense) {
+        if (!expSheet) { expSheet = intakeExpenseSheet_(); expSeq = intakeSeqOf_(expSheet, date); }
+        expSeq++;
+        var type = intakeExpenseType_(it.raw);
+        expRows.push([
+          date, time, 'E' + stamp + '-' + ('00' + expSeq).slice(-3),
+          ctx.location, ctx.who, type,
+          intakeNorm_(it.raw) === intakeNorm_(type) ? '' : it.raw,
+          it.baht || 0, ctx.msgId + '-' + i, it.pay
+        ]);
+        expTotal += it.baht || 0;
+        expLines.push('• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay));
 
-      total += it.baht || 0;
-      if (!hit.matched) unmatched = true;
-      lines.push('• ' + hit.name + (hit.matched ? '' : ' *') + ' — ' + intakeAmountText_(it));
+      } else {
+        if (!buySheet) { buySheet = intakeSheet_(); buySeq = intakeSeqOf_(buySheet, date); }
+        buySeq++;
+        var hit   = intakeMatchItem_(it.raw, names);
+        var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
+        buyRows.push([
+          date, time, 'L' + stamp + '-' + ('00' + buySeq).slice(-3),
+          ctx.location, ctx.who,
+          hit.name, it.raw, it.baht || '', it.gram || '', perKg,
+          it.qty || '', it.unit, source, rawText, ctx.msgId, it.pay
+        ]);
+        buyTotal += it.baht || 0;
+        if (!hit.matched) unmatched = true;
+        buyLines.push('• ' + hit.name + (hit.matched ? '' : ' *') + ' — ' +
+                      intakeAmountText_(it) + intakePayTag_(it.pay));
+      }
     }
 
-    firstRow = sh.getLastRow() + 1;
-    count    = rows.length;
-
-    // setValues เขียนเลยขอบชีตไม่ได้ (ต่างจาก appendRow ที่ต่อแถวให้เอง)
-    var short = firstRow + count - 1 - sh.getMaxRows();
-    if (short > 0) sh.insertRowsAfter(sh.getMaxRows(), short);
-
-    // วันที่/เวลาต้องเป็น "ข้อความ" ไม่ให้ Sheets แปลงเป็นวันที่แล้วแสดงตามภาษาเครื่อง
-    // ถ้าปล่อยให้กลายเป็นวันที่ การเทียบ "วันนี้" จะพลาดเงียบ ๆ
-    sh.getRange(firstRow, 1, count, 2).setNumberFormat('@');
-    sh.getRange(firstRow, 1, count, INTAKE_HEADERS.length).setValues(rows);
-
-    intakeRememberSaved_(ctx, firstRow, count);
+    if (buyRows.length) {
+      var r1 = intakeAppendRows_(buySheet, buyRows, INTAKE_HEADERS.length);
+      for (i = 0; i < buyRows.length; i++) saved.p.push(r1 + i);
+    }
+    if (expRows.length) {
+      var r2 = intakeAppendRows_(expSheet, expRows, INTAKE_EXPENSE_HEADERS.length);
+      for (i = 0; i < expRows.length; i++) saved.e.push(r2 + i);
+    }
+    intakeRememberSaved_(ctx, saved);
   } finally {
     lock.releaseLock();
   }
 
-  var msg = '✅ บันทึกแล้ว ' + count + ' รายการ\n\n' + lines.join('\n');
-  if (total > 0) msg += '\n\nรวม ' + intakeMoney_(total) + ' บาท';
-  var day = intakeTodayTotal_();
-  if (day > 0) msg += ' · วันนี้ทั้งหมด ' + intakeMoney_(day) + ' บาท';
+  var blocks = [];
+  if (buyLines.length) blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
+  if (expLines.length) blocks.push('🧾 ค่าใช้จ่าย\n' + expLines.join('\n'));
+
+  var msg = '✅ บันทึกแล้ว ' + (buyLines.length + expLines.length) + ' รายการ\n\n' + blocks.join('\n\n');
+
+  var sums = [];
+  if (buyTotal) sums.push('ซื้อของ ' + intakeMoney_(buyTotal));
+  if (expTotal) sums.push('ค่าใช้จ่าย ' + intakeMoney_(expTotal));
+  if (sums.length) msg += '\n\nรวม ' + sums.join(' · ') + ' บาท';
+  if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
   msg += '\n\nผิดตรงไหนพิมพ์ "ลบ" ได้เลย';
   return msg;
@@ -922,17 +1079,34 @@ function intakeKeyOf_(srcId) {
   return hex;
 }
 
-/** จำแถวที่เพิ่งเขียน ไว้ให้คำสั่ง "ลบ" ใช้ */
-function intakeRememberSaved_(ctx, firstRow, count) {
-  if (!count) return;
-  var rows = [];
-  for (var i = 0; i < count; i++) rows.push(firstRow + i);
+/** จำแถวที่เพิ่งเขียน (ทั้งสองชีต) ไว้ให้คำสั่ง "ลบ" ใช้ */
+function intakeRememberSaved_(ctx, saved) {
+  if (!saved || (!saved.p.length && !saved.e.length)) return;
   try {
-    intakeProps_().setProperty('INTAKE_LAST_' + intakeKeyOf_(ctx.srcId),
-      JSON.stringify({ rows: rows, msgId: ctx.msgId }));
+    intakeProps_().setProperty('INTAKE_LAST_' + intakeKeyOf_(ctx.srcId), JSON.stringify(saved));
   } catch (err) {
     Logger.log('intakeRememberSaved_: ' + err.message);
   }
+}
+
+/**
+ * ลบแถวตามเลขที่จำไว้ — ลบจากล่างขึ้นบน ไม่งั้นเลขแถวที่เหลือจะเลื่อน
+ * เช็ค id ทุกแถวก่อนลบ กันไปลบทับของคนอื่นที่มาเขียนคั่นระหว่างนั้น
+ */
+function intakeDeleteRows_(sh, rows, col, msgId, byPrefix) {
+  if (!sh || !rows || !rows.length) return 0;
+
+  var gone = 0;
+  var sorted = rows.slice().sort(function (a, b) { return b - a; });
+  for (var i = 0; i < sorted.length; i++) {
+    var r = sorted[i];
+    if (r < 2 || r > sh.getLastRow()) continue;
+    var v = String(sh.getRange(r, col).getDisplayValue());
+    if (byPrefix ? v.indexOf(msgId + '-') !== 0 : v !== String(msgId)) continue;
+    sh.deleteRow(r);
+    gone++;
+  }
+  return gone;
 }
 
 /** ลบรายการล่าสุดที่ต้นทางนี้เพิ่งบันทึก */
@@ -943,25 +1117,21 @@ function intakeUndo_(ctx) {
 
   var last;
   try { last = JSON.parse(raw); } catch (e) { return 'ไม่มีรายการล่าสุดให้ลบครับ'; }
-  if (!last || !last.rows || !last.rows.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
+  if (!last) return 'ไม่มีรายการล่าสุดให้ลบครับ';
+
+  var buys = last.p || last.rows || [];   // last.rows = รูปแบบเก่าก่อนมีชีตค่าใช้จ่าย
+  var exps = last.e || [];
+  if (!buys.length && !exps.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sh   = intakeSheet_();
-    var col  = INTAKE_HEADERS.indexOf('messageId') + 1;
     var gone = 0;
+    gone += intakeDeleteRows_(intakeSheet_(), buys,
+              INTAKE_HEADERS.indexOf('messageId') + 1, last.msgId, false);
+    gone += intakeDeleteRows_(intakeExpenseSheet_(), exps,
+              INTAKE_EXPENSE_HEADERS.indexOf('order_id') + 1, last.msgId, true);
 
-    // ลบจากแถวล่างขึ้นบน ไม่งั้นเลขแถวที่จำไว้จะเลื่อน
-    var rows = last.rows.slice().sort(function (a, b) { return b - a; });
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      if (r < 2 || r > sh.getLastRow()) continue;
-      // เช็ค messageId ก่อนลบ กันลบทับแถวของคนอื่นที่มาเขียนคั่น
-      if (String(sh.getRange(r, col).getDisplayValue()) !== String(last.msgId)) continue;
-      sh.deleteRow(r);
-      gone++;
-    }
     intakeProps_().deleteProperty(key);
     return gone ? '🗑️ ลบออกให้แล้ว ' + gone + ' รายการ' : 'หาแถวที่จะลบไม่เจอ (อาจถูกลบไปแล้ว)';
   } finally {
@@ -1013,16 +1183,19 @@ function intakeTodaySummary_() {
          lines.join('\n') + '\n\nรวม ' + intakeMoney_(sum) + ' บาท';
 }
 
-/** งบกำไรขาดทุนเดือนนี้ — ต้องมี accounting.gs อยู่ในโปรเจกต์ด้วย */
-function intakeMonthlyPL_() {
-  if (typeof accMonthSummary_ !== 'function') {
-    return 'ยังไม่ได้ติดตั้งส่วนบัญชีครับ\n' +
-           'เอาไฟล์ accounting.gs เข้าโปรเจกต์นี้ก่อน (ดู ACCOUNTING-README.md)';
-  }
+/** สรุปเดือนนี้ / รอบบัตรเครดิต — ต้องมี accounting.gs อยู่ในโปรเจกต์ด้วย */
+function intakeAccounting_(what) {
+  var missing = 'ยังไม่ได้ติดตั้งส่วนบัญชีครับ\n' +
+                'เอาไฟล์ accounting.gs เข้าโปรเจกต์นี้ก่อน (ดู ACCOUNTING-README.md)';
   try {
+    if (what === 'card') {
+      if (typeof accCardSummary_ !== 'function') return missing;
+      return accCardSummary_();
+    }
+    if (typeof accMonthSummary_ !== 'function') return missing;
     return accMonthSummary_(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy-MM'));
   } catch (err) {
-    return 'คิดงบไม่สำเร็จครับ: ' + (err && err.message ? err.message : err);
+    return 'คิดยอดไม่สำเร็จครับ: ' + (err && err.message ? err.message : err);
   }
 }
 

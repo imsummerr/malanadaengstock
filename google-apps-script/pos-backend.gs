@@ -36,8 +36,10 @@ var DELIVERY_HEADERS = [
   'ของเพิ่ม', 'ข้อมูล', 'order_id'
 ];
 
+// 'วิธีจ่าย' ต่อท้ายไว้ ไม่แทรกกลาง แถวเก่าที่ยังว่างถือเป็นเงินสด
 var EXPENSE_HEADERS = [
-  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id'
+  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id',
+  'วิธีจ่าย'
 ];
 
 // ประเภทค่าใช้จ่ายที่เลือกได้ ต้องตรงกับ EXPENSE_TYPES ใน pos.html
@@ -453,7 +455,8 @@ function handleExpense_(body) {
       e.type || 'อื่น ๆ',
       e.note || '',
       amount,
-      e.expenseId || ''
+      e.expenseId || '',
+      e.method || 'เงินสด'
     ]);
     return { success: true, orderNo: no };
   } finally {

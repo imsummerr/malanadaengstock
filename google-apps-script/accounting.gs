@@ -69,9 +69,20 @@ var ACC_WHT_RATES = { '6100': 0.05 };
 var ACC_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
                   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
+var ACC_SHEET_CARD = 'บัญชี_บัตรเครดิต';
+
+/** วันตัดยอดบัตร / วันครบกำหนดจ่าย — เปลี่ยนได้ที่ Script Properties */
+function accCardCut_() { return accDayProp_('ACC_CARD_CUT', 17); }
+function accCardPay_() { return accDayProp_('ACC_CARD_PAY', 1); }
+function accDayProp_(key, fallback) {
+  var n = parseInt(accProp_(key, String(fallback)), 10);
+  if (isNaN(n)) n = fallback;
+  return Math.min(28, Math.max(1, n));   // จำกัด 28 เพื่อให้มีวันนี้ทุกเดือน
+}
+
 var ACC_JOURNAL_HEADERS = [
   'วันที่', 'เลขที่เอกสาร', 'รับ/จ่าย', 'รหัสบัญชี', 'ชื่อบัญชี', 'รายละเอียด', 'สาขา',
-  'จำนวนเงินรวม', 'ฐานภาษี', 'VAT', 'หัก ณ ที่จ่าย', 'จ่ายสุทธิ', 'เอกสาร', 'ที่มา'
+  'จำนวนเงินรวม', 'ฐานภาษี', 'VAT', 'หัก ณ ที่จ่าย', 'จ่ายสุทธิ', 'วิธีจ่าย', 'เอกสาร', 'ที่มา'
 ];
 
 var ACC_MANUAL_HEADERS = [
@@ -175,8 +186,63 @@ function accEntry_(o) {
     wht:    wht,
     net:    accRound_(amount - wht),
     doc:    o.doc || 'ไม่ระบุ',
+    pay:    String(o.pay || '').trim() || 'เงินสด',
     source: o.source || ''
   };
+}
+
+/* ──────────────── รอบบัตรเครดิต ──────────────── */
+
+function accPad_(n) { return ('0' + n).slice(-2); }
+
+/** บวก/ลบเดือน โดย m นับ 1–12 */
+function accAddMonth_(y, m, n) {
+  var t = y * 12 + (m - 1) + n;
+  return { y: Math.floor(t / 12), m: (t % 12) + 1 };
+}
+
+/**
+ * รายการที่รูดวันนี้ อยู่ในรอบบัตรไหน และต้องจ่ายวันไหน
+ * ตัดยอดวันที่ 17 → ที่รูด 18 ส.ค.–17 ก.ย. อยู่ในรอบที่ตัด 17 ก.ย.
+ * วันจ่าย (1) มาก่อนวันตัด (17) แปลว่าจ่ายเดือนถัดไป → 1 ต.ค.
+ * ถ้าตั้งวันจ่ายไว้หลังวันตัด (เช่น ตัด 17 จ่าย 25) ก็จ่ายในเดือนเดียวกัน
+ */
+function accCardCycle_(dateStr) {
+  var y = parseInt(dateStr.slice(0, 4), 10);
+  var m = parseInt(dateStr.slice(5, 7), 10);
+  var d = parseInt(dateStr.slice(8, 10), 10);
+  var cut = accCardCut_(), pay = accCardPay_();
+
+  if (d > cut) { var nx = accAddMonth_(y, m, 1); y = nx.y; m = nx.m; }
+
+  var p  = (pay > cut) ? { y: y, m: m } : accAddMonth_(y, m, 1);
+  var st = accAddMonth_(y, m, -1);
+
+  return {
+    key:   y + '-' + accPad_(m),
+    start: st.y + '-' + accPad_(st.m) + '-' + accPad_(cut + 1),
+    cut:   y + '-' + accPad_(m) + '-' + accPad_(cut),
+    due:   p.y + '-' + accPad_(p.m) + '-' + accPad_(pay)
+  };
+}
+
+/** '2026-09-17' → '17 ก.ย.' */
+function accThaiDate_(key) {
+  var m = parseInt(key.slice(5, 7), 10) - 1;
+  return parseInt(key.slice(8, 10), 10) + ' ' + (ACC_MONTHS[m] || '');
+}
+
+/** รวมรายการที่รูดบัตร แยกตามรอบ */
+function accCardCycles_(entries) {
+  var cycles = {};
+  entries.forEach(function (e) {
+    if (e.kind !== 'จ่าย' || e.pay !== 'บัตรเครดิต') return;
+    var c = accCardCycle_(e.date);
+    if (!cycles[c.key]) cycles[c.key] = { info: c, total: 0, count: 0 };
+    cycles[c.key].total = accRound_(cycles[c.key].total + e.amount);
+    cycles[c.key].count++;
+  });
+  return cycles;
 }
 
 /** ขายหน้าร้าน — ใช้ "ยอดสุทธิ" ตัวเดียวกับที่หน้า Dashboard นับ */
@@ -247,7 +313,7 @@ function accFromExpenses_(year) {
       date: date, no: r['เลขที่'], kind: 'จ่าย',
       code: ACC_EXPENSE_MAP[type] || '6900',
       detail: type + (r['รายละเอียด'] ? ' — ' + r['รายละเอียด'] : ''),
-      branch: r['สาขา'], amount: amount,
+      branch: r['สาขา'], amount: amount, pay: r['วิธีจ่าย'],
       doc: 'ไม่ระบุ', source: 'POS_Expenses'
     }));
   });
@@ -271,7 +337,7 @@ function accFromPurchases_(year) {
       date: date, no: r['เลขที่'], kind: 'จ่าย', code: '5100',
       detail: 'ซื้อ ' + (r['รายการ'] || '') +
               (accNum_(r['น้ำหนัก(กรัม)']) ? ' ' + accNum_(r['น้ำหนัก(กรัม)']) + ' ก.' : ''),
-      branch: r['สถานที่'], amount: amount,
+      branch: r['สถานที่'], amount: amount, pay: r['วิธีจ่าย'],
       doc: String(r['ที่มา']).trim() === 'รูป' ? 'มีรูปบิล' : 'ไม่มีเอกสาร',
       source: INTAKE_SHEET
     }));
@@ -349,7 +415,7 @@ function accWriteJournal_(entries, year) {
 
   var rows = entries.map(function (e) {
     return [e.date, e.no, e.kind, e.code, accAccountName_(e.code), e.detail, e.branch,
-            e.amount, e.base, e.vat || '', e.wht || '', e.net, e.doc, e.source];
+            e.amount, e.base, e.vat || '', e.wht || '', e.net, e.pay, e.doc, e.source];
   });
 
   sh.getRange(head + 1, 1, rows.length, ACC_JOURNAL_HEADERS.length).setValues(rows);
@@ -458,6 +524,78 @@ function accWriteTax_(entries, year) {
   return { noDocTotal: tot(noDoc) };
 }
 
+function accWriteCard_(entries, year) {
+  var sh = accSheet_(ACC_SHEET_CARD);
+  var headers = ['รอบตัดยอด', 'รูดตั้งแต่', 'ถึง', 'จำนวนรายการ', 'ยอดที่ต้องจ่าย', 'กำหนดจ่าย'];
+  var head = accWriteHead_(sh, headers,
+    'บัตรเครดิต ปี ' + year + ' — ตัดยอดทุกวันที่ ' + accCardCut_() +
+    ' จ่ายวันที่ ' + accCardPay_() +
+    ' · ระบบไม่รู้ว่าจ่ายไปแล้วหรือยัง ให้เทียบกับใบแจ้งยอดอีกที');
+
+  var cycles = accCardCycles_(entries);
+  var keys = Object.keys(cycles).sort();
+  if (!keys.length) {
+    sh.getRange(head + 1, 1).setValue('ยังไม่มีรายการที่รูดบัตรในปีนี้');
+    return sh;
+  }
+
+  var rows = keys.map(function (k) {
+    var c = cycles[k];
+    return [accThaiDate_(c.info.cut), c.info.start, c.info.cut, c.count, c.total, c.info.due];
+  });
+  sh.getRange(head + 1, 1, rows.length, headers.length).setValues(rows);
+  sh.getRange(head + 1, 2, rows.length, 2).setNumberFormat('@');
+  sh.getRange(head + 1, 6, rows.length, 1).setNumberFormat('@');
+  sh.getRange(head + 1, 5, rows.length, 1).setNumberFormat('#,##0.00');
+  sh.autoResizeColumns(1, headers.length);
+  return sh;
+}
+
+/** ยอดบัตรเครดิต — ตอบในไลน์เวลาพิมพ์ "บัตร" */
+function accCardSummary_() {
+  var today = Utilities.formatDate(new Date(), accTz_(), 'yyyy-MM-dd');
+  var y = parseInt(today.slice(0, 4), 10);
+
+  // ดูปีที่แล้วด้วย เพราะรอบบัตรคาบเกี่ยวข้ามปีได้ (รูด ธ.ค. จ่าย ม.ค.)
+  var entries = accCollect_(String(y - 1)).concat(accCollect_(String(y)));
+  var cycles  = accCardCycles_(entries);
+  var keys    = Object.keys(cycles).sort();
+
+  if (!keys.length) {
+    return '💳 ยังไม่มีรายการที่รูดบัตรครับ\n\n' +
+           'เวลารูดบัตร เติมคำว่า "บัตร" ต่อท้าย เช่น\n' +
+           '  ค่าแก๊ส 450 บัตร';
+  }
+
+  var now = accCardCycle_(today);
+  var lines = ['💳 บัตรเครดิต',
+               'ตัดยอดทุกวันที่ ' + accCardCut_() + ' · จ่ายวันที่ ' + accCardPay_(), ''];
+
+  // รอบที่ปิดไปแล้ว — เอา 2 รอบล่าสุดพอ
+  var closed = keys.filter(function (k) { return k < now.key; }).slice(-2);
+  closed.forEach(function (k) {
+    var c = cycles[k];
+    lines.push('▸ ปิดรอบแล้ว — จ่าย ' + accThaiDate_(c.info.due));
+    lines.push('   ' + accMoney_(c.total) + ' บาท  (' + c.count + ' รายการ)');
+    lines.push('   รูด ' + accThaiDate_(c.info.start) + '–' + accThaiDate_(c.info.cut));
+    lines.push('');
+  });
+
+  var cur = cycles[now.key];
+  lines.push('▸ รอบที่กำลังใช้อยู่');
+  if (cur) {
+    lines.push('   สะสมแล้ว ' + accMoney_(cur.total) + ' บาท  (' + cur.count + ' รายการ)');
+  } else {
+    lines.push('   ยังไม่มีรายการ');
+  }
+  lines.push('   ตัดยอด ' + accThaiDate_(now.cut) + ' · จ่าย ' + accThaiDate_(now.due));
+
+  lines.push('');
+  lines.push('ตอนจ่ายบัตร ไม่ต้องบันทึกซ้ำนะครับ');
+  lines.push('เพราะลงเป็นค่าใช้จ่ายไปแล้วตั้งแต่ตอนรูด');
+  return lines.join('\n');
+}
+
 // ══════════════════════════════════════════════════════════════
 //  ฟังก์ชันที่เรียกใช้จริง
 // ══════════════════════════════════════════════════════════════
@@ -489,11 +627,15 @@ function setupAccounting() {
   }
 
   Logger.log('\nการตั้งค่าตอนนี้');
+  Logger.log('  บัตรเครดิต  ตัดยอดทุกวันที่ ' + accCardCut_() + ' · จ่ายวันที่ ' + accCardPay_() +
+             '   (เปลี่ยนที่ ACC_CARD_CUT / ACC_CARD_PAY)');
   Logger.log('  ACC_VAT = ' + (accVatOn_() ? 'on — ถอด VAT 7% ออกจากยอดขาย' : 'off — ไม่คิด VAT (ค่าเริ่มต้น)'));
   Logger.log('  ACC_WHT = ' + (accWhtOn_() ? 'on — คำนวณหัก ณ ที่จ่ายค่าเช่า 5% ให้' : 'off — ไม่คำนวณ (ค่าเริ่มต้น)'));
-  Logger.log('\n⚠️ จดทะเบียน VAT แล้วต้องตั้ง ACC_VAT = on ไม่งั้นตัวเลขจะผิด');
   Logger.log('\nต่อไปรัน buildAccountingThisYear() เพื่อสร้างรายงาน');
 }
+
+/** ดูยอดบัตรเครดิตใน Log */
+function previewCard() { Logger.log(accCardSummary_()); }
 
 /** สร้างรายงานทั้งหมดของปีที่ระบุ เช่น buildAccounting('2026') */
 function buildAccounting(year) {
@@ -506,6 +648,7 @@ function buildAccounting(year) {
     accWriteJournal_(entries, year);
     var pl  = accWritePL_(entries, year);
     var tax = accWriteTax_(entries, year);
+    accWriteCard_(entries, year);
 
     var revenue = pl.revenue.reduce(function (a, b) { return a + b; }, 0);
     var net     = pl.net.reduce(function (a, b) { return a + b; }, 0);
@@ -527,11 +670,20 @@ function buildAccountingThisYear() {
   return buildAccounting(Utilities.formatDate(new Date(), accTz_(), 'yyyy'));
 }
 
+/** 5000 → "5,000" · 3450.5 → "3,450.50" (เลขกลม ๆ ไม่ต้องมีสตางค์ให้รก) */
 function accMoney_(n) {
   var v = accRound_(n);
-  var neg = v < 0;
-  var s = String(Math.abs(v).toFixed(2)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (neg ? '-' : '') + s;
+  var a = Math.abs(v);
+  var s = (a % 1 === 0) ? String(a) : a.toFixed(2);
+  var dot = s.indexOf('.');
+  var head = dot === -1 ? s : s.slice(0, dot);
+  return (v < 0 ? '-' : '') + head.replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
+         (dot === -1 ? '' : s.slice(dot));
+}
+
+/** ตัดวงเล็บอธิบายท้ายชื่อบัญชีออก เวลาโชว์ในไลน์ */
+function accShortName_(code) {
+  return accAccountName_(code).replace(/\s*\(.*\)\s*$/, '').replace(/\s*—.*$/, '').trim();
 }
 
 /**
@@ -545,42 +697,60 @@ function accMonthSummary_(yyyymm) {
   var entries = accCollect_(year).filter(function (e) { return e.date.slice(0, 7) === month; });
   if (!entries.length) return '📒 เดือน ' + month + ' ยังไม่มีรายการครับ';
 
-  var byGroup = { 'รายได้': 0, 'ต้นทุนขาย': 0, 'ค่าใช้จ่าย': 0 };
   var groupOf = {};
   ACC_ACCOUNTS.forEach(function (a) { groupOf[a.code] = a.group; });
 
-  var noDoc = 0, byCode = {};
+  var byGroup = { 'รายได้': 0, 'ต้นทุนขาย': 0, 'ค่าใช้จ่าย': 0 };
+  var byCode = {}, noDoc = 0, card = 0;
+
   entries.forEach(function (e) {
     var g = groupOf[e.code] || 'ค่าใช้จ่าย';
     byGroup[g] = accRound_(byGroup[g] + e.base);
     byCode[e.code] = accRound_((byCode[e.code] || 0) + e.base);
-    if (e.kind === 'จ่าย' && (e.doc === 'ไม่มีเอกสาร' || e.doc === 'ไม่ระบุ')) {
-      noDoc = accRound_(noDoc + e.amount);
-    }
+    if (e.kind !== 'จ่าย') return;
+    if (e.pay === 'บัตรเครดิต') card = accRound_(card + e.amount);
+    // นับเฉพาะของที่พิมพ์มาเฉย ๆ ไม่ได้ถ่ายรูป — อันนี้แก้ได้ด้วยการส่งรูป
+    // ค่าใช้จ่ายจากหน้า POS ไม่นับ เพราะระบบไม่เคยถามเอกสารอยู่แล้ว
+    if (e.doc === 'ไม่มีเอกสาร') noDoc = accRound_(noDoc + e.amount);
   });
 
-  var net = accRound_(byGroup['รายได้'] - byGroup['ต้นทุนขาย'] - byGroup['ค่าใช้จ่าย']);
+  var spend = accRound_(byGroup['ต้นทุนขาย'] + byGroup['ค่าใช้จ่าย']);
+  var left  = accRound_(byGroup['รายได้'] - spend);
   var m = parseInt(month.slice(5, 7), 10) - 1;
 
-  var lines = ['📒 งบเดือน ' + ACC_MONTHS[m] + ' ' + year, ''];
-  lines.push('รายได้        ' + accMoney_(byGroup['รายได้']));
-  lines.push('ต้นทุนขาย     -' + accMoney_(byGroup['ต้นทุนขาย']));
-  lines.push('ค่าใช้จ่าย     -' + accMoney_(byGroup['ค่าใช้จ่าย']));
-  lines.push('─────────────');
-  lines.push((net >= 0 ? 'กำไรสุทธิ     ' : 'ขาดทุนสุทธิ   ') + accMoney_(net) + ' บาท');
+  var lines = ['📒 สรุปเดือน ' + ACC_MONTHS[m] + ' ' + year, ''];
 
-  var top = Object.keys(byCode).filter(function (c) { return (groupOf[c] || '') !== 'รายได้'; })
+  lines.push('รายรับ');
+  if (byCode['4100']) lines.push('• ขายหน้าร้าน ' + accMoney_(byCode['4100']));
+  if (byCode['4110']) lines.push('• เดลิเวอรี่ ' + accMoney_(byCode['4110']));
+  if (byCode['4900']) lines.push('• อื่น ๆ ' + accMoney_(byCode['4900']));
+  lines.push('รวม ' + accMoney_(byGroup['รายได้']) + ' บาท');
+
+  lines.push('', 'รายจ่าย');
+  lines.push('• ซื้อของ ' + accMoney_(byGroup['ต้นทุนขาย']));
+  lines.push('• ค่าใช้จ่ายรายวัน ' + accMoney_(byGroup['ค่าใช้จ่าย']));
+  lines.push('รวม ' + accMoney_(spend) + ' บาท');
+
+  lines.push('', '━━━━━━━━━━━━━');
+  lines.push((left >= 0 ? '✅ เหลือ ' : '⚠️ ขาดทุน ') + accMoney_(left) + ' บาท');
+
+  var top = Object.keys(byCode)
+    .filter(function (c) { return (groupOf[c] || '') !== 'รายได้' && byCode[c] > 0; })
     .sort(function (a, b) { return byCode[b] - byCode[a]; }).slice(0, 3);
   if (top.length) {
     lines.push('', 'จ่ายมากสุด');
-    top.forEach(function (c) { lines.push('• ' + accAccountName_(c) + ' ' + accMoney_(byCode[c])); });
+    top.forEach(function (c) { lines.push('• ' + accShortName_(c) + ' ' + accMoney_(byCode[c])); });
+  }
+
+  if (card > 0) {
+    lines.push('', '💳 รูดบัตรเดือนนี้ ' + accMoney_(card) + ' บาท');
+    lines.push('พิมพ์ "บัตร" ดูว่าต้องจ่ายเมื่อไหร่');
   }
 
   if (noDoc > 0) {
-    lines.push('', '⚠️ รายจ่ายไม่มีเอกสาร ' + accMoney_(noDoc) + ' บาท');
-    lines.push('ส่วนนี้หักเป็นรายจ่ายทางภาษีไม่ได้ — ถ่ายบิลส่งมาเก็บไว้ด้วยครับ');
+    lines.push('', '📷 ซื้อของที่ยังไม่มีรูปบิล ' + accMoney_(noDoc) + ' บาท');
+    lines.push('ถ่ายบิลส่งมาแทนพิมพ์ จะได้มีหลักฐานเก็บไว้');
   }
-  lines.push('', 'ตัวเลขนี้ยังไม่ผ่านผู้ทำบัญชี ใช้ดูภายในร้าน');
   return lines.join('\n');
 }
 
