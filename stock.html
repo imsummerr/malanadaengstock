@@ -334,6 +334,17 @@ let D = { items: [], locations: [], stock: [], central: 'ครัวกลา�
 
 const itemOf = n => D.items.find(i => i.name === n) || null;
 
+/* สินค้าบางอย่างมีเฉพาะครัวกลาง (ผงปรุง วัตถุดิบดิบ) บางอย่างมีเฉพาะหน้าร้าน
+   (น้ำซุปที่ผสมเสร็จแล้ว) ช่อง "ใช้ที่" ในชีตรายการสินค้าเป็นตัวกำหนด
+   เว้นว่าง = ใช้ได้ทั้งสองที่ */
+const SCOPE_CENTRAL = 'ครัวกลาง', SCOPE_SHOP = 'ร้าน';
+
+/** สินค้าที่ลงได้ที่สถานที่นี้ */
+function itemsFor(loc) {
+  const want = (loc === D.central) ? SCOPE_CENTRAL : SCOPE_SHOP;
+  return D.items.filter(i => !i.scope || i.scope === want);
+}
+
 /** สถานที่ที่ผู้ใช้คนนี้ลงรายการได้ — เจ้าของทุกที่ ครัวกลางเฉพาะครัวกลาง สาขาเฉพาะสาขาตัวเอง */
 function allowedLocs() {
   if (isOwner()) return D.locations;
@@ -444,7 +455,7 @@ function viewMove(v, kind) {
 
   const locField = c.fixedLoc
     ? `<input id="f-loc" value="${esc(D.central)}" readonly style="background:var(--bg)">`
-    : `<select id="f-loc" onchange="recalc()">${locs.map(l =>
+    : `<select id="f-loc" onchange="fillItems(); recalc()">${locs.map(l =>
         `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
 
   v.innerHTML = `<div class="card">
@@ -455,9 +466,7 @@ function viewMove(v, kind) {
     ${locField}
 
     <label class="fld">สินค้า</label>
-    <select id="f-item" onchange="syncUnits(); recalc()">
-      ${D.items.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
-    </select>
+    <select id="f-item" onchange="syncUnits(); recalc()"></select>
 
     <div class="qtyrow" style="margin-top:12px">
       <div>
@@ -486,8 +495,24 @@ function viewMove(v, kind) {
     <p class="note" id="f-note-line"></p>
   </div>`;
 
+  fillItems();
   syncUnits();
   recalc();
+}
+
+/** เติมรายการสินค้าในช่องเลือก ตามสถานที่ที่เลือกอยู่ */
+function fillItems() {
+  const sel = document.getElementById('f-item');
+  if (!sel) return;
+  const locEl = document.getElementById('f-loc');
+  const loc = locEl ? locEl.value : D.central;
+  const keep = sel.value;
+  const list = itemsFor(loc);
+  sel.innerHTML = list.length
+    ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
+    : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
+  if (keep && list.some(i => i.name === keep)) sel.value = keep;
+  syncUnits();
 }
 
 function syncUnits() {
@@ -565,6 +590,12 @@ async function submitMove(kind) {
 }
 
 /* ── เช็คสต็อกรายสัปดาห์ — บังคับนับให้ครบ ── */
+/** สินค้าที่ต้องนับที่สถานที่ที่เลือกอยู่ในแท็บเช็คสต็อก */
+function countItems() {
+  const el = document.getElementById('c-loc');
+  return itemsFor(el ? el.value : D.central);
+}
+
 function viewCount(v) {
   const locs = allowedLocs();
 
@@ -577,7 +608,7 @@ function viewCount(v) {
       `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
 
     <div class="progress"><div id="c-bar"></div></div>
-    <p class="note" id="c-prog">นับแล้ว 0 / ${D.items.length}</p>
+    <p class="note" id="c-prog">นับแล้ว 0 / ${countItems().length}</p>
   </div>
 
   <div class="card">
@@ -587,7 +618,7 @@ function viewCount(v) {
     <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
   </div>`;
 
-  document.getElementById('c-rows').innerHTML = D.items.map((it, i) => `
+  document.getElementById('c-rows').innerHTML = countItems().map((it, i) => `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
@@ -602,7 +633,7 @@ function viewCount(v) {
 
 function paintCount() {
   const loc = document.getElementById('c-loc').value;
-  D.items.forEach((it, i) => {
+  countItems().forEach((it, i) => {
     // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
     // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
     document.getElementById('cs-' + i).innerHTML = isOwner()
@@ -614,14 +645,15 @@ function paintCount() {
 
 function paintProgress() {
   let done = 0;
-  D.items.forEach((it, i) => {
+  const items = countItems();
+  items.forEach((it, i) => {
     const p = document.getElementById('cp-' + i).value;
     const r = document.getElementById('cr2-' + i).value;
     const ok = (p !== '' || r !== '');
     if (ok) done++;
     document.getElementById('cr-' + i).classList.toggle('done', ok);
   });
-  const total = D.items.length;
+  const total = items.length;
   const left  = total - done;
   const pct = total ? Math.round(done / total * 100) : 0;
   document.getElementById('c-bar').style.width = pct + '%';
@@ -638,7 +670,7 @@ function paintProgress() {
 }
 
 async function submitCount() {
-  const rows = D.items.map((it, i) => ({
+  const rows = countItems().map((it, i) => ({
     item: it.name,
     packs: document.getElementById('cp-' + i).value,
     rem:   document.getElementById('cr2-' + i).value
