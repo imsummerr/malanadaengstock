@@ -70,8 +70,9 @@ var INTAKE_PAY_PATTERNS = [
 ];
 
 /**
- * คำนำหน้าเวลาพิมพ์ "ในกลุ่ม" — กันบอทเก็บบทสนทนาทั่วไปของกลุ่มลงชีต
- * แชทส่วนตัวกับบอทไม่ต้องใส่คำนำหน้า พิมพ์ของได้เลย
+ * คำนำหน้า — ใส่แล้วบอทจะรับแน่นอน ไม่ว่าจะพิมพ์อะไรตามมา
+ * ปกติในกลุ่มไม่ต้องใส่ก็ได้ (ดู INTAKE_GROUP_MODE) แต่ถ้าบอทไม่ยอมรับบรรทัดไหน
+ * ให้เติมคำนำหน้าเข้าไปแล้วมันจะรับทันที
  */
 var INTAKE_PREFIXES = ['ซื้อ', 'บันทึก', 'ลงของ', 'เพิ่ม', '#'];
 
@@ -167,17 +168,30 @@ function intakeOnText_(ev, ctx) {
   }
 
   var stripped = intakeStripPrefix_(raw);
+  var called   = stripped !== null;   // พิมพ์คำนำหน้ามา = ตั้งใจสั่งบอทแน่ ๆ
+  var mode     = String(intakeProp_('INTAKE_GROUP_MODE', 'smart')).toLowerCase();
 
-  // ในกลุ่มต้องมีคำนำหน้า ไม่งั้นบอทจะเก็บทุกประโยคที่คนคุยกันลงชีต
-  if (ctx.isGroup && stripped === null && intakeProp_('INTAKE_GROUP_MODE', 'prefix') !== 'all') {
-    Logger.log('ข้ามข้อความในกลุ่ม (ไม่มีคำนำหน้า ' + INTAKE_PREFIXES.join('/') + '): ' + raw.slice(0, 40));
+  // โหมด prefix — ในกลุ่มต้องมีคำนำหน้าเสมอ ไม่มีก็ไม่สนใจ
+  if (ctx.isGroup && !called && mode === 'prefix') {
+    Logger.log('ข้ามข้อความในกลุ่ม (โหมด prefix ต้องขึ้นต้นด้วย ' +
+               INTAKE_PREFIXES.join('/') + '): ' + raw.slice(0, 40));
     return;
   }
 
-  var items = intakeParseText_(stripped === null ? raw : stripped);
+  var items = intakeParseText_(called ? stripped : raw);
+
+  // อยู่ในกลุ่มและไม่ได้เรียกบอทตรง ๆ — คนอาจแค่คุยกันอยู่
+  // จึงเอาเฉพาะบรรทัดที่มั่นใจ และถ้าไม่เข้าเกณฑ์ก็เงียบไว้ ไม่ต้องบ่นให้รกกลุ่ม
+  var quiet = ctx.isGroup && !called;
+  if (quiet && mode !== 'all') {
+    var names = intakeItemNames_();
+    items = items.filter(function (it) { return intakeConfident_(it, names); });
+  }
+
   if (!items.length) {
+    if (quiet) { Logger.log('ข้ามข้อความในกลุ่ม (ไม่ใช่รายการของ): ' + raw.slice(0, 40)); return; }
     intakeReply_(ctx, 'อ่านไม่ออกว่าซื้ออะไรครับ 🤔\n\nพิมพ์แบบนี้ได้เลย\n' +
-                      '  ปลาดอลลี่ 68 บาท 800 กรัม\n\nหรือพิมพ์ "ช่วย" ดูวิธีใช้');
+                      '  ปลาดอลลี่ 68 บาท 800 กรัม\n  ค่าที่ 200\n\nหรือพิมพ์ "ช่วย" ดูวิธีใช้');
     return;
   }
 
@@ -376,8 +390,10 @@ function intakeHelpText_() {
          '   (โอนก็พิมพ์ "โอน" · ไม่พิมพ์อะไร = เงินสด)\n\n' +
          'หลายรายการ พิมพ์บรรทัดละอย่าง หรือคั่นด้วยจุลภาค\n' +
          'ถ่ายรูปบิลส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
-         'ในกลุ่มต้องขึ้นต้นด้วย "ซื้อ" ก่อน เช่น\n' +
-         '   ซื้อ ค่าที่ 200\n\n' +
+         'พิมพ์ในกลุ่มนี้ได้เลย ไม่ต้องมีคำนำหน้า\n' +
+         'บอทจะเก็บเฉพาะบรรทัดที่เป็นรายการของจริง ๆ\n' +
+         'คุยกันปกติไม่โดนเก็บ ถ้าบรรทัดไหนบอทไม่รับ\n' +
+         'ให้เติมคำว่า "ซื้อ" ข้างหน้า เช่น  ซื้อ ปลากะพง 500\n\n' +
          'คำสั่งอื่น\n' +
          '   ลบ          ลบรายการล่าสุด\n' +
          '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
@@ -489,17 +505,18 @@ function intakeParseLine_(line) {
   if (!text) return null;
 
   var baht = 0, gram = 0, qty = 0, unit = '', bare = [];
+  var saidMoney = false, saidUnit = false;
   var re = intakeUnitRe_(), m;
 
   while ((m = re.exec(text)) !== null) {
     if (m[0] === '') { re.lastIndex++; continue; }   // กันวนไม่รู้จบ
     var val = intakeNum_(m[1]);
     switch (intakeUnitKind_(m[2])) {
-      case 'money': if (!baht) baht = val;        break;
-      case 'kg':    if (!gram) gram = val * 1000; break;
-      case 'g':     if (!gram) gram = val;        break;
-      case 'khit':  if (!gram) gram = val * 100;  break;
-      case 'count': if (!qty) { qty = val; unit = String(m[2]).trim(); } break;
+      case 'money': if (!baht) baht = val;        saidMoney = true; break;
+      case 'kg':    if (!gram) gram = val * 1000; saidUnit  = true; break;
+      case 'g':     if (!gram) gram = val;        saidUnit  = true; break;
+      case 'khit':  if (!gram) gram = val * 100;  saidUnit  = true; break;
+      case 'count': if (!qty) { qty = val; unit = String(m[2]).trim(); } saidUnit = true; break;
       default:      bare.push(val);
     }
   }
@@ -518,8 +535,31 @@ function intakeParseLine_(line) {
 
   return {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit,
-    pay: pay.method, expense: intakeIsExpense_(name)
+    pay: pay.method, expense: intakeIsExpense_(name),
+    saidMoney: saidMoney, saidUnit: saidUnit
   };
+}
+
+/**
+ * คำที่โผล่ในบทสนทนา แต่ไม่มีทางเป็นชื่อของ
+ * ใช้กรองตอนอยู่ในกลุ่ม เพื่อไม่ให้ "แพงจัง 200 บาทเลยเหรอ" กลายเป็นรายการของ
+ */
+var INTAKE_CHAT_WORDS = /ไหม|มั้ย|เหรอ|หรอ|หรือ|ทำไม|เท่าไหร่|เท่าไร|กี่โมง|ครับ|ค่ะ|คะ|จ้า|น้า|นะ|จัง|เลยเหรอ|ขอบคุณ|สวัสดี|โอเค|ok/i;
+
+/**
+ * บรรทัดนี้ "มั่นใจพอ" ว่าเป็นรายการของจริงไหม — ใช้เฉพาะตอนอยู่ในกลุ่ม
+ * ในกลุ่มมีคนคุยกันปนอยู่ ถ้ารับหมดทุกอย่างที่มีตัวเลข ชีตจะเต็มไปด้วยขยะ
+ * รับเมื่อเข้าข้อใดข้อหนึ่ง:
+ *   • ขึ้นต้นด้วย "ค่า"                      → ค่าใช้จ่าย ชัดเจน
+ *   • ชื่อตรงกับชีตรายการสินค้า              → ของที่ร้านซื้อประจำ
+ *   • บอกหน่วยเงินมาชัด ๆ เช่น 500 บาท / ฿  → ตั้งใจบอกราคา
+ */
+function intakeConfident_(it, names) {
+  if (INTAKE_CHAT_WORDS.test(it.raw)) return false;
+  if (it.expense) return true;
+  if (intakeMatchItem_(it.raw, names).matched) return true;
+  if (it.saidMoney) return true;
+  return false;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1383,9 +1423,17 @@ function diagnoseLineIntake() {
     : ok + 'ยังไม่ได้ล็อกต้นทาง (รับจากทุกที่)');
 
   // 6) เรื่องที่คนสับสนบ่อยที่สุด
-  Logger.log(info + 'ในกลุ่ม ต้องขึ้นต้นด้วย "' + INTAKE_PREFIXES.slice(0, 3).join('" / "') + '"');
-  Logger.log('       เช่น  ซื้อ ค่าที่ 200');
-  Logger.log('       แชทส่วนตัวกับบอท พิมพ์ได้เลย ไม่ต้องมีคำนำหน้า');
+  var gm = String(intakeProp_('INTAKE_GROUP_MODE', 'smart')).toLowerCase();
+  Logger.log(info + 'โหมดในกลุ่ม: "' + gm + '"');
+  if (gm === 'prefix') {
+    Logger.log('       ต้องขึ้นต้นด้วย "' + INTAKE_PREFIXES.slice(0, 3).join('" / "') + '" เสมอ');
+    Logger.log('       อยากพิมพ์ในกลุ่มได้เลย → ตั้ง INTAKE_GROUP_MODE = smart');
+  } else if (gm === 'all') {
+    Logger.log('       เก็บทุกบรรทัดที่อ่านออก — ระวังบทสนทนาปนลงชีต');
+  } else {
+    Logger.log('       พิมพ์ในกลุ่มได้เลย ไม่ต้องมีคำนำหน้า');
+    Logger.log('       บอทเก็บเฉพาะบรรทัดที่ขึ้นต้นด้วย "ค่า" / ชื่อตรงชีตสินค้า / บอกหน่วยเงินชัด');
+  }
   Logger.log(info + 'อ่านรูป: โหมด "' + intakeImageMode_() + '"');
 
   Logger.log('\n─────────────────────────────────');
