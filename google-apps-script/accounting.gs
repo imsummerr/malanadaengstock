@@ -600,8 +600,51 @@ function accCardSummary_() {
 //  ฟังก์ชันที่เรียกใช้จริง
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * เช็คว่าไฟล์นี้อยู่ถูกโปรเจกต์หรือเปล่า — คืนรายการปัญหาที่เจอ
+ * ผิดโปรเจกต์แล้วตัวเลขจะหายไปเงียบ ๆ (รายได้เป็น 0 ทั้งที่ขายได้) เลยต้องเตือนตั้งแต่ต้น
+ */
+function accCheckProject_() {
+  var out = [];
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+
+  if (!ss) {
+    out.push('โปรเจกต์นี้ไม่ได้ผูกกับ Google Sheets — อ่านยอดขายและค่าใช้จ่ายไม่ได้เลย\n' +
+             '     (ต้องเปิดจาก ชีตของร้าน → ส่วนขยาย → Apps Script\n' +
+             '      ไม่ใช่สร้างโปรเจกต์ใหม่จาก script.google.com)');
+  }
+  if (typeof SHEET_ORDERS !== 'string') {
+    out.push('ไม่เจอ pos-backend.gs ในโปรเจกต์นี้ — ยอดขายหน้าร้าน เดลิเวอรี่ และรายการราคา จะอ่านไม่ได้');
+  }
+  if (typeof INTAKE_SHEET !== 'string') {
+    out.push('ไม่เจอ line-intake.gs ในโปรเจกต์นี้ — ของที่ซื้อผ่านไลน์จะไม่เข้าบัญชี');
+  }
+  return out;
+}
+
+/** พิมพ์คำเตือนเรื่องโปรเจกต์ คืน true ถ้ามีปัญหาจนไปต่อไม่ได้ */
+function accWarnProject_() {
+  var problems = accCheckProject_();
+  if (!problems.length) return false;
+
+  Logger.log('⛔ ไฟล์นี้อยู่ผิดโปรเจกต์ — แก้ตรงนี้ก่อน\n');
+  Logger.log('  • ' + problems.join('\n  • '));
+  Logger.log('\n───────────────────────────────────────');
+  Logger.log('accounting.gs + line-intake.gs + pos-backend.gs ต้องอยู่ "โปรเจกต์เดียวกัน"');
+  Logger.log('คือโปรเจกต์ที่ผูกกับชีตของร้าน:');
+  Logger.log('  1) เปิด Google Sheets ของร้าน');
+  Logger.log('  2) ส่วนขยาย (Extensions) → Apps Script');
+  Logger.log('  3) กด + ข้าง "ไฟล์" → สคริปต์ → วางโค้ดลงไป');
+  Logger.log('\nอนึ่ง accounting.gs ไม่ต้อง Deploy เป็นเว็บแอปเลย');
+  Logger.log('มันไม่มี doPost/doGet — เป็นแค่ฟังก์ชันที่สั่งรันจากหน้า Apps Script');
+  return true;
+}
+
 /** รันครั้งเดียว — สร้างชีตผังบัญชีกับชีตกรอกเอง แล้วบอกว่าตั้งค่าอะไรไว้ */
 function setupAccounting() {
+  if (accWarnProject_()) return;
+
   var coa = accSheet_(ACC_SHEET_COA);
   accWriteHead_(coa, ['รหัสบัญชี', 'ชื่อบัญชี', 'หมวด'],
     'ผังบัญชี — ส่งให้ผู้ทำบัญชีจับคู่กับรหัสในโปรแกรมของเขา');
@@ -639,6 +682,7 @@ function previewCard() { Logger.log(accCardSummary_()); }
 
 /** สร้างรายงานทั้งหมดของปีที่ระบุ เช่น buildAccounting('2026') */
 function buildAccounting(year) {
+  if (accWarnProject_()) return null;
   year = String(year || new Date().getFullYear());
 
   var lock = LockService.getScriptLock();

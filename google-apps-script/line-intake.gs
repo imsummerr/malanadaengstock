@@ -1237,8 +1237,45 @@ function intakeReply_(ctx, text) {
 //  เครื่องมือติดตั้ง / ทดสอบ (รันจากเมนู Run ใน Apps Script)
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * เช็คว่าไฟล์นี้อยู่ถูกโปรเจกต์หรือเปล่า — คืนรายการปัญหาที่เจอ
+ * ผิดโปรเจกต์แล้วอาการจะงง ๆ (บอทเงียบ ชีตไม่ขึ้น) เลยต้องบอกให้ชัดตั้งแต่ตอนติดตั้ง
+ */
+function intakeCheckProject_() {
+  var out = [];
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+
+  if (!ss) {
+    out.push('โปรเจกต์นี้ไม่ได้ผูกกับ Google Sheets — หาชีตไม่เจอเลย บันทึกอะไรไม่ได้สักอย่าง\n' +
+             '     (ต้องเปิดจาก ชีตของร้าน → ส่วนขยาย → Apps Script\n' +
+             '      ไม่ใช่สร้างโปรเจกต์ใหม่จาก script.google.com)');
+  }
+  if (typeof doPost !== 'function') {
+    out.push('ไม่เจอ pos-backend.gs ในโปรเจกต์นี้\n' +
+             '     • LINE ยิง webhook เข้ามาจะไม่มีใครรับ (doPost อยู่ในไฟล์นั้น)\n' +
+             '     • จับชื่อสินค้าให้ตรงชีตรายการสินค้าไม่ได้\n' +
+             '     • ลงชีตค่าใช้จ่ายให้ตรงกับหน้า POS ไม่ได้');
+  }
+  return out;
+}
+
 /** รันครั้งเดียว — สร้างชีตปลายทางและบอก URL ที่ต้องเอาไปใส่ใน LINE */
 function setupLineIntake() {
+  var problems = intakeCheckProject_();
+  if (problems.length) {
+    Logger.log('⛔ ไฟล์นี้อยู่ผิดโปรเจกต์ — แก้ตรงนี้ก่อน ไม่งั้นใช้ไม่ได้เลย\n');
+    Logger.log('  • ' + problems.join('\n  • '));
+    Logger.log('\n───────────────────────────────────────');
+    Logger.log('วิธีแก้: line-intake.gs + accounting.gs + pos-backend.gs');
+    Logger.log('ต้องอยู่ "โปรเจกต์เดียวกัน" คือโปรเจกต์ที่ผูกกับชีตของร้าน');
+    Logger.log('  1) เปิด Google Sheets ของร้าน');
+    Logger.log('  2) ส่วนขยาย (Extensions) → Apps Script');
+    Logger.log('  3) กด + ข้าง "ไฟล์" → สคริปต์ → วางโค้ดลงไป');
+    Logger.log('โปรเจกต์ที่สร้างแยกไว้ ลบทิ้งได้เลย และอย่าเอา URL ของมันไปใส่ใน LINE');
+    return;
+  }
+
   var sh = intakeSheet_();
   Logger.log('สร้าง/พบชีต "' + INTAKE_SHEET + '" แล้ว (' + sh.getLastRow() + ' แถว)');
 
