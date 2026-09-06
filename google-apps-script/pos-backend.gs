@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-06 · ปลดกฎล็อกหน่วยในชีตรายการสินค้า';
+var BACKEND_VERSION = '2026-09-06 · เก็บตกชื่อสินค้าที่สะกดไม่ตรง';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1866,9 +1866,15 @@ function applyPriceList() {
     });
   }
 
+  // มาม่าแยกราคา ราคาอยู่ในชื่ออยู่แล้ว รวมเข้ามาด้วย
+  // ไม่งั้นจะขึ้นเตือนว่า "อยู่ในชีตแต่ไม่มีในรายการราคา" ทั้งที่ตั้งใจให้มี
+  var prices = {};
+  Object.keys(PRICE_LIST).forEach(function (k) { prices[k] = PRICE_LIST[k]; });
+  STOCK_MAMA_PRICES.forEach(function (p) { prices['มาม่า ' + p] = p; });
+
   var updated = [], added = [], blank = [];
-  Object.keys(PRICE_LIST).forEach(function (name) {
-    var price = PRICE_LIST[name];
+  Object.keys(prices).forEach(function (name) {
+    var price = prices[name];
     if (!price) blank.push(name);
 
     if (rowOf[name]) {
@@ -1886,7 +1892,7 @@ function applyPriceList() {
   });
 
   // สินค้าในชีตที่ไม่มีในรายการราคา — อาจเลิกขายแล้ว หรือชื่อไม่ตรงกัน
-  var extra = Object.keys(rowOf).filter(function (n) { return !(n in PRICE_LIST); });
+  var extra = Object.keys(rowOf).filter(function (n) { return !(n in prices); });
 
   Logger.log('อัปเดตราคา ' + updated.length + ' รายการ');
   Logger.log('เพิ่มใหม่ ' + added.length + ' รายการ' + (added.length ? ':\n  ' + added.join('\n  ') : ''));
@@ -1915,6 +1921,8 @@ var ITEM_RENAME = {
   'ไส้กรอกพันเบคอน':    'เบคอนพันไส้กรอก',
   'ฟองเต้าหู้':          'ฟองเต้าหู้ม้วน',
   'หัวไหล่สไลด์':        'หัวไหล่หมูสไลด์',
+  'สามชั้นพันเห็ดเข็ม':   'สามชั้นพันเห็ดเข็มทอง',
+  'สันนอกห่อชีส':        'หมูห่อชีส',
   // ข้าวโพดแยกเป็น 3 แบบ ชื่อเดิมแมปเข้าแบบที่ใกล้ที่สุด
   'ข้าวโพด':            'ข้าวโพดฝัก',
   'ข้าวโพดฝักใหญ่':      'ข้าวโพดฝัก',
@@ -1922,6 +1930,7 @@ var ITEM_RENAME = {
   'ข้าวโพดเม็ดใส่แก้ว':   'ข้าวโพดถุง',
   // เก็บแถวมาม่าเดิมไว้ เปลี่ยนชื่อให้รู้ว่าเป็นเส้นเปล่า
   'มาม่า':              'มาม่า(เส้นเปล่า)',
+  'มาม่า (ทุกชนิด)':      'มาม่า(เส้นเปล่า)',
   'เต้าหู้ปลา':          'เต้าหู้ปลาสี่เหลี่ยม'
 };
 
@@ -2116,7 +2125,8 @@ var ITEM_UNITS = {
 
 /** ของที่เลิกขายแล้ว — ลบออกจากชีตรายการสินค้า */
 var ITEM_DISCONTINUED = ['เนื้อแดง', 'หมึก', 'รากบัว', 'กะหล่ำ',
-                         'กุ้งพันสาหร่าย', 'ควิซ', 'ต็อก', 'มาม่า 45'];
+                         'กุ้งพันสาหร่าย', 'ควิซ', 'ต็อก', 'ต็อก (แป้งต็อก)',
+                         'มาม่า 45'];
 
 /**
  * ตั้งหน่วยขายตาม ITEM_UNITS
