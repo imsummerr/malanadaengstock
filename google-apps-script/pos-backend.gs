@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-06 · เก็บตกชื่อสินค้าที่สะกดไม่ตรง';
+var BACKEND_VERSION = '2026-09-06 · ล้างยอดคงเหลือทุกสถานที่ + ดูที่มาของยอด';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2206,68 +2206,146 @@ function removeDiscontinuedItems() {
   }
 }
 
-/* ───────────── ล้างยอดคงเหลือของสถานที่ให้เป็นศูนย์ ───────────── */
-
-/** สถานที่ที่จะตั้งยอดเป็น 0 — แก้ตรงนี้แล้วรัน zeroOutStock() */
-var ZERO_LOCATION = 'ตลาดทรัพย์พัฒนา';
+/* ───────────── ล้างยอดคงเหลือให้เป็นศูนย์ ───────────── */
 
 /**
- * บันทึกผลนับ = 0 ให้ทุกสินค้าของสถานที่นั้น
+ * สถานที่ที่จะล้างยอด — เว้นว่างไว้ = ล้างทุกสถานที่
+ * แก้ตรงนี้แล้วรัน zeroOutStock()
+ */
+var ZERO_LOCATION = '';
+
+/** ทุกสถานที่ที่มีชื่อโผล่ในระบบ — ครัวกลาง + กลุ่ม LINE + ที่พบในชีตประวัติ */
+function allStockLocations_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = [CENTRAL];
+  function put(l) { l = String(l || '').trim(); if (l && out.indexOf(l) === -1) out.push(l); }
+  Object.keys(stockLineGroups_()).forEach(put);
+  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh || sh.getLastRow() < 2) return;
+    var map = ensureCols_(sh, MOVE_COLS);
+    sh.getRange(2, map['สาขา'] + 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r) { put(r[0]); });
+  });
+  return out;
+}
+
+/**
+ * บันทึกผลนับ = 0 ให้ของที่ยังมียอดค้างอยู่
  *
  * ใช้เมื่อ: ระบบขึ้นว่ามีของ แต่ของจริงไม่มี เพราะมีแถวของเข้าเก่าค้างอยู่
  * ไม่ได้ลบข้อมูลเก่าทิ้ง แค่บันทึกว่า "วันนี้นับได้ 0" ซึ่งกลายเป็นยอดตั้งต้นใหม่
  * ระบบจะข้ามทุกอย่างที่เกิดก่อนหน้านี้ไปเอง และมีหลักฐานว่าใครตั้งเมื่อไหร่
  *
- * นับรวมสินค้าที่ลบออกจากรายการแล้วแต่ยังมีประวัติค้างด้วย
- * ไม่งั้นของพวกนั้นจะยังค้างอยู่ในยอดคงเหลือ
+ * เขียนเฉพาะของที่ยอดไม่เป็นศูนย์ ของที่ยอดเป็น 0 อยู่แล้วไม่ต้องเขียน
+ * ไม่งั้นจะได้แถวเปล่า ๆ เป็นร้อยแถวโดยไม่ได้อะไรเพิ่ม
+ *
+ * ครอบคลุมของที่ลบออกจากรายการสินค้าแล้วแต่ยังมีประวัติค้างด้วย
+ * ไม่งั้นของพวกนั้นจะค้างอยู่ในยอดคงเหลือตลอดไป
  *
  * ไม่แจ้ง LINE เพราะเป็นการตั้งค่าระบบ ไม่ใช่การนับจริง
  */
 function zeroOutStock() {
-  var ss  = SpreadsheetApp.getActiveSpreadsheet();
-  var loc = String(ZERO_LOCATION || '').trim();
-  if (!loc) { Logger.log('ยังไม่ได้ตั้ง ZERO_LOCATION'); return; }
+  var want = String(ZERO_LOCATION || '').trim();
+  zeroStockAt_(want ? [want] : allStockLocations_());
+}
 
+/** ล้างทุกสถานที่ ไม่ต้องแก้ ZERO_LOCATION */
+function zeroOutAllStock() { zeroStockAt_(allStockLocations_()); }
+
+function zeroStockAt_(locs) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(SHEET_COUNT);
   if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_COUNT + '"'); return; }
   var map = ensureCols_(sh, MOVE_COLS);
 
-  // สินค้าที่ยังอยู่ในรายการ
-  var items = getStockItems_();
-  var unitOf = {};
-  items.forEach(function (i) { unitOf[i.name] = i.subUnit; });
+  var bal = stockBalances_();
 
-  // บวกสินค้าที่ลบออกจากรายการแล้วแต่ยังมีประวัติที่สถานที่นี้
-  // ถ้าไม่ตั้ง 0 ให้ด้วย ของพวกนี้จะค้างอยู่ในยอดคงเหลือตลอดไป
-  [SHEET_INCOMING, SHEET_WASTE].forEach(function (sname) {
-    var h = ss.getSheetByName(sname);
+  // หน่วยของแต่ละสินค้า — เอาจากรายการสินค้าก่อน ถ้าไม่มีค่อยดูจากประวัติ
+  var unitOf = {};
+  getStockItems_().forEach(function (i) { unitOf[i.name] = i.subUnit; });
+  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+    var h = ss.getSheetByName(name);
     if (!h || h.getLastRow() < 2) return;
     var hmap = ensureCols_(h, MOVE_COLS);
     h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).getValues().forEach(function (r) {
       var n = String(r[hmap['รายการ']] || '').trim();
-      var l = String(r[hmap['สาขา']] || '').trim();
-      if (!n || l !== loc || unitOf[n] !== undefined) return;
-      unitOf[n] = String(r[hmap['หน่วย']] || 'ไม้').trim();
+      if (n && unitOf[n] === undefined) unitOf[n] = String(r[hmap['หน่วย']] || 'ไม้').trim();
     });
   });
 
-  var names = Object.keys(unitOf);
-  if (!names.length) { Logger.log('ไม่มีสินค้าให้ตั้งยอด'); return; }
-
-  var now = new Date();
-  names.forEach(function (name) {
-    appendByCols_(sh, map, {
-      'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': 'ระบบ',
-      'รายการ': name, 'จำนวน': 0, 'หน่วย': unitOf[name],
-      'แพ็ค': 0, 'เศษ': 0, 'ไม้ต่อแพ็ค': '',
-      'ประเภท': 'เช็คสต็อก',
-      'หมายเหตุ': 'ตั้งยอดเริ่มต้นเป็น 0 — ล้างของเก่าที่ค้างในระบบ'
+  var now = new Date(), done = [];
+  locs.forEach(function (loc) {
+    var m = bal[loc] || {};
+    Object.keys(m).forEach(function (item) {
+      if (!Number(m[item])) return;          // ยอดเป็น 0 อยู่แล้ว ไม่ต้องเขียน
+      appendByCols_(sh, map, {
+        'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': 'ระบบ',
+        'รายการ': item, 'จำนวน': 0, 'หน่วย': unitOf[item] || 'ไม้',
+        'แพ็ค': 0, 'เศษ': 0, 'ไม้ต่อแพ็ค': '',
+        'ประเภท': 'เช็คสต็อก',
+        'หมายเหตุ': 'ตั้งยอดเริ่มต้นเป็น 0 — ล้างของเก่าที่ค้างในระบบ'
+      });
+      done.push(loc + ' · ' + item + ' (เดิม ' + m[item] + ')');
     });
   });
 
-  Logger.log('ตั้งยอด "' + loc + '" เป็น 0 แล้ว ' + names.length + ' รายการ\n' +
-             'เปิดแท็บสต็อกคงเหลือดูได้เลย ควรไม่เหลืออะไรแล้ว\n\n' +
+  Logger.log('ล้างยอดที่: ' + locs.join(', '));
+  if (!done.length) {
+    Logger.log('ไม่มีของค้างอยู่แล้ว ไม่ได้เขียนอะไรเพิ่ม');
+    return;
+  }
+  Logger.log('ตั้งยอดเป็น 0 ให้ ' + done.length + ' รายการ:\n  ' + done.join('\n  '));
+  Logger.log('\nเปิดแท็บสต็อกคงเหลือดูได้เลย ควรไม่เหลืออะไรแล้ว\n' +
              'ของที่เข้ามาหลังจากนี้จะนับปกติ ส่วนของเก่าก่อนหน้านี้ระบบข้ามให้เอง');
+}
+
+/**
+ * ยอดคงเหลือตอนนี้มาจากแถวไหนบ้าง — ใช้ตอบคำถามว่า "ทำไมขึ้นว่ามีของ"
+ * ไม่แก้อะไรทั้งนั้น แค่อ่านแล้วรายงาน
+ */
+function showStockSource() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var bal = stockBalances_();
+
+  var want = {};
+  Object.keys(bal).forEach(function (loc) {
+    Object.keys(bal[loc]).forEach(function (item) {
+      if (Number(bal[loc][item])) want[loc + '\u0000' + item] = bal[loc][item];
+    });
+  });
+  var keys = Object.keys(want);
+  if (!keys.length) { Logger.log('ไม่มีของค้างในระบบเลย'); return; }
+
+  Logger.log('ของที่ยังมียอดค้าง ' + keys.length + ' รายการ:');
+  keys.forEach(function (k) {
+    var part = k.split('\u0000');
+    Logger.log('  • ' + part[0] + ' · ' + part[1] + ' = ' + want[k]);
+  });
+
+  Logger.log('\n───── แถวที่ทำให้เกิดยอดพวกนี้ ─────');
+  [SHEET_COUNT, SHEET_INCOMING, SHEET_WASTE].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh || sh.getLastRow() < 2) return;
+    var map = ensureCols_(sh, MOVE_COLS);
+    var hit = [];
+    sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r, i) {
+      var item = String(r[map['รายการ']] || '').trim();
+      var loc  = String(r[map['สาขา']] || '').trim();
+      if (!item) return;
+      // ของเข้าร้าน 1 แถวกระทบครัวกลางด้วย เลยต้องเช็คทั้งสองฝั่ง
+      var kind = String(r[map['ประเภท']] || '').trim();
+      var touches = (want[loc + '\u0000' + item] !== undefined) ||
+                    (kind === 'ของเข้าร้าน' && want[CENTRAL + '\u0000' + item] !== undefined);
+      if (!touches) return;
+      hit.push('    แถว ' + (i + 2) + ' · ' + loc + ' · ' + item + ' · ' +
+               r[map['จำนวน']] + ' ' + r[map['หน่วย']] + ' · ' + kind +
+               ' · ' + r[map['วันที่เวลา']] + ' · ' + r[map['ผู้ตรวจ']]);
+    });
+    Logger.log('  "' + name + '" ' + hit.length + ' แถว' + (hit.length ? ':\n' + hit.join('\n') : ''));
+  });
+
+  Logger.log('\nถ้าของพวกนี้ไม่มีจริง รัน zeroOutAllStock() เพื่อล้างให้เป็น 0');
 }
 
 /* ───────────── ของใช้ / วัตถุดิบ ที่ไม่ได้ขายเป็นไม้ ───────────── */
