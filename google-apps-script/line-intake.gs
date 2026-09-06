@@ -1446,6 +1446,61 @@ function diagnoseLineIntake() {
   Logger.log('  4) มีแถวใหม่ = สคริปต์ทำงานแล้ว กดเข้าไปอ่านว่ามันบอกอะไร');
 }
 
+/**
+ * 🧪 แยกให้ชัดว่าติด "ขาเข้า" หรือ "ขาออก"
+ *   ขาเข้า  = LINE ส่ง webhook มาถึงสคริปต์ไหม
+ *   ขาออก  = สคริปต์ส่งข้อความกลับไปหา LINE ได้ไหม
+ * รันหลังจากพิมพ์อะไรสักอย่างในกลุ่มแล้ว
+ */
+function testIntakeSend() {
+  var seen = {};
+  try { seen = JSON.parse(intakeProps_().getProperty('INTAKE_SENDERS') || '{}'); } catch (e) {}
+  var ids = Object.keys(seen);
+
+  // ── ขาเข้า ──
+  if (!ids.length) {
+    Logger.log('❌ ขาเข้า: ยังไม่เคยมีข้อความจากไลน์มาถึงสคริปต์นี้เลย\n');
+    Logger.log('   แปลว่า LINE ยังไม่ได้ส่ง webhook มา — ปัญหาอยู่ฝั่ง LINE ไม่ใช่โค้ด');
+    Logger.log('   ไปเปิดสวิตช์ Webhook ที่');
+    Logger.log('     https://manager.line.biz/ → การตั้งค่า → การตอบกลับ → เปิด Webhook');
+    Logger.log('   แล้วพิมพ์อะไรก็ได้ในกลุ่ม จากนั้นรันฟังก์ชันนี้ใหม่');
+    return;
+  }
+  Logger.log('✅ ขาเข้า: มีข้อความมาถึงแล้ว ' + ids.length + ' ต้นทาง — webhook ใช้ได้');
+  ids.forEach(function (id) { Logger.log('     ' + id + '   (ล่าสุด ' + seen[id] + ')'); });
+
+  // ── ขาออก ──
+  var token = intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '');
+  if (!token) {
+    Logger.log('\n❌ ขาออก: ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ในโปรเจกต์นี้');
+    Logger.log('   นี่คือสาเหตุที่บอทเงียบ — อ่านได้ บันทึกลงชีตได้ แต่ตอบกลับไม่ได้');
+    Logger.log('   ตั้งที่ ⚙️ การตั้งค่าโปรเจกต์ → คุณสมบัติสคริปต์');
+    return;
+  }
+
+  var to = ids[ids.length - 1];
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'post', contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({
+      to: to,
+      messages: [{ type: 'text', text: '🧪 ทดสอบจากสคริปต์ — เห็นข้อความนี้แปลว่าบอทส่งได้ปกติ' }]
+    }),
+    muteHttpExceptions: true
+  });
+
+  if (res.getResponseCode() === 200) {
+    Logger.log('\n✅ ขาออก: ส่งข้อความทดสอบไปที่ ' + to + ' แล้ว — ไปดูในไลน์');
+    Logger.log('\nถ้าเห็นข้อความทดสอบในไลน์ แปลว่าทั้งสองขาใช้ได้');
+    Logger.log('ที่บอทไม่ตอบตอนพิมพ์ อาจเป็นเพราะบรรทัดนั้นไม่เข้าเกณฑ์ในกลุ่ม');
+    Logger.log('ลองพิมพ์ว่า  ซื้อ ค่าที่ 200  (มีคำว่า "ซื้อ" นำหน้า บังคับให้รับ)');
+  } else {
+    Logger.log('\n❌ ขาออก: ส่งไม่สำเร็จ (' + res.getResponseCode() + ')');
+    Logger.log('   ' + res.getContentText());
+    Logger.log('   401/403 = token ผิดหรือเป็นของ Channel อื่น');
+  }
+}
+
 /** ลองแยกข้อความโดยไม่ต้องส่งไลน์จริง — ดูผลใน บันทึกการดำเนินการ */
 function testIntakeParse() {
   var samples = [
