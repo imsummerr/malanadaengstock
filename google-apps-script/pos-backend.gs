@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-08-31 · ค่าใช้จ่าย + ของอื่น + พักบิล';
+var BACKEND_VERSION = '2026-09-06 · ปลดกฎล็อกหน่วยในชีตรายการสินค้า';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1596,6 +1596,9 @@ function setupStock() {
     ensureCols_(sh, MOVE_COLS);
   });
 
+  // ปลดกฎที่ล็อกหน่วยไว้แค่ ไม้/กรัม/ชิ้น — ตอนนี้มี ถุง มัด ใบ ขวด กก. ด้วย
+  clearStockValidation_();
+
   Logger.log('ติดตั้งเรียบร้อย — เพิ่มสินค้าใหม่ ' + added + ' รายการ\n' +
              'ยังต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
              '  • หน่วยย่อยต่อแพ็ค = 1 แพ็คมีกี่ไม้\n' +
@@ -1923,7 +1926,9 @@ var ITEM_RENAME = {
 };
 
 /** มาม่ามีหลายแบบ ราคาต่างกัน ต้องแยกเป็นคนละรายการถึงจะคิดของหายได้ */
-var MAMA_PRICES = [10, 15, 20, 35];
+// ตั้งชื่อไม่ให้ชนกับ MAMA_PRICES ของฝั่ง POS ข้างบน (ที่มี 45 ด้วย)
+// ถ้าใช้ชื่อซ้ำ ตัวล่างจะทับตัวบน แล้วคอลัมน์มาม่า 45 ในชีตออเดอร์จะหายไป
+var STOCK_MAMA_PRICES = [10, 15, 20, 35];
 
 /** ชีตที่เก็บชื่อสินค้าไว้ในคอลัมน์ "รายการ" */
 function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE]; }
@@ -2023,7 +2028,7 @@ function splitMamaItems() {
   }
 
   var added = [];
-  MAMA_PRICES.forEach(function (p) {
+  STOCK_MAMA_PRICES.forEach(function (p) {
     var name = 'มาม่า ' + p;
     if (have[name]) return;
     var row = {};
@@ -2044,8 +2049,36 @@ function splitMamaItems() {
   }
 }
 
+/**
+ * ล้างกฎ "ตรวจสอบข้อมูล" (dropdown) ที่ติดมากับชีตของระบบเก่า
+ *
+ * ชีตรายการสินค้าเดิมล็อกช่อง "หน่วยย่อย" ไว้ให้ใส่ได้แค่ ไม้ / กรัม / ชิ้น
+ * พอตั้งหน่วยจริงเป็น ถุง มัด ที่ อัน ใบ กระป๋อง ขวด กก. ชีตจะไม่ยอมรับ
+ * แล้วโยน error "ข้อมูลที่ป้อนลงในเซลล์ B7 ละเมิดกฎการตรวจสอบข้อมูล"
+ *
+ * ล้างเฉพาะ "กฎ" ไม่ได้ลบข้อมูลในช่อง รันซ้ำได้ ถ้าไม่มีกฎอยู่ก็ไม่เกิดอะไร
+ * ล้างชีตประวัติด้วย เพราะหน้าเว็บก็เขียนหน่วยพวกนี้ลงไปเหมือนกัน
+ */
+function clearStockValidation_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  [SHEET_ITEMS, SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return;
+    sh.getRange(1, 1, Math.max(sh.getMaxRows(), 1), Math.max(sh.getMaxColumns(), 1))
+      .clearDataValidations();
+  });
+}
+
+/** เรียกเองจากเมนูรันได้ ถ้าเจอ error เรื่องกฎตรวจสอบข้อมูลอีก */
+function clearStockValidation() {
+  clearStockValidation_();
+  Logger.log('ล้างกฎตรวจสอบข้อมูลของชีตสต็อกแล้ว — ใส่หน่วยอะไรก็ได้แล้ว\n' +
+             'ข้อมูลเดิมไม่ถูกลบ ลบแค่กฎที่บังคับให้เลือกจากรายการ');
+}
+
 /** รันทีเดียวจบ: รวมชื่อ → แยกมาม่า → ใส่ราคา */
 function fixItemList() {
+  clearStockValidation_();     // ปลดล็อกช่องหน่วยก่อน ไม่งั้นเขียน ถุง/ใบ/ขวด ไม่ได้
   mergeItemNames();            // รวมชื่อที่เรียกไม่ตรงกัน
   removeDiscontinuedItems();   // ลบของที่เลิกขาย
   splitMamaItems();            // แยกมาม่าตามราคา
@@ -2093,6 +2126,7 @@ var ITEM_DISCONTINUED = ['เนื้อแดง', 'หมึก', 'ราก�
 function applyItemUnits() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
   if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  clearStockValidation_();          // ชีตเดิมล็อกหน่วยไว้แค่ ไม้/กรัม/ชิ้น
   var map = ensureCols_(sh, ITEM_COLS);
   var last = sh.getLastRow();
   if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
@@ -2268,6 +2302,7 @@ var SUPPLY_ITEMS = [
 function addSupplyItems() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
   if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '" — รัน setupStock ก่อน'); return; }
+  clearStockValidation_();          // หน่วยของใช้เป็น ใบ/ขวด/กก. ซึ่งกฎเดิมไม่ยอมรับ
   var map = ensureCols_(sh, ITEM_COLS);
 
   var rowOf = {};
