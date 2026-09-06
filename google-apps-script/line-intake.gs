@@ -169,7 +169,10 @@ function intakeOnText_(ev, ctx) {
   var stripped = intakeStripPrefix_(raw);
 
   // ในกลุ่มต้องมีคำนำหน้า ไม่งั้นบอทจะเก็บทุกประโยคที่คนคุยกันลงชีต
-  if (ctx.isGroup && stripped === null && intakeProp_('INTAKE_GROUP_MODE', 'prefix') !== 'all') return;
+  if (ctx.isGroup && stripped === null && intakeProp_('INTAKE_GROUP_MODE', 'prefix') !== 'all') {
+    Logger.log('ข้ามข้อความในกลุ่ม (ไม่มีคำนำหน้า ' + INTAKE_PREFIXES.join('/') + '): ' + raw.slice(0, 40));
+    return;
+  }
 
   var items = intakeParseText_(stripped === null ? raw : stripped);
   if (!items.length) {
@@ -1209,7 +1212,12 @@ function intakeAccounting_(what) {
  */
 function intakeReply_(ctx, text) {
   var token = intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '');
-  if (!token || !text) return;
+  if (!token) {
+    // เคยเงียบไปเฉย ๆ ตรงนี้ หาสาเหตุกันนาน — บันทึกลงชีตสำเร็จแต่ตอบกลับไม่ได้
+    Logger.log('⛔ ตอบกลับไม่ได้ — ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ในโปรเจกต์นี้');
+    return;
+  }
+  if (!text) return;
 
   var msg = { type: 'text', text: String(text).slice(0, 4900) };
 
@@ -1313,6 +1321,81 @@ function testIntakeOcr(fileId) {
     var hit = intakeMatchItem_(it.raw, names);
     Logger.log('  • ' + hit.name + (hit.matched ? '' : ' (ไม่ตรงชีต)') + '  |  ' + intakeAmountText_(it));
   });
+}
+
+/**
+ * 🔍 ตรวจทุกอย่างรวดเดียว — บอทเงียบเมื่อไหร่ให้รันตัวนี้ก่อน
+ * ไล่ทีละข้อจากต้นทางไปปลายทาง แล้วบอกว่าติดตรงไหน
+ */
+function diagnoseLineIntake() {
+  var ok = '  ✅ ', bad = '  ❌ ', warn = '  ⚠️ ', info = '  ℹ️  ';
+  Logger.log('🔍 ตรวจระบบ "ส่งไลน์ → บันทึกลงชีต"\n');
+
+  // 1) อยู่ถูกโปรเจกต์ไหม — ข้อนี้ไม่ผ่าน อย่างอื่นไม่ต้องดู
+  var problems = intakeCheckProject_();
+  if (problems.length) {
+    Logger.log(bad + problems.join('\n' + bad));
+    Logger.log('\n⛔ แก้ข้อนี้ก่อน — เอาไฟล์ไปวางในโปรเจกต์ที่เปิดจาก');
+    Logger.log('   ชีตของร้าน → ส่วนขยาย → Apps Script');
+    return;
+  }
+  Logger.log(ok + 'อยู่ในโปรเจกต์ที่ผูกกับชีต และเจอ pos-backend แล้ว');
+
+  // 2) ส่วนบัญชี
+  Logger.log(typeof accMonthSummary_ === 'function'
+    ? ok + 'เจอ accounting.gs — คำสั่ง "งบ" กับ "บัตร" ใช้ได้'
+    : warn + 'ไม่เจอ accounting.gs — คำสั่ง "งบ"/"บัตร" ยังใช้ไม่ได้ (อย่างอื่นปกติ)');
+
+  // 3) token — สาเหตุอันดับหนึ่งที่บอทเงียบทั้งที่บันทึกลงชีตแล้ว
+  var token = intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '');
+  if (!token) {
+    Logger.log(bad + 'ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ในโปรเจกต์นี้');
+    Logger.log('       ← ถ้าบอทเงียบ ข้อนี้น่าจะเป็นสาเหตุ');
+    Logger.log('       บันทึกลงชีตได้ แต่ส่งข้อความตอบกลับไม่ได้');
+    Logger.log('       ตั้งที่ ⚙️ การตั้งค่าโปรเจกต์ → คุณสมบัติสคริปต์');
+  } else {
+    try {
+      var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+        headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true
+      });
+      if (res.getResponseCode() === 200) {
+        Logger.log(ok + 'token ใช้ได้ — บอทชื่อ "' +
+                   (JSON.parse(res.getContentText()).displayName || '') + '"');
+      } else {
+        Logger.log(bad + 'token ใช้ไม่ได้ (LINE ตอบ ' + res.getResponseCode() + ')' +
+                   ' — ก๊อปมาไม่ครบ หรือเป็นของ Channel อื่น');
+      }
+    } catch (e) {
+      Logger.log(bad + 'ต่อ LINE ไม่ได้: ' + e.message);
+    }
+  }
+
+  // 4) URL ที่ต้องเอาไปใส่ใน LINE
+  var url = '';
+  try { url = ScriptApp.getService().getUrl(); } catch (e) {}
+  Logger.log(url ? ok + 'Webhook URL ของโปรเจกต์นี้:\n       ' + url
+                 : warn + 'ยังไม่ได้ Deploy เป็นเว็บแอป — LINE ยิงเข้ามาไม่ได้');
+
+  // 5) ล็อกต้นทางไว้หรือเปล่า
+  var allow = intakeProp_('INTAKE_ALLOW', '');
+  Logger.log(allow
+    ? warn + 'ล็อกให้รับเฉพาะ: ' + allow + '\n       ทักจากที่อื่นบอทจะเงียบ — ล้างด้วย clearIntakeAllow()'
+    : ok + 'ยังไม่ได้ล็อกต้นทาง (รับจากทุกที่)');
+
+  // 6) เรื่องที่คนสับสนบ่อยที่สุด
+  Logger.log(info + 'ในกลุ่ม ต้องขึ้นต้นด้วย "' + INTAKE_PREFIXES.slice(0, 3).join('" / "') + '"');
+  Logger.log('       เช่น  ซื้อ ค่าที่ 200');
+  Logger.log('       แชทส่วนตัวกับบอท พิมพ์ได้เลย ไม่ต้องมีคำนำหน้า');
+  Logger.log(info + 'อ่านรูป: โหมด "' + intakeImageMode_() + '"');
+
+  Logger.log('\n─────────────────────────────────');
+  Logger.log('ถ้าทุกข้อผ่านแล้วบอทยังเงียบ:');
+  Logger.log('  1) เปิดเมนู "การดำเนินการ (Executions)" ทางแถบซ้าย');
+  Logger.log('  2) ทักบอทอีกครั้ง แล้วรีเฟรชหน้านั้น');
+  Logger.log('  3) ไม่มีแถวใหม่โผล่ = LINE ยิงมาไม่ถึงสคริปต์');
+  Logger.log('     → Webhook URL ผิด หรือยังไม่เปิด Use webhook');
+  Logger.log('     → หรือ Deploy แล้วแต่ยังไม่ได้กด New version');
+  Logger.log('  4) มีแถวใหม่ = สคริปต์ทำงานแล้ว กดเข้าไปอ่านว่ามันบอกอะไร');
 }
 
 /** ลองแยกข้อความโดยไม่ต้องส่งไลน์จริง — ดูผลใน บันทึกการดำเนินการ */
