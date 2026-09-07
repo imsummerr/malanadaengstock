@@ -986,8 +986,11 @@ var SHEET_WASTE    = 'ของเสีย';
 
 var CENTRAL = 'ครัวกลาง';
 
+// "เตือนสาขาเมื่อเหลือ(แพ็ค)" เว้นว่างได้ — เว้นแล้วสาขาใช้จุดเตือนเดียวกับครัวกลาง
+// (สาขาเก็บของน้อยกว่าครัวกลางมาก ปกติควรตั้งให้ต่ำกว่า)
 var ITEM_COLS = ['สินค้า', 'หน่วยย่อย', 'หน่วยแพ็ค', 'หน่วยย่อยต่อแพ็ค',
-                 'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)', 'หมายเหตุ'];
+                 'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)', 'เตือนสาขาเมื่อเหลือ(แพ็ค)',
+                 'หมายเหตุ'];
 
 // คอลัมน์ที่ทุกชีตประวัติต้องมี — ของเดิม 7 ตัวแรก ที่เพิ่มคือ 4 ตัวหลัง
 var MOVE_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ตรวจ', 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ',
@@ -1078,10 +1081,17 @@ function getStockItems_() {
       packUnit: String(v[i][map['หน่วยแพ็ค']] || 'แพ็ค').trim(),
       perPack:  per > 0 ? per : 1,
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
-      lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0
+      lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
+      lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0
     });
   }
   return out;
+}
+
+/** จุดเตือนของแต่ละที่ (หน่วยแพ็ค) — สาขาเว้นว่างไว้ก็ใช้ตัวเดียวกับครัวกลาง */
+function lowPacksFor_(item, loc) {
+  if (String(loc || '').trim() === CENTRAL) return item.lowPacks || 0;
+  return item.lowPacksBranch > 0 ? item.lowPacksBranch : (item.lowPacks || 0);
 }
 
 function findStockItem_(name) {
@@ -1242,29 +1252,44 @@ function stockNotify_(location, text) {
 }
 
 /**
- * เตือนเมื่อของครัวกลางเหลือน้อย
+ * เตือนเมื่อของเหลือน้อย — แจ้งเข้ากลุ่มไลน์ของที่นั้นเอง
+ * ครัวกลางใช้ช่อง "เตือนเมื่อเหลือ(แพ็ค)" สาขาใช้ "เตือนสาขาเมื่อเหลือ(แพ็ค)"
+ *
  * แจ้ง "ตอนตกลงมาต่ำกว่าจุดเตือน" ครั้งเดียว แล้วจำสถานะไว้
  * ไม่ใช่เตือนทุกครั้งที่ส่งของออก ไม่งั้นไลน์จะเด้งรัว
  * พอเติมของจนเกินจุดเตือนแล้ว ล้างสถานะ รอบหน้าถึงเตือนใหม่
+ * สถานะจำแยกตามสถานที่ — ครัวกลางใกล้หมดไม่ได้แปลว่าสาขาใกล้หมดด้วย
  */
-function checkLowStock_(itemNames) {
+function checkLowStock_(itemNames, location) {
+  var loc = String(location || CENTRAL).trim();
   var items = {};
   getStockItems_().forEach(function (i) { items[i.name] = i; });
-  var bal = stockBalances_()[CENTRAL] || {};
+  var bal = stockBalances_()[loc] || {};
   var props = PropertiesService.getScriptProperties();
   var hits = [];
 
   (itemNames || []).forEach(function (name) {
     var it = items[name];
-    if (!it || !(it.lowPacks > 0)) return;
-    var limit = it.lowPacks * it.perPack;
+    if (!it) return;
+    var lowPacks = lowPacksFor_(it, loc);
+    if (!(lowPacks > 0)) return;
+    var limit = lowPacks * it.perPack;
     var have  = Number(bal[name]) || 0;
-    var key   = 'LOWSTOCK_' + name;
+    var key   = 'LOWSTOCK_' + loc + '_' + name;
     var wasLow = props.getProperty(key) === '1';
-    var isLow  = have <= limit;
+
+    // คีย์เดิมสมัยที่เตือนแต่ครัวกลาง ไม่มีชื่อสถานที่คั่น — ย้ายมาคีย์ใหม่
+    // ถ้าไม่ย้าย ของที่ต่ำอยู่แล้วจะถูกแจ้งซ้ำอีกรอบตอนอัปเดตโค้ด
+    if (!wasLow && loc === CENTRAL && props.getProperty('LOWSTOCK_' + name) === '1') {
+      wasLow = true;
+      props.setProperty(key, '1');
+      props.deleteProperty('LOWSTOCK_' + name);
+    }
+
+    var isLow = have <= limit;
     if (isLow && !wasLow) {
       hits.push('• ' + name + ' เหลือ ' + fmtPack_(have, it) +
-                '  (จุดเตือน ' + it.lowPacks + ' ' + it.packUnit + ')');
+                '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')');
       props.setProperty(key, '1');
     } else if (!isLow && wasLow) {
       props.deleteProperty(key);
@@ -1272,7 +1297,8 @@ function checkLowStock_(itemNames) {
   });
 
   if (!hits.length) return;
-  stockNotify_(CENTRAL, '⚠️ ของครัวกลางใกล้หมด\n\n' + hits.join('\n') + '\n\nสั่งของเพิ่มด้วยครับ');
+  stockNotify_(loc, '⚠️ ของ' + loc + 'ใกล้หมด\n\n' + hits.join('\n') + '\n\n' +
+    (loc === CENTRAL ? 'สั่งของเพิ่มด้วยครับ' : 'แจ้งครัวกลางเบิกของเพิ่มด้วยครับ'));
 }
 
 /* ───────────────────────── บันทึกความเคลื่อนไหว ───────────────────────── */
@@ -1383,7 +1409,8 @@ function handleStockToShop_(body) {
   // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs แจ้งให้เอง
   // พร้อมจำนวนแพ็ค วงเล็บบอกว่า 1 แพ็คมีกี่ไม้ และวันหมดอายุ
   // (อายุเก็บอยู่ในไฟล์นั้นที่เดียว จะได้ไม่ต้องเก็บตารางอายุซ้ำสองที่)
-  checkLowStock_([p.item.name]);                  // ส่งออกแล้วครัวกลางอาจตกต่ำกว่าจุดเตือน
+  checkLowStock_([p.item.name], CENTRAL);         // ส่งออกแล้วครัวกลางอาจตกต่ำกว่าจุดเตือน
+                                                  // สาขาได้ของเพิ่ม ไม่ต้องเช็ค มีแต่จะขึ้น
 
   return { success: true, text: fmtPack_(p.total, p.item), lineSent: false,
            lineMsg: 'บอทของเข้าจะแจ้งกลุ่ม ' + branch + ' ให้ภายใน 5 นาที' };
@@ -1421,7 +1448,7 @@ function handleStockWaste_(body) {
     p.item.name + '  ' + text + '\nสาเหตุ ' + reason +
     '\nผู้บันทึก ' + p.session.name);
 
-  if (loc === CENTRAL) checkLowStock_([p.item.name]);
+  checkLowStock_([p.item.name], loc);   // ตัดของออกแล้วที่นั้นอาจตกต่ำกว่าจุดเตือน
   return { success: true, text: text, lineSent: line.sent, lineMsg: line.message };
 }
 
@@ -1461,12 +1488,14 @@ function handleStockCount_(body) {
   var before = stockBalances_()[loc] || {};
   var now = new Date();
   var diffs = [];
+  var counts = [];   // ส่งต่อให้ stock-audit.gs เทียบของหายกับเงิน
 
   items.forEach(function (it) {
     var r = got[it.name];
     var counted = toBase_(r.packs, r.rem, it.perPack);
     var sys = Number(before[it.name]) || 0;
     var diff = round_(counted - sys);
+    counts.push({ item: it, counted: counted, sys: sys, diff: diff });
     appendByCols_(sh, map, {
       'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name,
       'รายการ': it.name, 'จำนวน': counted, 'หน่วย': it.subUnit,
@@ -1485,9 +1514,18 @@ function handleStockCount_(body) {
                           : 'ตรงกับระบบทุกรายการ 🎉');
   var line = stockNotify_(loc, msg);
 
-  checkLowStock_(items.map(function (it) { return it.name; }));
+  // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
+  // ส่งไม่สำเร็จหรือไม่มีไฟล์นั้น ก็ไม่ทำให้การนับล้มเหลว — ของลงชีตแล้ว
+  var shrink = null;
+  if (typeof auditAfterCount_ === 'function') {
+    try { shrink = auditAfterCount_(loc, counts, now); }
+    catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
+  }
+
+  checkLowStock_(items.map(function (it) { return it.name; }), loc);
   return { success: true, counted: items.length, diffs: diffs.length,
-           lineSent: line.sent, lineMsg: line.message };
+           lineSent: line.sent, lineMsg: line.message,
+           shrink: shrink };
 }
 
 /** ข้อมูลตั้งต้นของหน้าสต็อก — รายการสินค้า สถานที่ และยอดคงเหลือ */
@@ -1515,7 +1553,8 @@ function handleStockBootstrap_(p) {
       name: loc,
       rows: items.filter(function (it) { return m[it.name]; }).map(function (it) {
         var have = Number(m[it.name]) || 0;
-        var limit = it.lowPacks > 0 ? it.lowPacks * it.perPack : 0;
+        var lowPacks = lowPacksFor_(it, loc);
+        var limit = lowPacks > 0 ? lowPacks * it.perPack : 0;
         return { item: it.name, base: have, text: fmtPack_(have, it),
                  low: limit > 0 && have <= limit };
       })
@@ -1617,8 +1656,10 @@ function setupStock() {
   Logger.log('ติดตั้งเรียบร้อย — เพิ่มสินค้าใหม่ ' + added + ' รายการ\n' +
              'ยังต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
              '  • หน่วยย่อยต่อแพ็ค = 1 แพ็คมีกี่ไม้\n' +
-             '  • ราคาขาย/หน่วยย่อย = ขายไม้ละกี่บาท (ไม่ใส่ หน้าคำนวณของหายจะได้ 0 บาท)\n' +
-             '  • เตือนเมื่อเหลือ(แพ็ค) = เหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
+             '  • ราคาขาย/หน่วยย่อย = ขายไม้ละกี่บาท\n' +
+             '      ไม่ใส่ = หน้าคำนวณของหายได้ 0 บาท และไลน์ก็ตีมูลค่าของที่หายไม่ได้\n' +
+             '  • เตือนเมื่อเหลือ(แพ็ค) = ครัวกลางเหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
+             '  • เตือนสาขาเมื่อเหลือ(แพ็ค) = จุดเตือนของสาขา (เว้นว่าง = ใช้ตัวเดียวกับครัวกลาง)\n' +
              'เสร็จแล้วอย่าลืม Deploy เวอร์ชันใหม่');
 }
 
