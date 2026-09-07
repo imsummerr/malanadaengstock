@@ -388,6 +388,9 @@ function intakeHelpText_() {
          '   ค่าแก๊ส 450 บัตร\n' +
          '   ปลาดอลลี่ 68 บาท 800 กรัม บัตร\n' +
          '   (โอนก็พิมพ์ "โอน" · ไม่พิมพ์อะไร = เงินสด)\n\n' +
+         '📦 ของเข้าครัวกลาง — บอกจำนวนไม้ต่อท้าย\n' +
+         '   ไส้กรอกหนังกรอบ 1 แพ็ค 90 บาท ได้ 26 ไม้\n' +
+         '   (ยอดสต็อกขยับให้ + แจ้งวันหมดอายุให้เอง)\n\n' +
          'หลายรายการ พิมพ์บรรทัดละอย่าง หรือคั่นด้วยจุลภาค\n' +
          'ถ่ายรูปบิลส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
          'พิมพ์ในกลุ่มนี้ได้เลย ไม่ต้องมีคำนำหน้า\n' +
@@ -514,7 +517,7 @@ function intakeParseLine_(line) {
   text = pay.text.trim();
   if (!text) return null;
 
-  var baht = 0, gram = 0, qty = 0, unit = '', bare = [];
+  var baht = 0, gram = 0, qty = 0, unit = '', bare = [], counts = [];
   var saidMoney = false, saidUnit = false;
   var re = intakeUnitRe_(), m;
 
@@ -526,7 +529,13 @@ function intakeParseLine_(line) {
       case 'kg':    if (!gram) gram = val * 1000; saidUnit  = true; break;
       case 'g':     if (!gram) gram = val;        saidUnit  = true; break;
       case 'khit':  if (!gram) gram = val * 100;  saidUnit  = true; break;
-      case 'count': if (!qty) { qty = val; unit = String(m[2]).trim(); } saidUnit = true; break;
+      case 'count':
+        // เก็บไว้ทุกตัว ไม่ใช่แค่ตัวแรก — "1 แพ็ค ได้ 26 ไม้" มีสองหน่วยในบรรทัดเดียว
+        // แพ็คคือที่ซื้อมา ไม้คือที่เสียบได้จริง ซึ่งเป็นตัวที่ชีตสต็อกต้องการ
+        counts.push({ n: val, unit: String(m[2]).trim() });
+        if (!qty) { qty = val; unit = String(m[2]).trim(); }
+        saidUnit = true;
+        break;
       default:      bare.push(val);
     }
   }
@@ -537,14 +546,17 @@ function intakeParseLine_(line) {
     else if (!qty) qty  = bare[i];
   }
 
-  var name = text.replace(intakeUnitRe_(), ' ').replace(/[\s:：\-–—=+/()]+/g, ' ').trim();
+  // คำเชื่อมที่คนพิมพ์คั่นระหว่างจำนวน ("1 แพ็ค ได้ 26 ไม้") ไม่ใช่ส่วนหนึ่งของชื่อของ
+  var name = text.replace(intakeUnitRe_(), ' ')
+                 .replace(/แบ่งได้|ตัดได้|ทำได้|รวมเป็น|ทั้งหมด|ได้|รวม|เป็น/g, ' ')
+                 .replace(/[\s:：\-–—=+/()]+/g, ' ').trim();
   if (!name) return null;
 
   // ไม่มีตัวเลขเลย = เป็นประโยคคุยกันเฉย ๆ ไม่ใช่รายการของ
   if (!baht && !gram && !qty) return null;
 
   return {
-    raw: name, baht: baht, gram: gram, qty: qty, unit: unit,
+    raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     pay: pay.method, expense: intakeIsExpense_(name),
     saidMoney: saidMoney, saidUnit: saidUnit
   };
@@ -624,14 +636,84 @@ function intakeLev_(a, b) {
   return prev[b.length];
 }
 
-/** ชื่อสินค้าทั้งหมดในชีต — ไม่มีชีตก็ยังทำงานต่อได้ แค่จับชื่อไม่ได้ */
-function intakeItemNames_() {
+/** รายการสินค้าเต็ม ๆ จากชีต — ชื่อ หน่วยย่อย หน่วยแพ็ค จำนวนต่อแพ็ค */
+function intakeStockItems_() {
   try {
     if (typeof getStockItems_ !== 'function') return [];
-    return getStockItems_().map(function (it) { return it.name; });
+    return getStockItems_() || [];
   } catch (err) {
     return [];
   }
+}
+
+/** ชื่อสินค้าทั้งหมดในชีต — ไม่มีชีตก็ยังทำงานต่อได้ แค่จับชื่อไม่ได้ */
+function intakeItemNames_() {
+  return intakeStockItems_().map(function (it) { return it.name; });
+}
+
+/**
+ * แปลงจำนวนที่พิมพ์มาให้เป็น "หน่วยย่อย" ที่ชีตสต็อกใช้ (เช่น ไม้)
+ *
+ * คืน null ถ้าเดาไม่ได้ — ยอมไม่ลงดีกว่าลงตัวเลขมั่ว เพราะชีตนี้เอาไปคิด
+ * ยอดคงเหลือ ลงผิดทีเดียวยอดเพี้ยนยาวจนกว่าจะนับสต็อกใหม่
+ */
+function intakeStockQty_(item, counts) {
+  if (!item || !counts || !counts.length) return null;
+
+  var sub = intakeNorm_(item.subUnit), pack = intakeNorm_(item.packUnit);
+  var base = 0, packs = 0, i, u;
+
+  for (i = 0; i < counts.length; i++) {
+    u = intakeNorm_(counts[i].unit);
+    if (u === sub  && !base)  base  = counts[i].n;
+    if (u === pack && !packs) packs = counts[i].n;
+  }
+
+  // บอกจำนวนหน่วยย่อยมาตรง ๆ ("ได้ 26 ไม้") — แม่นที่สุด ใช้เลย
+  if (base > 0) {
+    return { base: base, packs: packs,
+             per: packs > 0 ? Math.round(base / packs * 100) / 100 : item.perPack };
+  }
+  // บอกมาแค่แพ็ค — คูณจากชีตได้ ถ้าชีตตั้งจำนวนต่อแพ็คไว้จริง (ไม่ใช่ 1)
+  if (packs > 0 && item.perPack > 1) {
+    return { base: Math.round(packs * item.perPack * 1000) / 1000, packs: packs, per: item.perPack };
+  }
+  return null;
+}
+
+/**
+ * ลงชีต "จำนวนของเข้า" — คืนเลขแถวที่เขียน หรือ 0 ถ้าลงไม่ได้
+ * พอมีแถวใหม่ บอทของเข้าใน line-expiry-alert.gs จะเห็นภายใน 5 นาที
+ * แล้วแจ้งกลุ่มเองว่าของเข้าอะไร วันไหน และต้องทิ้งวันไหน
+ */
+function intakeAddStockIn_(item, qty, ctx) {
+  if (typeof ensureCols_ !== 'function' || typeof appendByCols_ !== 'function') return 0;
+
+  var sheetName = (typeof SHEET_INCOMING === 'string') ? SHEET_INCOMING : 'จำนวนของเข้า';
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sh) return 0;   // ยังไม่ได้ตั้งระบบสต็อก — ไม่สร้างชีตให้เอง เดี๋ยวคอลัมน์ไม่ตรง
+
+  var cols = (typeof MOVE_COLS !== 'undefined' ? MOVE_COLS : []).concat(['messageId']);
+  var map  = ensureCols_(sh, cols);
+
+  appendByCols_(sh, map, {
+    'วันที่เวลา': new Date(),
+    'สาขา':      ctx.location,
+    'ผู้ตรวจ':    ctx.who || 'ไลน์',
+    'รายการ':     item.name,
+    'จำนวน':      qty.base,
+    'หน่วย':      item.subUnit,
+    'แพ็ค':       qty.packs || 0,
+    'เศษ':        0,
+    'ไม้ต่อแพ็ค':  qty.per,
+    // ต้องเป็น "ของเข้าครัวกลาง" เสมอ ห้ามใช้ "ของเข้าร้าน"
+    // เพราะของเข้าร้านแปลว่าย้ายมาจากครัวกลาง ระบบจะหักยอดครัวกลางออกให้ด้วย
+    // ของที่เพิ่งซื้อเข้ามาไม่ได้มาจากครัวกลาง ถ้าใส่ผิดยอดครัวกลางจะติดลบ
+    'ประเภท':     'ของเข้าครัวกลาง',
+    'หมายเหตุ':   'บันทึกจากไลน์',
+    'messageId':  ctx.msgId
+  });
+  return sh.getLastRow();
 }
 
 /**
@@ -1026,11 +1108,15 @@ function intakePayTag_(pay) {
  *   ค่าใช้จ่ายรายวัน    → ชีต POS_Expenses ชีตเดียวกับที่หน้า POS ลง
  */
 function intakeSaveAndSummarize_(items, ctx, source, rawText) {
-  var names = intakeItemNames_();
-  var buyLines = [], expLines = [];
+  var stockItems = intakeStockItems_();
+  var names = stockItems.map(function (x) { return x.name; });
+  var byName = {};
+  stockItems.forEach(function (x) { byName[x.name] = x; });
+
+  var buyLines = [], expLines = [], stockLines = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0;
   var unmatched = false;
-  var saved = { p: [], e: [], msgId: ctx.msgId };
+  var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1075,6 +1161,18 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
         if (!hit.matched) unmatched = true;
         buyLines.push('• ' + hit.name + (hit.matched ? '' : ' *') + ' — ' +
                       intakeAmountText_(it) + intakePayTag_(it.pay));
+
+        // บอกจำนวนหน่วยย่อยมาด้วย ("ได้ 26 ไม้") → ลงของเข้าครัวกลางให้เลย
+        // ยอดสต็อกคงเหลือจะขยับตาม และบอทของเข้าจะแจ้งวันหมดอายุให้เอง
+        var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts) : null;
+        if (q && q.base > 0) {
+          var srow = intakeAddStockIn_(byName[hit.name], q, ctx);
+          if (srow) {
+            saved.s.push(srow);
+            stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + byName[hit.name].subUnit +
+                            (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : ''));
+          }
+        }
       }
     }
 
@@ -1092,8 +1190,9 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   }
 
   var blocks = [];
-  if (buyLines.length) blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
-  if (expLines.length) blocks.push('🧾 ค่าใช้จ่าย\n' + expLines.join('\n'));
+  if (buyLines.length)   blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
+  if (expLines.length)   blocks.push('🧾 ค่าใช้จ่าย\n' + expLines.join('\n'));
+  if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));
 
   var msg = '✅ บันทึกแล้ว ' + (buyLines.length + expLines.length) + ' รายการ\n\n' + blocks.join('\n\n');
 
@@ -1102,6 +1201,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   if (expTotal) sums.push('ค่าใช้จ่าย ' + intakeMoney_(expTotal));
   if (sums.length) msg += '\n\nรวม ' + sums.join(' · ') + ' บาท';
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
+  if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
   if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
   msg += '\n\nผิดตรงไหนพิมพ์ "ลบ" ได้เลย';
   return msg;
@@ -1172,21 +1272,36 @@ function intakeUndo_(ctx) {
   try { last = JSON.parse(raw); } catch (e) { return 'ไม่มีรายการล่าสุดให้ลบครับ'; }
   if (!last) return 'ไม่มีรายการล่าสุดให้ลบครับ';
 
-  var buys = last.p || last.rows || [];   // last.rows = รูปแบบเก่าก่อนมีชีตค่าใช้จ่าย
-  var exps = last.e || [];
-  if (!buys.length && !exps.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
+  var buys  = last.p || last.rows || [];   // last.rows = รูปแบบเก่าก่อนมีชีตค่าใช้จ่าย
+  var exps  = last.e || [];
+  var stock = last.s || [];
+  if (!buys.length && !exps.length && !stock.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var gone = 0;
+    var gone = 0, stockGone = 0;
     gone += intakeDeleteRows_(intakeSheet_(), buys,
               INTAKE_HEADERS.indexOf('messageId') + 1, last.msgId, false);
     gone += intakeDeleteRows_(intakeExpenseSheet_(), exps,
               INTAKE_EXPENSE_HEADERS.indexOf('order_id') + 1, last.msgId, true);
 
+    // ต้องลบแถวในชีตของเข้าด้วย ไม่งั้นยอดสต็อกคงเหลือจะค้างเกินความจริง
+    if (stock.length) {
+      var sheetName = (typeof SHEET_INCOMING === 'string') ? SHEET_INCOMING : 'จำนวนของเข้า';
+      var ssh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+      if (ssh) {
+        var head = ssh.getRange(1, 1, 1, ssh.getLastColumn()).getValues()[0];
+        var col = 0;
+        head.forEach(function (h, i) { if (String(h).trim() === 'messageId') col = i + 1; });
+        if (col) stockGone = intakeDeleteRows_(ssh, stock, col, last.msgId, false);
+      }
+    }
+
     intakeProps_().deleteProperty(key);
-    return gone ? '🗑️ ลบออกให้แล้ว ' + gone + ' รายการ' : 'หาแถวที่จะลบไม่เจอ (อาจถูกลบไปแล้ว)';
+    if (!gone && !stockGone) return 'หาแถวที่จะลบไม่เจอ (อาจถูกลบไปแล้ว)';
+    return '🗑️ ลบออกให้แล้ว ' + gone + ' รายการ' +
+           (stockGone ? '\n📦 ถอนของเข้าครัวกลางออกด้วย ' + stockGone + ' รายการ' : '');
   } finally {
     lock.releaseLock();
   }
