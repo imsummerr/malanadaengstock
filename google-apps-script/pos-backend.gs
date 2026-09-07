@@ -215,7 +215,8 @@ function handlePing_() {
       'POS · pos-backend.gs':            typeof handleOrder_        === 'function',
       'รับไลน์ · line-intake.gs':        typeof handleLineIntake_   === 'function',
       'บัญชี · accounting.gs':           typeof accMonthSummary_    === 'function',
-      'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function'
+      'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function',
+      'เตือนนับสต็อก · stock-audit.gs':   typeof remindStockCount    === 'function'
     }
   };
 }

@@ -53,6 +53,16 @@
 
 ต้องอยู่โปรเจกต์เดียวกับ `pos-backend.gs` เหมือนไฟล์อื่น
 
+> ⚠️ **ไฟล์นี้ไม่ต้อง deploy** — ไม่มี `doGet`/`doPost` มันทำงานจาก trigger อย่างเดียว
+> ถ้าสร้างเป็นโปรเจกต์แยกจะใช้ไม่ได้เลย เพราะมันเรียก `stockNotify_`, `readMoves_`, `LINE_GROUPS`
+> ที่อยู่ใน `pos-backend.gs`
+
+**เช็คว่าโค้ดเข้าไปแล้วจริง** — เปิด `<URL ของ pos-backend>?action=ping` ในเบราว์เซอร์ ต้องเห็น
+
+```
+"เตือนนับสต็อก · stock-audit.gs": true
+```
+
 ### 2) ตั้งตัวเตือน
 
 รัน **`setupStockAuditTriggers`** ครั้งเดียว
