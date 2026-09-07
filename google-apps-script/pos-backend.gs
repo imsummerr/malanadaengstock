@@ -183,6 +183,7 @@ function doPost(e) {
 function doGet(e) {
   try {
     var p = e.parameter || {};
+    if (p.action === 'ping')     return json_(handlePing_());
     if (p.action === 'posStats') return json_(handleStats_(p));
     if (p.action === 'posBills') return json_(handleBills_(p));
     if (p.action === 'history')  return json_(handleHistory_(p));
@@ -196,6 +197,27 @@ function doGet(e) {
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * เช็คว่า "เวอร์ชันที่ deploy อยู่จริง" มีไฟล์อะไรครบบ้าง
+ * เปิดในเบราว์เซอร์ได้เลย โดยต่อท้าย URL ด้วย  ?action=ping
+ *
+ * มีไว้ตอบคำถามว่า "โค้ดใหม่ถูก deploy แล้วหรือยัง" ซึ่งดูจากหน้า editor ไม่ได้
+ * เพราะปุ่ม Run ในหน้า editor รันโค้ดล่าสุดที่เซฟ แต่ URL เสิร์ฟเวอร์ชันที่กด Deploy ไว้
+ * สองอันนี้ไม่ตรงกันเมื่อไหร่ อาการคือ LINE ยิงมาแล้วเงียบหายโดยไม่มี error
+ */
+function handlePing_() {
+  return {
+    success: true,
+    เวลา: Utilities.formatDate(new Date(), TZ, 'd/M/yyyy HH:mm:ss'),
+    ระบบที่เวอร์ชันนี้มี: {
+      'POS · pos-backend.gs':            typeof handleOrder_        === 'function',
+      'รับไลน์ · line-intake.gs':        typeof handleLineIntake_   === 'function',
+      'บัญชี · accounting.gs':           typeof accMonthSummary_    === 'function',
+      'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function'
+    }
+  };
 }
 
 // ══════════════════════════════════════════════════════════════
