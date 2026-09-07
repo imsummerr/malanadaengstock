@@ -165,6 +165,7 @@ function intakeOnText_(ev, ctx) {
     case 'today': intakeReply_(ctx, intakeTodaySummary_());    return;
     case 'pl':    intakeReply_(ctx, intakeAccounting_('month')); return;
     case 'card':  intakeReply_(ctx, intakeAccounting_('card'));  return;
+    case 'loss':  intakeReply_(ctx, intakeAccounting_('loss'));  return;
   }
 
   var stripped = intakeStripPrefix_(raw);
@@ -357,6 +358,7 @@ function intakeCommandOf_(text) {
   if (/^(ยอดวันนี้|สรุป|สรุปวันนี้|วันนี้ซื้ออะไร)$/.test(t))  return 'today';
   if (/^(งบ|งบเดือนนี้|บัญชี|กำไร|กำไรเดือนนี้)$/.test(t))     return 'pl';
   if (/^(บัตร|บัตรเครดิต|รอบบัตร|ยอดบัตร)$/.test(t))           return 'card';
+  if (/^(ของหาย|ของขาด|เช็คของหาย|ตรวจของหาย)$/.test(t))       return 'loss';
   if (/^(ช่วย|ช่วยด้วย|วิธีใช้|help|\?)$/.test(t))             return 'help';
   return '';
 }
@@ -1359,6 +1361,13 @@ function intakeAccounting_(what) {
     if (what === 'card') {
       if (typeof accCardSummary_ !== 'function') return missing;
       return accCardSummary_();
+    }
+    if (what === 'loss') {
+      if (typeof auditSummary_ !== 'function') {
+        return 'ยังไม่ได้ติดตั้งส่วนตรวจของหายครับ\n' +
+               'เอาไฟล์ stock-audit.gs เข้าโปรเจกต์นี้ก่อน (ดู STOCK-AUDIT-README.md)';
+      }
+      return auditSummary_();
     }
     if (typeof accMonthSummary_ !== 'function') return missing;
     return accMonthSummary_(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy-MM'));
