@@ -1362,12 +1362,15 @@ function intakeAccounting_(what) {
       if (typeof accCardSummary_ !== 'function') return missing;
       return accCardSummary_();
     }
+    // ของหายมีหน้าเฉพาะอยู่แล้วในหน้าสรุปยอดขาย และคิดละเอียดกว่า
+    // (หักเดลิเวอรี่ ส่วนลด น้ำจิ้มแถม แล้วเทียบกับยอดขายจริง)
+    // ไม่คิดซ้ำในนี้ เพราะถ้าสองที่ให้เลขไม่ตรงกัน จะไม่รู้ว่าควรเชื่ออันไหน
     if (what === 'loss') {
-      if (typeof auditSummary_ !== 'function') {
-        return 'ยังไม่ได้ติดตั้งส่วนตรวจของหายครับ\n' +
-               'เอาไฟล์ stock-audit.gs เข้าโปรเจกต์นี้ก่อน (ดู STOCK-AUDIT-README.md)';
-      }
-      return auditSummary_();
+      return '🔎 ดูของหายได้ที่หน้าสรุปยอดขายครับ\n\n' +
+             'เปิด "สรุปยอดขาย" → แท็บ 🔎 คำนวณของหาย\n\n' +
+             'มันเทียบให้ว่าของที่ใช้ไปกับเงินที่ได้มาตรงกันไหม\n' +
+             'หักเดลิเวอรี่ ส่วนลด และน้ำจิ้มแถมให้แล้ว\n\n' +
+             '(ต้องเช็คสต็อกอย่างน้อย 2 ครั้งถึงจะเทียบได้)';
     }
     if (typeof accMonthSummary_ !== 'function') return missing;
     return accMonthSummary_(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy-MM'));
