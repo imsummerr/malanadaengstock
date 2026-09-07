@@ -606,7 +606,24 @@ function addDeliveryStats_(stats, from, to, branch) {
   }
 }
 
-/** สรุปเงินสดที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ) */
+/**
+ * จ่ายด้วยเงินสดหน้าร้านไหม — คือหยิบเงินออกจากลิ้นชักจริง ๆ
+ * ช่องว่าง = แถวเก่าก่อนมีคอลัมน์ "วิธีจ่าย" สมัยนั้นลงแต่เงินสด จึงถือเป็นเงินสด
+ */
+function isCashExpense_(method) {
+  var m = String(method || '').trim();
+  return m === '' || m === 'เงินสด';
+}
+
+/**
+ * สรุปเงินที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ)
+ *
+ * แยกเงินสดออกจากโอน/บัตร เพราะสองอย่างนี้คนละความหมายกัน
+ *   เงินสด  = พนักงานหยิบเงินจากลิ้นชักไปจ่าย ตอนปิดร้านเงินในลิ้นชักจะหายไปเท่านั้น
+ *   โอน/บัตร = จ่ายจากบัญชีหรือบัตร เงินในลิ้นชักไม่ได้ลดลงเลย
+ * ถ้าเอามารวมกันแล้วหักออกจากยอดขายหมด ยอด "เงินสดคงเหลือ" จะต่ำกว่าความจริง
+ * แล้วตอนปิดร้านจะนับเงินไม่ตรงกับที่ระบบบอก
+ */
 function addExpenseStats_(stats, from, to, branch) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
   if (!sheet || sheet.getLastRow() < 2) { stats.netCash = stats.revenue || 0; return; }
@@ -622,12 +639,17 @@ function addExpenseStats_(stats, from, to, branch) {
     if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     var amt = num_(r[idx['จำนวนเงิน']]);
+    var pay = (idx['วิธีจ่าย'] === undefined) ? '' : r[idx['วิธีจ่าย']];
+
     stats.expenseTotal += amt;
     stats.expenseCount++;
+    if (isCashExpense_(pay)) stats.expenseCash += amt;
+    else                     stats.expenseOther += amt;
     addTo_(stats.expenseByType, r[idx['ประเภท']] || 'อื่น ๆ', amt);
+    addTo_(stats.expenseByPay, String(pay || 'เงินสด').trim() || 'เงินสด', amt);
   }
-  // เงินสดสุทธิ = ยอดขายหน้าร้าน ลบเงินที่จ่ายออกไป
-  stats.netCash = (stats.revenue || 0) - stats.expenseTotal;
+  // เงินสดคงเหลือ = ยอดขายหน้าร้าน ลบเฉพาะที่จ่ายด้วยเงินสด
+  stats.netCash = (stats.revenue || 0) - stats.expenseCash;
 }
 
 /**
@@ -789,9 +811,10 @@ function handleBills_(p) {
     }
   }
 
-  // ── เงินสดที่จ่ายออกจากร้านวันเดียวกัน — เอาไปหักตอนนับเงินปลายวัน ──
+  // ── เงินที่จ่ายออกจากร้านวันเดียวกัน ──
+  // แยกเงินสดออกจากโอน/บัตร เพราะตอนนับเงินปลายวันหักได้เฉพาะเงินสด
   var expSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
-  var expenses = [], expenseTotal = 0;
+  var expenses = [], expenseTotal = 0, expenseCash = 0;
   if (expSheet) {
     var ex = rowsOfDate_(expSheet, readWidth_(expSheet, EXPENSE_HEADERS), date);
     var xi = ex.idx;
@@ -799,14 +822,17 @@ function handleBills_(p) {
       var x = ex.rows[m];
       if (branch && !sameBranch_(x[xi['สาขา']], branch)) continue;
       var amt = num_(x[xi['จำนวนเงิน']]);
+      var pay = (xi['วิธีจ่าย'] === undefined) ? '' : x[xi['วิธีจ่าย']];
       expenseTotal += amt;
+      if (isCashExpense_(pay)) expenseCash += amt;
       expenses.push({
         no:     x[xi['เลขที่']],
         time:   x[xi['เวลา']],
         staff:  x[xi['พนักงาน']],
         type:   x[xi['ประเภท']],
         note:   x[xi['รายละเอียด']],
-        amount: amt
+        amount: amt,
+        pay:    String(pay || 'เงินสด').trim() || 'เงินสด'
       });
     }
     expenses.sort(function (a, b) { return String(b.time).localeCompare(String(a.time)); });
@@ -824,8 +850,8 @@ function handleBills_(p) {
     date: date, branch: branch,
     count: posCount, revenue: sum,
     deliveryCount: dlvCount, deliveryItems: dlvItems,
-    expenses: expenses, expenseTotal: expenseTotal,
-    netCash: sum - expenseTotal,
+    expenses: expenses, expenseTotal: expenseTotal, expenseCash: expenseCash,
+    netCash: sum - expenseCash,
     bills: bills
   } };
 }
@@ -835,6 +861,7 @@ function emptyStats_() {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
     expenseTotal: 0, expenseCount: 0, expenseByType: {}, netCash: 0,
+    expenseCash: 0, expenseOther: 0, expenseByPay: {},
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };

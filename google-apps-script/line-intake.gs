@@ -481,7 +481,17 @@ function intakeParseText_(text) {
   // ("ปลาดอลลี่ 68, ปูอัด 120 บัตร" คือรูดบัตรทั้งคู่ ไม่ใช่เฉพาะปูอัด)
   var told = '';
   for (i = 0; i < out.length; i++) if (out[i].pay) { told = out[i].pay; break; }
-  for (i = 0; i < out.length; i++) out[i].pay = out[i].pay || told || 'เงินสด';
+
+  // ไม่ได้บอกมาก็เดาตามวิธีทำงานของร้าน:
+  //   ค่าใช้จ่าย → โอน   เพราะที่จ่ายด้วยเงินสดหน้าร้าน พนักงานลงในหน้า POS อยู่แล้ว
+  //                     ที่มาลงทางไลน์คือพวกที่โอนจ่าย ไม่ได้หยิบเงินจากลิ้นชัก
+  //   ซื้อของ    → เงินสด เพราะไปตลาดส่วนใหญ่จ่ายสด
+  // เดาผิดก็พิมพ์ "เงินสด" หรือ "บัตร" กำกับได้ตลอด
+  var payExpense = intakeProp_('INTAKE_DEFAULT_PAY_EXPENSE', 'โอน');
+  var payBuy     = intakeProp_('INTAKE_DEFAULT_PAY_BUY', 'เงินสด');
+  for (i = 0; i < out.length; i++) {
+    out[i].pay = out[i].pay || told || (out[i].expense ? payExpense : payBuy);
+  }
 
   return out;
 }
