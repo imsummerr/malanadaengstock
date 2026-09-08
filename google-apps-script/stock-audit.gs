@@ -264,9 +264,14 @@ function auditSales_(loc, fromStamp, toStamp) {
  * สินค้าตัวนี้ขายเป็นอะไร — ต้องรู้ว่าจะเอาไปเทียบกับตัวเลขไหนใน POS
  *   piece = นับเป็นชิ้น (ไม้ ถุง มัด ที่ อัน) → เทียบกับ รวมไม้+รวมมาม่า+รวมของอื่น
  *   sauce = ถ้วยน้ำจิ้ม                      → เทียบกับ จำนวนน้ำจิ้ม
- *   other = ชั่งเป็นกรัม หรือหน่วยที่ POS ไม่ได้นับ → เทียบไม่ได้ รายงานเฉย ๆ
+ *   other = หน่วยที่ POS ไม่ได้นับ            → เทียบไม่ได้ รายงานเฉย ๆ
+ *
+ * ครัวกลางซื้อเข้าเป็นกิโล แต่ชีตสต็อกนับ "หลังเสียบไม้/จัดถุงแล้ว" เสมอ
+ * เจอหน่วยกรัม/กิโลในชีตนี้ = ยังไม่ได้ตั้งหน่วย ไม่ใช่ของที่ขายเป็นกิโลจริง
+ * รัน previewPackAndPrice แล้ว applyPackAndPrice เพื่อแก้
  */
 var AUDIT_PIECE_UNITS = ['ไม้', 'ถุง', 'มัด', 'ที่', 'อัน', 'ชิ้น'];
+var AUDIT_RAW_UNITS   = /^(กรัม|กก\.?|กิโล|กิโลกรัม|g|kg)$/i;
 
 function auditGroupOf_(item) {
   var name = String(item.name || '');
@@ -287,13 +292,16 @@ function auditUsage_(counts) {
     sauce: { used: 0, value: 0, items: [] },
     other: { used: 0, value: 0, items: [] }
   };
-  var overs = [], noPrice = [];
+  var overs = [], noPrice = [], rawUnits = [];
 
   (counts || []).forEach(function (c) {
     var it = c.item;
     if (!it) return;
     var used = Math.round((-c.diff) * 1000) / 1000;
     var k = auditGroupOf_(it);
+    if (k === 'other' && used > 0 && AUDIT_RAW_UNITS.test(String(it.subUnit || '').trim())) {
+      rawUnits.push(it.name);
+    }
     g[k].used += used;
     if (it.price > 0) g[k].value += used * it.price;
     else if (used > 0 && k !== 'sauce') noPrice.push(it.name);
@@ -310,6 +318,7 @@ function auditUsage_(counts) {
   });
   g.overs = overs;
   g.noPrice = noPrice;
+  g.rawUnits = rawUnits;
   return g;
 }
 
@@ -444,11 +453,18 @@ function auditAfterCount_(loc, counts, now) {
     });
   }
 
-  // ของชั่งกรัม POS ไม่ได้นับเป็นชิ้น เลยเอามาหักไม่ได้ ต้องดูเอง
+  // POS นับเป็นชิ้น ของที่หน่วยไม่ใช่ชิ้นเลยเอามาหักไม่ได้ ต้องดูเอง
   if (g.other.used > 0) {
     lines.push('');
-    lines.push('ของที่เทียบกับ POS ไม่ได้ (ชั่งเป็นกรัม) ใช้ไป ' + g.other.used +
-               ' ≈ ' + auditBaht_(g.other.value) + ' บาท — ดูเองในหน้าคำนวณของหาย');
+    lines.push('เทียบกับ POS ไม่ได้ ใช้ไป ' + g.other.used +
+               ' ≈ ' + auditBaht_(g.other.value) + ' บาท');
+    if (g.rawUnits.length) {
+      // ชีตสต็อกต้องนับหลังเสียบไม้/จัดถุงแล้ว เจอกรัมแปลว่ายังไม่ได้ตั้งหน่วย
+      lines.push('เพราะยังตั้งหน่วยเป็นกิโล/กรัมอยู่: ' + g.rawUnits.slice(0, 5).join(', '));
+      lines.push('แก้โดยรัน applyPackAndPrice ใน Apps Script');
+    } else {
+      lines.push('ดูเองในหน้าคำนวณของหาย');
+    }
   }
   if (g.noPrice.length) {
     lines.push('');
