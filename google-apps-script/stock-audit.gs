@@ -27,8 +27,12 @@
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
 
-/** ต่างกันเกินกี่บาทถึงจะแจ้ง — ตั้งทับได้ที่ Script Property AUDIT_GAP_BAHT */
-var AUDIT_GAP_BAHT = 200;
+/**
+ * ของหายเกินกี่บาทถึงจะแจ้ง — 0 = หายเท่าไหร่ก็แจ้ง แม้แต่ชิ้นเดียว
+ * ถ้าวันหนึ่งเด้งถี่จนรำคาญ ตั้ง Script Property AUDIT_GAP_BAHT เป็นตัวเลขที่รับได้
+ * แต่ค่าเริ่มต้นคือแจ้งหมด เพราะของหาย 20 บาททุกอาทิตย์ ปีหนึ่งก็พันกว่าบาท
+ */
+var AUDIT_GAP_BAHT = 0;
 
 /** แจ้งรายการที่หายเยอะสุดกี่รายการ */
 var AUDIT_TOP_N = 8;
@@ -150,8 +154,9 @@ function whoCountedToday() {
 function auditRound_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 function auditGapLimit_() {
-  var v = Number(PropertiesService.getScriptProperties().getProperty('AUDIT_GAP_BAHT'));
-  return v > 0 ? v : AUDIT_GAP_BAHT;
+  var raw = PropertiesService.getScriptProperties().getProperty('AUDIT_GAP_BAHT');
+  var v = Number(raw);
+  return (raw !== null && raw !== '' && v > 0) ? v : AUDIT_GAP_BAHT;
 }
 
 /** 12340 → "12,340" — เขียนเองแทน toLocaleString จะได้ไม่ขึ้นกับ locale ของโปรเจกต์ */
@@ -347,7 +352,19 @@ function auditAfterCount_(loc, counts, now) {
 
   var prevMs = auditPrevCountTime_(loc, now);
   if (!prevMs) {
-    return { alerted: false, reason: 'รอบฐาน — ยังไม่เคยนับที่นี่มาก่อน จึงยังไม่มีอะไรให้เทียบ' };
+    // รอบแรกของที่นี่ ยังไม่มีอะไรให้เทียบ แต่ต้องบอก ไม่งั้นจะนึกว่าระบบไม่ทำงาน
+    var base = { alerted: false, loc: loc,
+                 reason: 'รอบฐาน — ยังไม่เคยนับที่นี่มาก่อน จึงยังไม่มีอะไรให้เทียบ',
+                 text: '📋 ' + loc + ' นับสต็อกรอบแรกแล้ว\n\n' +
+                       'รอบนี้เป็น "รอบฐาน" ยังไม่มีรอบก่อนหน้าให้เทียบ\n' +
+                       'นับรอบหน้าเมื่อไหร่ ระบบจะเริ่มบอกของหายให้' };
+    try {
+      if (typeof stockNotify_ === 'function') {
+        var b = stockNotify_(loc, base.text);
+        base.lineSent = b.sent; base.lineMsg = b.message;
+      }
+    } catch (e) { base.lineMsg = e.message; }
+    return base;
   }
 
   var prev = new Date(prevMs);
@@ -367,6 +384,24 @@ function auditAfterCount_(loc, counts, now) {
   var lines = [];
   var lostPieces, lostValue, lostSauce = 0, s = null;
 
+  /**
+   * ส่งข้อความสั้น ๆ แล้วจบ — ใช้กับกรณีที่ยังไม่มีของหายให้แจ้ง
+   * เงียบไปเฉย ๆ ไม่ได้ เพราะแยกไม่ออกว่า "ของครบ" กับ "โค้ดไม่ทำงาน/หน่วยพัง"
+   * ซึ่งเคยเกิดมาแล้วตอนราคาเป็น 0 ทั้งชีต แล้วไม่มีใครรู้ว่าระบบเงียบอยู่
+   */
+  function say_(text, reason) {
+    result.reason = reason;
+    result.text = text;
+    try {
+      if (typeof stockNotify_ === 'function') {
+        var r = stockNotify_(loc, text);
+        result.lineSent = r.sent;
+        result.lineMsg = r.message;
+      }
+    } catch (e) { result.lineMsg = e.message; }
+    return result;
+  }
+
   if (isCentral) {
     lostPieces = g.piece.used;
     lostValue  = g.piece.value;
@@ -374,8 +409,9 @@ function auditAfterCount_(loc, counts, now) {
   } else {
     s = auditSales_(loc, auditStamp_(prev), auditStamp_(now));
     if (!s.orders && !s.dlvOrders) {
-      result.reason = 'ไม่มีบิลขายในช่วงนี้เลย ยังไม่มีอะไรให้หัก';
-      return result;
+      return say_('📋 ' + loc + ' นับสต็อกแล้ว แต่ช่วงนี้ไม่มีบิลขายเลย\n' +
+                  head + '\nยังไม่มีอะไรให้หัก เลยเทียบของหายไม่ได้',
+                  'ไม่มีบิลขายในช่วงนี้เลย ยังไม่มีอะไรให้หัก');
     }
     lostPieces = Math.round((g.piece.used - s.pieces - s.dlvPieces) * 1000) / 1000;
     lostValue  = auditRound_(lostPieces * perPiece);
@@ -393,10 +429,26 @@ function auditAfterCount_(loc, counts, now) {
   result.lostValue  = lostValue;
   result.lostSauce  = lostSauce;
 
-  if (lostValue <= limit) {
-    result.reason = 'ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) +
-                    ' บาท ไม่เกินเกณฑ์ ' + auditBaht_(limit);
-    return result;
+  // ของหายเท่าไหร่ก็แจ้ง — เกณฑ์เริ่มต้นเป็น 0
+  // ดูที่ "จำนวนชิ้น" เป็นหลัก ไม่ใช่มูลค่า เพราะถ้าราคายังไม่ได้ตั้ง
+  // มูลค่าจะเป็น 0 แล้วของที่หายจริงจะหลุดไปเงียบ ๆ แบบที่เคยเป็น
+  var hasLoss = lostPieces > 0 || lostSauce > 0;
+  if (!hasLoss) {
+    var okLine = isCentral
+      ? 'ออกจากชั้น ' + g.piece.used + ' ชิ้น — ส่งสาขาครบ ไม่มีของหาย'
+      : 'ออกจากชั้น ' + g.piece.used + ' ชิ้น · ขายหน้าร้าน ' + s.pieces +
+        (s.dlvPieces ? ' · เดลิเวอรี่ ' + s.dlvPieces : '') +
+        (lostPieces < 0 ? ' → นับได้เกินที่ควรเหลือ ' + (-lostPieces) + ' ชิ้น'
+                        : ' → ครบพอดี');
+    var extra = (lostPieces < 0) ? '\nเช็คว่าลงของเข้าครบไหม' : '';
+    return say_('✅ ' + loc + ' เช็คสต็อกแล้วของไม่ขาด\n' + head + '\n' + okLine + extra,
+                'ไม่มีของหาย');
+  }
+  if (limit > 0 && lostValue <= limit) {
+    return say_('📋 ' + loc + ' ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) + ' บาท\n' +
+                head + '\nไม่เกินเกณฑ์ที่ตั้งไว้ (' + auditBaht_(limit) + ' บาท)',
+                'ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) +
+                ' บาท ไม่เกินเกณฑ์ ' + auditBaht_(limit));
   }
 
   if (isCentral) {
