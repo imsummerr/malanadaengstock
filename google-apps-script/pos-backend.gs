@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-06 · 1 แพ็ค = 10 ไม้';
+var BACKEND_VERSION = '2026-09-07 · พนักงานหลายสถานที่ + เร็วขึ้น';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -149,6 +149,7 @@ function getOrCreateSheet_(ss, name) {
 //  Web app entry points
 // ══════════════════════════════════════════════════════════════
 function doPost(e) {
+  cacheClear_();                 // เริ่มคำขอใหม่ ของที่จำไว้รอบก่อนใช้ไม่ได้
   try {
     var body = JSON.parse(e.postData.contents);
 
@@ -178,6 +179,7 @@ function doPost(e) {
 }
 
 function doGet(e) {
+  cacheClear_();
   try {
     var p = e.parameter || {};
     if (p.action === 'version')  return json_(handleVersion_());
@@ -230,30 +232,64 @@ function handleLogin_(body) {
   if (!sheet) return { success: false, message: 'ยังไม่ได้ติดตั้งระบบ — รันฟังก์ชัน setupPos ก่อน' };
 
   var rows = sheet.getDataRange().getValues();
+
+  // คนเดียวอาจมีหลายแถว เพราะทำทั้งสาขาและครัวกลาง เขียนแยกแถวไว้ในชีต
+  // เก็บทุกแถวของ username นี้ แล้วรวมสาขาเข้าด้วยกัน
+  var mine = [];
   for (var i = 1; i < rows.length; i++) {
-    var r = rows[i];
-    if (String(r[0]).trim().toLowerCase() !== username.toLowerCase()) continue;
-
-    var active = String(r[4] || 'ใช่').trim();
-    if (active === 'ไม่' || active.toLowerCase() === 'no' || active.toLowerCase() === 'false') {
-      return { success: false, message: 'บัญชีนี้ถูกปิดการใช้งาน' };
-    }
-    if (!passwordMatches_(password, String(r[1]))) {
-      return { success: false, message: 'Username หรือ Password ไม่ถูกต้อง' };
-    }
-
-    var token = Utilities.getUuid();
-    var now = new Date();
-    var role = roleOf_(r[5]);
-    SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SESSIONS)
-      .appendRow([token, r[0], r[2], r[3], now, now, role]);
-    cleanOldSessions_();
-    return {
-      success: true, token: token,
-      name: String(r[2] || r[0]), branch: String(r[3] || ''), role: role
-    };
+    if (String(rows[i][0]).trim().toLowerCase() === username.toLowerCase()) mine.push(rows[i]);
   }
-  return { success: false, message: 'Username หรือ Password ไม่ถูกต้อง' };
+  if (!mine.length) return { success: false, message: 'Username หรือ Password ไม่ถูกต้อง' };
+
+  var live = mine.filter(function (r) { return isActiveUser_(r[4]); });
+  if (!live.length) return { success: false, message: 'บัญชีนี้ถูกปิดการใช้งาน' };
+
+  // รหัสผ่านตรงกับแถวไหนก็ได้ในบรรดาแถวของตัวเอง (ปกติใส่รหัสเดียวกันทุกแถว)
+  var row = null;
+  for (var j = 0; j < live.length; j++) {
+    if (passwordMatches_(password, String(live[j][1]))) { row = live[j]; break; }
+  }
+  if (!row) return { success: false, message: 'Username หรือ Password ไม่ถูกต้อง' };
+
+  // สาขาที่ทำได้ = รวมจากทุกแถวที่เปิดใช้งาน ช่องเดียวใส่หลายชื่อคั่นด้วย , / | ก็ได้
+  var locs = [];
+  live.forEach(function (r) {
+    splitLocs_(r[3]).forEach(function (l) { if (locs.indexOf(l) === -1) locs.push(l); });
+  });
+  // แถวไหนเป็นเจ้าของ ก็ถือว่าเป็นเจ้าของ
+  var role = 'staff';
+  live.forEach(function (r) { if (roleOf_(r[5]) === 'owner') role = 'owner'; });
+
+  var token = Utilities.getUuid();
+  var now = new Date();
+  var joined = locs.join(', ');
+  SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SESSIONS)
+    .appendRow([token, row[0], row[2], joined, now, now, role]);
+  cleanOldSessions_();
+  return {
+    success: true, token: token,
+    name: String(row[2] || row[0]),
+    branch: locs[0] || '',       // สาขาหลัก — โค้ดเดิมที่รู้จักช่องเดียวยังใช้ได้
+    branches: locs,
+    role: role
+  };
+}
+
+/** ช่อง "ใช้งาน" ในชีตผู้ใช้งาน — เว้นว่างถือว่าใช้งานอยู่ */
+function isActiveUser_(value) {
+  var v = String(value === '' || value == null ? 'ใช่' : value).trim().toLowerCase();
+  return !(v === 'ไม่' || v === 'no' || v === 'false');
+}
+
+/**
+ * ช่อง "สาขา" → รายชื่อสถานที่
+ * รองรับทั้งเขียนแยกแถว และเขียนรวมช่องเดียวคั่นด้วย , / | หรือขึ้นบรรทัดใหม่
+ */
+function splitLocs_(value) {
+  return String(value == null ? '' : value)
+    .split(/[,/|\n]+/)
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return x; });
 }
 
 /**
@@ -311,8 +347,10 @@ function checkToken_(token) {
     if (!seen || isNaN(seen.getTime()) || (new Date() - seen) > 5 * 60 * 1000) {
       sheet.getRange(i + 1, 6).setValue(new Date());
     }
+    var locs = splitLocs_(rows[i][3]);
     return {
-      username: rows[i][1], name: rows[i][2], branch: rows[i][3],
+      username: rows[i][1], name: rows[i][2],
+      branch: locs[0] || '', branches: locs,
       role: rows[i][6] === 'owner' ? 'owner' : 'staff'
     };
   }
@@ -973,6 +1011,14 @@ var MOVE_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ต
  * คืน map ชื่อคอลัมน์ → index (เริ่มที่ 0)
  */
 function ensureCols_(sheet, names) {
+  var key = 'cols:' + sheet.getName() + ':' + names.join('|');
+  if (key in _cache) return _cache[key];
+  var map = ensureColsRaw_(sheet, names);
+  _cache[key] = map;
+  return map;
+}
+
+function ensureColsRaw_(sheet, names) {
   var width = Math.max(sheet.getLastColumn(), 1);
   var headers = sheet.getLastRow() > 0
     ? sheet.getRange(1, 1, 1, width).getValues()[0].map(function (h) { return String(h).trim(); })
@@ -991,14 +1037,46 @@ function ensureCols_(sheet, names) {
   return map;
 }
 
+/* ───────────── แคชระหว่างการทำงานหนึ่งครั้ง ─────────────
+   Apps Script ช้าที่ "จำนวนครั้งที่คุยกับชีต" ไม่ใช่ที่ตัวโค้ด
+   บันทึกเช็คสต็อกรอบเดียวเคยอ่านชีตประวัติ 6 รอบ (คิดยอดคงเหลือ 3
+   + เช็คของใกล้หมดอีก 3) ทั้งที่ข้อมูลชุดเดียวกัน
+   เก็บผลไว้ต่อการเรียก 1 ครั้ง แล้วล้างทิ้งทันทีที่มีการเขียน */
+var _cache = {};
+function cacheClear_() { _cache = {}; }
+function cached_(key, fn) {
+  if (!(key in _cache)) _cache[key] = fn();
+  return _cache[key];
+}
+
+/** หาชีตตามชื่อ — จำไว้ ไม่ต้องถามซ้ำทุกครั้ง */
+function sheet_(name) {
+  return cached_('sh:' + name, function () {
+    return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  });
+}
+
 /** เขียนหนึ่งแถวโดยอ้างชื่อคอลัมน์ ไม่อ้างตำแหน่ง */
 function appendByCols_(sheet, map, values) {
+  appendRows_(sheet, map, [values]);
+}
+
+/**
+ * เขียนหลายแถวรวดเดียว — คุยกับชีตครั้งเดียว ไม่ใช่แถวละครั้ง
+ * เช็คสต็อก 70 รายการเคยเป็น 70 รอบ ตอนนี้เหลือรอบเดียว
+ */
+function appendRows_(sheet, map, list) {
+  if (!list || !list.length) return;
   var width = sheet.getLastColumn();
-  var row = new Array(width).fill('');
-  Object.keys(values).forEach(function (k) {
-    if (map[k] !== undefined) row[map[k]] = values[k];
+  var rows = list.map(function (values) {
+    var row = new Array(width).fill('');
+    Object.keys(values).forEach(function (k) {
+      if (map[k] !== undefined) row[map[k]] = values[k];
+    });
+    return row;
   });
-  sheet.appendRow(row);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, width).setValues(rows);
+  cacheClear_();          // ข้อมูลเปลี่ยนแล้ว ของที่จำไว้ใช้ไม่ได้
 }
 
 /* ───────────────────────── แปลงหน่วย 2 ระดับ ───────────────────────── */
@@ -1038,7 +1116,11 @@ function round_(n) { return Math.round((Number(n) || 0) * 1000) / 1000; }
 
 /** อ่านชีตรายการสินค้า — คืน array ของ { name, subUnit, packUnit, perPack, price, lowPacks } */
 function getStockItems_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
+  return cached_('items', getStockItemsRaw_);
+}
+
+function getStockItemsRaw_() {
+  var sh = sheet_(SHEET_ITEMS);
   if (!sh || sh.getLastRow() < 2) return [];
   var map = ensureCols_(sh, ITEM_COLS);
   var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
@@ -1070,7 +1152,11 @@ function findStockItem_(name) {
 
 /** อ่านชีตประวัติเป็น array ของ object ตามชื่อหัวคอลัมน์ */
 function readMoves_(sheetName) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  return cached_('moves:' + sheetName, function () { return readMovesRaw_(sheetName); });
+}
+
+function readMovesRaw_(sheetName) {
+  var sh = sheet_(sheetName);
   if (!sh || sh.getLastRow() < 2) return [];
   var map = ensureCols_(sh, MOVE_COLS);
   var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
@@ -1103,6 +1189,10 @@ function timeOf_(v) {
  * ของเข้าร้าน 1 แถว = บวกให้สาขา และหักออกจากครัวกลางพร้อมกัน (ไม่ต้องเขียน 2 แถว)
  */
 function stockBalances_() {
+  return cached_('bal', stockBalancesRaw_);
+}
+
+function stockBalancesRaw_() {
   var bal = {};
   function add(loc, item, n) {
     if (!loc || !item) return;
@@ -1269,7 +1359,20 @@ function stockErr_(e) {
  */
 function stockRoleOf_(session) {
   if (session.role === 'owner') return 'owner';
-  return String(session.branch || '').trim() === CENTRAL ? 'central' : 'branch';
+  var locs = sessionLocs_(session);
+  var central = locs.indexOf(CENTRAL) !== -1;
+  var shop = locs.some(function (l) { return l !== CENTRAL; });
+  if (central && shop) return 'both';       // ทำทั้งครัวกลางและหน้าร้าน
+  return central ? 'central' : 'branch';
+}
+
+/** สถานที่ทั้งหมดของคนนี้ — รองรับคนที่ทำทั้งสาขาและครัวกลาง */
+function sessionLocs_(session) {
+  if (session.branches && session.branches.length) {
+    return session.branches.map(function (l) { return String(l).trim(); })
+                           .filter(function (l) { return l; });
+  }
+  return splitLocs_(session.branch);
 }
 
 /** ยอดคงเหลือและตัวเลขเทียบตอนนับสต็อก ให้เฉพาะเจ้าของร้าน */
@@ -1278,15 +1381,13 @@ function isStockOwner_(session) { return stockRoleOf_(session) === 'owner'; }
 /** เจ้าของผ่านหมด นอกนั้นต้องตรงกับที่กำหนด */
 function stockAllow_(session, need) {
   var r = stockRoleOf_(session);
-  return r === 'owner' || r === need;
+  return r === 'owner' || r === 'both' || r === need;
 }
 
 /** สถานที่ที่คนนี้ลงรายการได้ — กันไม่ให้สาขาหนึ่งไปลงของอีกสาขา */
 function stockCanUseLoc_(session, loc) {
-  var r = stockRoleOf_(session);
-  if (r === 'owner') return true;
-  if (r === 'central') return String(loc || '').trim() === CENTRAL;
-  return String(loc || '').trim() === String(session.branch || '').trim();
+  if (stockRoleOf_(session) === 'owner') return true;
+  return sessionLocs_(session).indexOf(String(loc || '').trim()) !== -1;
 }
 
 /** ตรวจ token + สิทธิ์ + แปลงจำนวนแพ็ค/เศษ เป็นหน่วยย่อย — ใช้ร่วมกันทุก action */
@@ -1437,20 +1538,20 @@ function handleStockCount_(body) {
                                       missing.slice(0, 5).join(', ') + (missing.length > 5 ? ' …' : '') };
   }
 
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_COUNT);
+  var sh = sheet_(SHEET_COUNT);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_COUNT + '"' };
   var map = ensureCols_(sh, MOVE_COLS);
 
   var before = stockBalances_()[loc] || {};
   var now = new Date();
-  var diffs = [];
+  var diffs = [], out = [];
 
   items.forEach(function (it) {
     var r = got[it.name];
     var counted = toBase_(r.packs, r.rem, it.perPack);
     var sys = Number(before[it.name]) || 0;
     var diff = round_(counted - sys);
-    appendByCols_(sh, map, {
+    out.push({
       'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name,
       'รายการ': it.name, 'จำนวน': counted, 'หน่วย': it.subUnit,
       'แพ็ค': Number(r.packs) || 0, 'เศษ': Number(r.rem) || 0,
@@ -1460,6 +1561,7 @@ function handleStockCount_(body) {
     if (diff !== 0) diffs.push('• ' + it.name + '  นับได้ ' + fmtPack_(counted, it) +
                                '  (ระบบ ' + fmtPack_(sys, it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff + ' ' + it.subUnit + ')');
   });
+  appendRows_(sh, map, out);          // เขียนทีเดียว ไม่ใช่แถวละครั้ง
 
   var msg = '📋 เช็คสต็อกรายสัปดาห์ — ' + loc + '\n\n' +
             'นับครบ ' + items.length + ' รายการ โดย ' + session.name + '\n' +
@@ -1479,7 +1581,10 @@ function handleStockBootstrap_(p) {
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
 
   var items = getStockItems_();
-  var bal = stockBalances_();
+  // ยอดคงเหลือส่งให้เจ้าของร้านคนเดียว พนักงานไม่ต้องคิดให้ ประหยัดการอ่านชีต
+  // 3 รอบต่อการเปิดหน้าหนึ่งครั้ง ซึ่งเป็นงานหนักที่สุดของ request นี้
+  var owner = isStockOwner_(session);
+  var bal = owner ? stockBalances_() : {};
 
   // สถานที่ = ครัวกลาง + สาขาที่ตั้งกลุ่ม LINE ไว้ใน Script Property LINE_GROUPS
   var locations = [CENTRAL];
@@ -1487,10 +1592,15 @@ function handleStockBootstrap_(p) {
     if (locations.indexOf(b) === -1) locations.push(b);
   });
   Object.keys(bal).forEach(function (l) { if (locations.indexOf(l) === -1) locations.push(l); });
+  if (!owner) {
+    sessionLocs_(session).forEach(function (l) {
+      if (locations.indexOf(l) === -1) locations.push(l);
+    });
+  }
 
   // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน ไม่ส่งให้พนักงานเลย
   // ซ่อนแค่ฝั่งหน้าเว็บไม่พอ เปิด Network ในเบราว์เซอร์ก็อ่านคำตอบได้
-  var stock = !isStockOwner_(session) ? [] : locations.filter(function (loc) {
+  var stock = !owner ? [] : locations.filter(function (loc) {
     return stockCanUseLoc_(session, loc);
   }).map(function (loc) {
     var m = bal[loc] || {};
@@ -1507,7 +1617,7 @@ function handleStockBootstrap_(p) {
 
   return { success: true, data: {
     role: session.role, stockRole: stockRoleOf_(session),
-    name: session.name, branch: session.branch,
+    name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock
   } };
 }
@@ -2318,12 +2428,12 @@ function zeroStockAt_(locs) {
     });
   });
 
-  var now = new Date(), done = [];
+  var now = new Date(), done = [], out = [];
   locs.forEach(function (loc) {
     var m = bal[loc] || {};
     Object.keys(m).forEach(function (item) {
       if (!Number(m[item])) return;          // ยอดเป็น 0 อยู่แล้ว ไม่ต้องเขียน
-      appendByCols_(sh, map, {
+      out.push({
         'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': 'ระบบ',
         'รายการ': item, 'จำนวน': 0, 'หน่วย': unitOf[item] || 'ไม้',
         'แพ็ค': 0, 'เศษ': 0, 'ไม้ต่อแพ็ค': '',
@@ -2333,6 +2443,7 @@ function zeroStockAt_(locs) {
       done.push(loc + ' · ' + item + ' (เดิม ' + m[item] + ')');
     });
   });
+  appendRows_(sh, map, out);
 
   Logger.log('ล้างยอดที่: ' + locs.join(', '));
   if (!done.length) {

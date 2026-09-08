@@ -212,13 +212,20 @@ function apiUrl() {
   return (s.apiUrl || DEFAULT_API_URL || '').trim();
 }
 
-const auth = { token: '', name: '', branch: '', role: 'staff' };
+const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
+
+/* ช่อง "สาขา" ในชีตผู้ใช้งาน อาจมีหลายที่
+   คนที่ทำทั้งหน้าร้านและครัวกลาง เขียนแยกแถวในชีต หรือใส่ช่องเดียวคั่นด้วย , / |
+   ฝั่งเซิร์ฟเวอร์รวมมาให้แล้ว ตรงนี้แค่แตกกลับเป็น list */
+const splitLocs = v => String(v || '').split(/[,/|\n]+/).map(x => x.trim()).filter(Boolean);
+
 function readAuth() {
   try {
     auth.token  = sessionStorage.getItem('pos_token')  || '';
     auth.name   = sessionStorage.getItem('pos_name')   || '';
     auth.branch = sessionStorage.getItem('pos_branch') || '';
     auth.role   = sessionStorage.getItem('pos_role')   || 'staff';
+    auth.branches = splitLocs(sessionStorage.getItem('pos_branches') || auth.branch);
   } catch (e) {}
 }
 function isOwner() { return auth.role === 'owner'; }
@@ -226,8 +233,9 @@ function isOwner() { return auth.role === 'owner'; }
      สาขา = ครัวกลาง → พนักงานครัวกลาง  สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
      สาขา = ชื่อสาขา  → พนักงานสาขา      ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
      เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
-function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
-function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
+const myLocs = () => (auth.branches.length ? auth.branches : splitLocs(auth.branch));
+function isCentral() { return isOwner() || myLocs().indexOf('ครัวกลาง') !== -1; }
+function isBranch()  { return isOwner() || myLocs().some(l => l && l !== 'ครัวกลาง'); }
 function canSee(who) {
   if (who === 'owner')   return isOwner();
   if (who === 'both')    return isCentral() || isBranch();
@@ -297,6 +305,7 @@ async function doLogin() {
       sessionStorage.setItem('pos_token', data.token);
       sessionStorage.setItem('pos_name', data.name);
       sessionStorage.setItem('pos_branch', data.branch || '');
+      sessionStorage.setItem('pos_branches', (data.branches || []).join(', ') || (data.branch || ''));
       sessionStorage.setItem('pos_role', data.role === 'owner' ? 'owner' : 'staff');
       showApp();
     } else {
@@ -314,7 +323,7 @@ async function doLogin() {
 
 function doLogout() {
   const token = auth.token;
-  ['pos_token', 'pos_name', 'pos_branch', 'pos_role'].forEach(k => sessionStorage.removeItem(k));
+  ['pos_token', 'pos_name', 'pos_branch', 'pos_branches', 'pos_role'].forEach(k => sessionStorage.removeItem(k));
   if (token) {
     fetch(apiUrl(), {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -348,8 +357,11 @@ function itemsFor(loc) {
 /** สถานที่ที่ผู้ใช้คนนี้ลงรายการได้ — เจ้าของทุกที่ ครัวกลางเฉพาะครัวกลาง สาขาเฉพาะสาขาตัวเอง */
 function allowedLocs() {
   if (isOwner()) return D.locations;
-  if (auth.branch === 'ครัวกลาง') return [D.central];
-  return D.locations.filter(l => l === auth.branch);
+  const mine = myLocs();
+  const out = D.locations.filter(l => mine.indexOf(l) !== -1);
+  // เผื่อสาขาของตัวเองยังไม่โผล่ในรายชื่อที่เซิร์ฟเวอร์ส่งมา
+  mine.forEach(l => { if (out.indexOf(l) === -1) out.push(l); });
+  return out;
 }
 
 function toBase(packs, rem, perPack) {
@@ -729,8 +741,15 @@ async function submitCount() {
 async function loadData() {
   const r = await apiGet({ action: 'stockBootstrap' });
   D = r.data;
+  // เซิร์ฟเวอร์เป็นตัวตัดสินว่าคนนี้ทำที่ไหนได้บ้าง ยึดค่าที่ส่งกลับมาเป็นหลัก
+  if (D.branches && D.branches.length) {
+    auth.branches = D.branches.slice();
+    auth.branch = D.branches[0];
+    try { sessionStorage.setItem('pos_branches', D.branches.join(', ')); } catch (e) {}
+  }
+  const where = myLocs().join(' + ');
   document.getElementById('hdr-sub').textContent =
-    auth.name + (auth.branch ? ' • ' + auth.branch : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
+    auth.name + (where ? ' • ' + where : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
 }
 
 async function showApp() {
