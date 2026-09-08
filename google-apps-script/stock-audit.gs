@@ -204,13 +204,17 @@ function auditPrevCountTime_(loc, now) {
 }
 
 /**
- * ยอดขายหน้าร้าน + จำนวนชิ้นที่ออกไปกับเดลิเวอรี่ ในช่วงที่กำหนด
- *   revenue  = ผลรวม "ยอดสุทธิ" (หักส่วนลดมาแล้ว) = เงินที่ได้จริง
- *   pieces   = ไม้ + มาม่า + ของอื่น ที่ขายหน้าร้าน — ไว้หาราคาเฉลี่ยต่อชิ้น
- *   dlvPieces= ชิ้นที่ออกไปกับเดลิเวอรี่ ของออกแต่เงินไม่ได้เข้าที่ร้าน ต้องหักออก
+ * ของที่ขายออกไปจริง + เงินที่ได้ ในช่วงที่กำหนด
+ *   pieces    = รวมไม้ + รวมมาม่า + รวมของอื่น = จำนวนชิ้นที่ขายหน้าร้าน (มีเงิน)
+ *   dlvPieces = ชิ้นที่ออกไปกับเดลิเวอรี่ — ของออกจริงแต่เงินไปเข้าที่แพลตฟอร์ม
+ *   sauceCups = ถ้วยน้ำจิ้มที่แถมไป — ของออกจริง ไม่มีเงิน
+ *   gross     = ยอดรวมก่อนหักส่วนลด · discount = ส่วนลดที่ให้ลูกค้า
+ *   revenue   = ยอดสุทธิ = gross − discount = เงินที่ได้จริง
  */
 function auditSales_(loc, fromStamp, toStamp) {
-  var out = { revenue: 0, orders: 0, pieces: 0, dlvPieces: 0, dlvOrders: 0 };
+  var out = { revenue: 0, gross: 0, discount: 0, orders: 0,
+              pieces: 0, sticks: 0, mama: 0, other: 0,
+              sauceCups: 0, dlvPieces: 0, dlvOrders: 0 };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   function scan(sheetName, fn) {
@@ -235,25 +239,97 @@ function auditSales_(loc, fromStamp, toStamp) {
 
   scan((typeof SHEET_ORDERS === 'string') ? SHEET_ORDERS : 'POS_Orders', function (r, idx) {
     out.orders++;
-    out.revenue += n(r[idx['ยอดสุทธิ']]);
-    out.pieces  += n(r[idx['รวมไม้']]) + n(r[idx['รวมมาม่า']]) +
-                   (idx['รวมของอื่น'] !== undefined ? n(r[idx['รวมของอื่น']]) : 0);
+    out.gross    += n(r[idx['ยอดรวม']]);
+    out.discount += n(r[idx['ส่วนลด']]);
+    out.revenue  += n(r[idx['ยอดสุทธิ']]);
+    out.sticks   += n(r[idx['รวมไม้']]);
+    out.mama     += n(r[idx['รวมมาม่า']]);
+    out.other    += (idx['รวมของอื่น'] !== undefined ? n(r[idx['รวมของอื่น']]) : 0);
+    out.sauceCups += (idx['จำนวนน้ำจิ้ม'] !== undefined ? n(r[idx['จำนวนน้ำจิ้ม']]) : 0);
   });
+  out.pieces = out.sticks + out.mama + out.other;
 
   scan((typeof SHEET_DELIVERY === 'string') ? SHEET_DELIVERY : 'POS_Delivery', function (r, idx) {
     out.dlvOrders++;
     out.dlvPieces += n(r[idx['รวมจำนวน']]);
   });
 
-  out.revenue = auditRound_(out.revenue);
+  out.revenue  = auditRound_(out.revenue);
+  out.gross    = auditRound_(out.gross);
+  out.discount = auditRound_(out.discount);
   return out;
 }
 
 /**
- * เทียบของที่หายกับเงินที่ได้ — เรียกจาก handleStockCount_ ทันทีที่นับเสร็จ
+ * สินค้าตัวนี้ขายเป็นอะไร — ต้องรู้ว่าจะเอาไปเทียบกับตัวเลขไหนใน POS
+ *   piece = นับเป็นชิ้น (ไม้ ถุง มัด ที่ อัน) → เทียบกับ รวมไม้+รวมมาม่า+รวมของอื่น
+ *   sauce = ถ้วยน้ำจิ้ม                      → เทียบกับ จำนวนน้ำจิ้ม
+ *   other = ชั่งเป็นกรัม หรือหน่วยที่ POS ไม่ได้นับ → เทียบไม่ได้ รายงานเฉย ๆ
+ */
+var AUDIT_PIECE_UNITS = ['ไม้', 'ถุง', 'มัด', 'ที่', 'อัน', 'ชิ้น'];
+
+function auditGroupOf_(item) {
+  var name = String(item.name || '');
+  if (/น้ำจิ้ม|ถ้วย/.test(name)) return 'sauce';
+  return AUDIT_PIECE_UNITS.indexOf(String(item.subUnit || '').trim()) !== -1 ? 'piece' : 'other';
+}
+
+/**
+ * นับของที่ใช้ไปในช่วงนี้ แยกตามกลุ่มหน่วยขาย
  * counts = [{ item, counted, sys, diff }]  โดย diff = นับได้ − ยอดระบบ
- *   ยอดระบบ = ยกมา + ของเข้า − ของเสีย  (ยอดขายไม่ได้ถูกหักทีละบิล)
- *   ดังนั้น −diff = ของที่หายไปจากสต็อกช่วงนี้ = สูตรเดียวกับหน้า "คำนวณของหาย"
+ *   ยอดระบบ = ยกมา + ของเข้า − ของเสีย   (ยอดขายไม่ได้ถูกหักทีละบิล)
+ *   ดังนั้น −diff = ยกมา + ของเข้า − ของเสีย − นับได้ = "ของที่หายไปจากชั้น"
+ * ตัวนี้ยังรวมของที่ขายไปอยู่ ต้องเอายอดขายจริงจาก POS มาหักอีกที
+ */
+function auditUsage_(counts) {
+  var g = {
+    piece: { used: 0, value: 0, items: [] },
+    sauce: { used: 0, value: 0, items: [] },
+    other: { used: 0, value: 0, items: [] }
+  };
+  var overs = [], noPrice = [];
+
+  (counts || []).forEach(function (c) {
+    var it = c.item;
+    if (!it) return;
+    var used = Math.round((-c.diff) * 1000) / 1000;
+    var k = auditGroupOf_(it);
+    g[k].used += used;
+    if (it.price > 0) g[k].value += used * it.price;
+    else if (used > 0 && k !== 'sauce') noPrice.push(it.name);
+
+    if (used > 0) g[k].items.push({ name: it.name, qty: used, unit: it.subUnit,
+                                    value: auditRound_(used * (it.price || 0)) });
+    else if (used < 0) overs.push({ name: it.name, qty: -used, unit: it.subUnit });
+  });
+
+  Object.keys(g).forEach(function (k) {
+    g[k].used = Math.round(g[k].used * 1000) / 1000;
+    g[k].value = auditRound_(g[k].value);
+    g[k].items.sort(function (a, b) { return b.qty - a.qty; });
+  });
+  g.overs = overs;
+  g.noPrice = noPrice;
+  return g;
+}
+
+/**
+ * เทียบของหาย — เรียกจาก handleStockCount_ ทันทีที่นับเสร็จ
+ *
+ * สูตร (นับเป็นชิ้น ไม่ใช่เป็นบาท):
+ *   ควรเหลือ = ยกมา + ของเข้า − ของเสีย − ขายหน้าร้าน − เดลิเวอรี่ − น้ำจิ้มแถม
+ *   ของหาย   = ควรเหลือ − ที่นับได้จริง
+ *
+ * เทียบเป็นชิ้นเพราะ POS รู้ว่าขายไปกี่ไม้จริง ๆ ไม่ต้องผ่านราคาเลย
+ * ถ้าเทียบเป็นบาท ราคาในชีตผิดนิดเดียวก็เพี้ยนทั้งก้อน และส่วนลดจะถูกนับซ้ำ
+ * ราคาเอาไว้แปลงของที่หายเป็นเงินตอนท้ายเท่านั้น
+ *
+ * เงิน: ยอดรวม − ส่วนลดที่แถมลูกค้า = ยอดสุทธิ = เงินที่ควรได้
+ * ส่วนลดจึงไม่ถูกนับเป็นของหาย เพราะของออกไปจริงและตั้งใจให้ไป
+ *
+ * ครัวกลางไม่ได้ขายของ และของที่ส่งไปสาขาถูกหักออกจากยอดระบบแล้ว
+ * ของที่ใช้ไปทั้งหมดจึงคือของหายเลย ไม่ต้องหักอะไร
+ *
  * คืน object สรุปเสมอ ส่งไลน์ไม่สำเร็จก็ไม่ throw — ของลงชีตไปแล้ว
  */
 function auditAfterCount_(loc, counts, now) {
@@ -266,40 +342,55 @@ function auditAfterCount_(loc, counts, now) {
   }
 
   var prev = new Date(prevMs);
-  var lost = [], overs = [], lostValue = 0, noPrice = [];
-
-  (counts || []).forEach(function (c) {
-    var it = c.item;
-    if (!it) return;
-    if (!(it.price > 0)) {                    // ถ้วย ช้อน นม — ไม่มีราคาขาย ตีมูลค่าไม่ได้
-      if (c.diff < 0) noPrice.push(it.name);
-      return;
-    }
-    var gone = Math.round((-c.diff) * 1000) / 1000;
-    lostValue += gone * it.price;             // ติดลบได้ นับได้เกินระบบถือว่าหักกลบกัน
-    var v = auditRound_(gone * it.price);
-    if (gone > 0)      lost.push({ name: it.name, qty: gone, unit: it.subUnit, value: v });
-    else if (gone < 0) overs.push({ name: it.name, qty: -gone, unit: it.subUnit });
-  });
-
-  lostValue = auditRound_(lostValue);
-  lost.sort(function (a, b) { return b.value - a.value; });
-
+  var g = auditUsage_(counts);
   var limit = auditGapLimit_();
-  var head = 'ช่วงที่เทียบ ' + auditShort_(prev) + ' → ' + auditShort_(now);
   var isCentral = (loc === auditCentral_());
-  var result = { loc: loc, from: auditShort_(prev), to: auditShort_(now),
-                 lostValue: lostValue, limit: limit, alerted: false };
 
+  // ราคาเฉลี่ยของ "ของที่ออกจากชั้นไปจริง" ในช่วงนี้ ใช้แปลงชิ้นที่หายเป็นเงิน
+  // ไม่ใช้ราคาขายเฉลี่ยจากบิล เพราะของที่หายอาจไม่ใช่ของที่ขายดี
+  var perPiece = g.piece.used > 0 ? g.piece.value / g.piece.used : 0;
+
+  var result = { loc: loc, from: auditShort_(prev), to: auditShort_(now),
+                 usedPieces: g.piece.used, usedValue: g.piece.value,
+                 limit: limit, alerted: false };
+
+  var head = 'ช่วงที่เทียบ ' + auditShort_(prev) + ' → ' + auditShort_(now);
   var lines = [];
+  var lostPieces, lostValue, lostSauce = 0, s = null;
+
   if (isCentral) {
-    // ครัวกลางไม่ได้ขายของ ของที่ส่งออกสาขาถูกหักออกจากยอดระบบให้แล้ว
-    // ที่ยังขาดอยู่จึงไม่มีอะไรมาอธิบายได้ = ของหายล้วน ๆ
-    result.gap = lostValue;
-    if (lostValue <= limit) {
-      result.reason = 'ต่างกัน ' + auditBaht_(lostValue) + ' บาท ไม่เกิน ' + auditBaht_(limit);
+    lostPieces = g.piece.used;
+    lostValue  = g.piece.value;
+    lostSauce  = g.sauce.used;
+  } else {
+    s = auditSales_(loc, auditStamp_(prev), auditStamp_(now));
+    if (!s.orders && !s.dlvOrders) {
+      result.reason = 'ไม่มีบิลขายในช่วงนี้เลย ยังไม่มีอะไรให้หัก';
       return result;
     }
+    lostPieces = Math.round((g.piece.used - s.pieces - s.dlvPieces) * 1000) / 1000;
+    lostValue  = auditRound_(lostPieces * perPiece);
+    lostSauce  = Math.round((g.sauce.used - s.sauceCups) * 1000) / 1000;
+
+    result.soldPieces = s.pieces;
+    result.deliveryPieces = s.dlvPieces;
+    result.gross = s.gross;
+    result.discount = s.discount;
+    result.revenue = s.revenue;
+    result.orders = s.orders;
+  }
+
+  result.lostPieces = lostPieces;
+  result.lostValue  = lostValue;
+  result.lostSauce  = lostSauce;
+
+  if (lostValue <= limit) {
+    result.reason = 'ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) +
+                    ' บาท ไม่เกินเกณฑ์ ' + auditBaht_(limit);
+    return result;
+  }
+
+  if (isCentral) {
     lines.push('⚠️ ครัวกลางนับสต็อกแล้วของไม่ครบ');
     lines.push('');
     lines.push(head);
@@ -307,68 +398,64 @@ function auditAfterCount_(loc, counts, now) {
     lines.push('ครัวกลางไม่ได้ขายของ และของที่ส่งไปสาขาถูกหักให้แล้ว');
     lines.push('ที่ยังขาดอยู่จึงยังหาสาเหตุไม่ได้');
     lines.push('');
-    lines.push('ขาดไป ' + auditBaht_(lostValue) + ' บาท');
+    lines.push('ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) + ' บาท');
   } else {
-    var s = auditSales_(loc, auditStamp_(prev), auditStamp_(now));
-    // ราคาเฉลี่ยต่อชิ้นจากบิลจริงในช่วงเดียวกัน — ไม่ต้องตั้งค่าเอง ไม่ต้องเดา
-    var avg = s.pieces > 0 ? s.revenue / s.pieces : 0;
-    var dlvValue = auditRound_(s.dlvPieces * avg);
-    var expect = auditRound_(lostValue - dlvValue);
-    var gap = auditRound_(expect - s.revenue);
-
-    result.revenue = s.revenue;
-    result.orders = s.orders;
-    result.deliveryValue = dlvValue;
-    result.expect = expect;
-    result.gap = gap;
-
-    if (!s.orders) {
-      result.reason = 'ไม่มีบิลขายในช่วงนี้เลย ยังไม่เทียบเงิน';
-      return result;
-    }
-    if (gap <= limit) {
-      result.reason = 'ต่างกัน ' + auditBaht_(gap) + ' บาท ไม่เกิน ' + auditBaht_(limit);
-      return result;
-    }
-
-    lines.push('⚠️ เช็คสต็อกแล้วเงินไม่ตรงกับของ — ' + loc);
+    lines.push('⚠️ เช็คสต็อกแล้วของหาย — ' + loc);
     lines.push('');
     lines.push(head);
     lines.push('');
-    lines.push('มูลค่าของที่ใช้ไป   ' + auditBaht_(lostValue) + ' บาท');
-    if (s.dlvPieces > 0) {
-      lines.push('หักเดลิเวอรี่ ' + auditBaht_(s.dlvPieces) + ' ชิ้น  −' + auditBaht_(dlvValue) + ' บาท');
-      lines.push('ควรได้เงิน        ' + auditBaht_(expect) + ' บาท');
-    }
-    lines.push('เงินที่ได้จริง       ' + auditBaht_(s.revenue) + ' บาท  (' + s.orders + ' บิล)');
+    lines.push('ของที่ออกจากชั้น   ' + g.piece.used + ' ชิ้น');
+    lines.push('หักขายหน้าร้าน    −' + s.pieces + ' ชิ้น');
+    if (s.dlvPieces > 0) lines.push('หักเดลิเวอรี่      −' + s.dlvPieces + ' ชิ้น');
     lines.push('');
-    lines.push('ขาดไป ' + auditBaht_(gap) + ' บาท');
+    lines.push('ของหาย ' + lostPieces + ' ชิ้น ≈ ' + auditBaht_(lostValue) + ' บาท');
+    lines.push('');
+    lines.push('เงินที่ได้');
+    lines.push('  ยอดขาย   ' + auditBaht_(s.gross) + ' บาท  (' + s.orders + ' บิล)');
+    if (s.discount > 0) lines.push('  ส่วนลด    −' + auditBaht_(s.discount) + ' บาท');
+    lines.push('  ได้จริง   ' + auditBaht_(s.revenue) + ' บาท');
   }
 
-  if (lost.length) {
+  // น้ำจิ้มแถมออกไปจริงแต่ไม่มีเงิน หักแล้วยังขาดแปลว่าถ้วยหายเพิ่ม
+  if (lostSauce > 0) {
     lines.push('');
-    lines.push('หายเยอะสุด');
-    lost.slice(0, AUDIT_TOP_N).forEach(function (x) {
-      lines.push('• ' + x.name + '  ' + x.qty + ' ' + x.unit + ' = ' + auditBaht_(x.value) + ' บาท');
+    lines.push('น้ำจิ้ม  ใช้ไป ' + g.sauce.used + ' ถ้วย' +
+               (s ? ' · แถมไป ' + s.sauceCups + ' ถ้วย' : '') +
+               ' → หาย ' + lostSauce + ' ถ้วย');
+  }
+
+  if (g.piece.items.length) {
+    lines.push('');
+    lines.push(isCentral ? 'หายเยอะสุด' : 'ออกจากชั้นเยอะสุด');
+    g.piece.items.slice(0, AUDIT_TOP_N).forEach(function (x) {
+      lines.push('• ' + x.name + '  ' + x.qty + ' ' + x.unit);
     });
-    if (lost.length > AUDIT_TOP_N) lines.push('• (อีก ' + (lost.length - AUDIT_TOP_N) + ' รายการ)');
+    if (g.piece.items.length > AUDIT_TOP_N) {
+      lines.push('• (อีก ' + (g.piece.items.length - AUDIT_TOP_N) + ' รายการ)');
+    }
   }
 
   // นับได้มากกว่ายอดระบบ = ลงของเข้าไม่ครบ หรือนับผิด ควรรู้ไว้ด้วย
-  if (overs.length) {
+  if (g.overs.length) {
     lines.push('');
     lines.push('นับได้เกินยอดระบบ — เช็คว่าลงของเข้าครบไหม');
-    overs.slice(0, 5).forEach(function (x) {
+    g.overs.slice(0, 5).forEach(function (x) {
       lines.push('• ' + x.name + '  เกิน ' + x.qty + ' ' + x.unit);
     });
   }
-  if (noPrice.length) {
+
+  // ของชั่งกรัม POS ไม่ได้นับเป็นชิ้น เลยเอามาหักไม่ได้ ต้องดูเอง
+  if (g.other.used > 0) {
     lines.push('');
-    lines.push('ยังไม่ได้ตั้งราคาขาย ตีมูลค่าไม่ได้: ' + noPrice.slice(0, 5).join(', '));
+    lines.push('ของที่เทียบกับ POS ไม่ได้ (ชั่งเป็นกรัม) ใช้ไป ' + g.other.used +
+               ' ≈ ' + auditBaht_(g.other.value) + ' บาท — ดูเองในหน้าคำนวณของหาย');
+  }
+  if (g.noPrice.length) {
+    lines.push('');
+    lines.push('ยังไม่ได้ตั้งราคาขาย ตีมูลค่าไม่ได้: ' + g.noPrice.slice(0, 5).join(', '));
   }
 
   lines.push('');
-  lines.push('ตัวเลขนี้ใช้ "ราคาขาย/หน่วยย่อย" ในชีตรายการสินค้า');
   lines.push('ดูรายตัวได้ที่หน้าสรุปยอดขาย → แท็บ "คำนวณของหาย"');
 
   var sent = { sent: false, message: 'ไม่มี stockNotify_' };
@@ -452,7 +539,7 @@ function testShrinkNow() {
   });
 }
 
-/** ดูตัวเลขเฉย ๆ ไม่ส่งไลน์ */
+/** ดูตัวเลขเฉย ๆ ไม่ส่งไลน์ — เห็นทุกบรรทัดของสูตร จะได้รู้ว่าเลขไหนเพี้ยน */
 function previewShrink() {
   auditLocations_().forEach(function (loc) {
     var b = auditRebuildCounts_(loc);
@@ -461,23 +548,28 @@ function previewShrink() {
     var prevMs = auditPrevCountTime_(loc, b.at);
     if (!prevMs) { Logger.log('── ' + loc + ' ──\nไม่มีรอบก่อนหน้า\n'); return; }
 
-    var lostValue = 0;
-    b.counts.forEach(function (c) {
-      if (c.item.price > 0) lostValue += (-c.diff) * c.item.price;
-    });
-    lostValue = auditRound_(lostValue);
-
+    var g = auditUsage_(b.counts);
     var msg = '── ' + loc + ' ──\n' +
               'ช่วง ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(b.at) + '\n' +
-              'มูลค่าของที่ใช้ไป ' + auditBaht_(lostValue) + ' บาท\n';
-    if (loc !== auditCentral_()) {
+              'ของออกจากชั้น ' + g.piece.used + ' ชิ้น (มูลค่า ' + auditBaht_(g.piece.value) + ' บาท)\n';
+
+    if (loc === auditCentral_()) {
+      msg += 'ครัวกลางไม่ขายของ → ของหาย ' + g.piece.used + ' ชิ้น\n';
+    } else {
       var s = auditSales_(loc, auditStamp_(new Date(prevMs)), auditStamp_(b.at));
-      var avg = s.pieces > 0 ? s.revenue / s.pieces : 0;
-      var dlv = auditRound_(s.dlvPieces * avg);
-      msg += 'เดลิเวอรี่ ' + s.dlvPieces + ' ชิ้น = ' + auditBaht_(dlv) + ' บาท\n' +
-             'เงินที่ได้จริง ' + auditBaht_(s.revenue) + ' บาท (' + s.orders + ' บิล)\n' +
-             'ขาดไป ' + auditBaht_(lostValue - dlv - s.revenue) + ' บาท\n';
+      var per = g.piece.used > 0 ? g.piece.value / g.piece.used : 0;
+      var lost = Math.round((g.piece.used - s.pieces - s.dlvPieces) * 1000) / 1000;
+      msg += 'หักขายหน้าร้าน −' + s.pieces + ' ชิ้น (ไม้ ' + s.sticks + ' · มาม่า ' + s.mama +
+             ' · ของอื่น ' + s.other + ')\n' +
+             'หักเดลิเวอรี่ −' + s.dlvPieces + ' ชิ้น (' + s.dlvOrders + ' ออเดอร์)\n' +
+             'ของหาย ' + lost + ' ชิ้น ≈ ' + auditBaht_(lost * per) + ' บาท\n' +
+             'น้ำจิ้ม ใช้ไป ' + g.sauce.used + ' · แถมไป ' + s.sauceCups +
+             ' → หาย ' + Math.round((g.sauce.used - s.sauceCups) * 1000) / 1000 + '\n' +
+             'เงิน: ยอดขาย ' + auditBaht_(s.gross) + ' − ส่วนลด ' + auditBaht_(s.discount) +
+             ' = ได้จริง ' + auditBaht_(s.revenue) + ' บาท (' + s.orders + ' บิล)\n';
     }
+    if (g.other.used) msg += 'เทียบกับ POS ไม่ได้ (ชั่งกรัม) ' + g.other.used + '\n';
+    if (g.noPrice.length) msg += 'ยังไม่ได้ตั้งราคา: ' + g.noPrice.join(', ') + '\n';
     msg += 'เกณฑ์แจ้งเตือน ' + auditBaht_(auditGapLimit_()) + ' บาท';
     Logger.log(msg + '\n');
   });
