@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-06 · เพิ่มเส้นแก้ว';
+var BACKEND_VERSION = '2026-09-06 · 1 แพ็ค = 10 ไม้';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1600,9 +1600,8 @@ function setupStock() {
   clearStockValidation_();
 
   Logger.log('ติดตั้งเรียบร้อย — เพิ่มสินค้าใหม่ ' + added + ' รายการ\n' +
-             'ยังต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
-             '  • หน่วยย่อยต่อแพ็ค = 1 แพ็คมีกี่ไม้\n' +
-             '  • ราคาขาย/หน่วยย่อย = ขายไม้ละกี่บาท (ไม่ใส่ หน้าคำนวณของหายจะได้ 0 บาท)\n' +
+             'รัน fixItemList ต่อ จะใส่ราคา หน่วย และ 1 แพ็ค = 10 ไม้ ให้เอง\n' +
+             'เหลือที่ต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
              '  • เตือนเมื่อเหลือ(แพ็ค) = เหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
              'เสร็จแล้วอย่าลืม Deploy เวอร์ชันใหม่');
 }
@@ -1904,7 +1903,7 @@ function applyPriceList() {
     Logger.log('⚠️ อยู่ในชีตแต่ไม่มีในรายการราคา ' + extra.length + ' รายการ\n' +
                '   อาจเลิกขายแล้ว หรือชื่อสะกดไม่ตรงกัน — ไม่ได้ลบให้ ตรวจเองก่อน:\n  ' + extra.join('\n  '));
   }
-  Logger.log('\n⚠️ อย่าลืมเช็คช่อง "หน่วยย่อยต่อแพ็ค" ด้วย ราคาอย่างเดียวยังคำนวณของหายไม่ได้');
+  Logger.log('\n(ช่อง "หน่วยย่อยต่อแพ็ค" applyPerPack ตั้งให้อัตโนมัติ — ของที่นับเป็นไม้ แพ็คละ 10)');
 }
 
 /* ───────────── รวมชื่อสินค้าที่เรียกไม่ตรงกันให้เป็นชื่อเดียว ───────────── */
@@ -2095,6 +2094,50 @@ function fixItemList() {
   applyPriceList();            // ใส่ราคา
   applyItemUnits();            // ตั้งหน่วยขาย — ต้องมาหลังใส่ราคา
   addSupplyItems();            // ของใช้/วัตถุดิบ + ตั้งว่าใช้ที่ไหน
+  applyPerPack();              // 1 แพ็ค = กี่ไม้ — ต้องมาท้ายสุด หลังหน่วยนิ่งแล้ว
+}
+
+/* ───────────── 1 แพ็คมีกี่ไม้ ───────────── */
+
+/** ของที่ขายเป็นไม้ แพ็คละ 10 ไม้เท่ากันหมด */
+var STICKS_PER_PACK = 10;
+
+/**
+ * เติมช่อง "หน่วยย่อยต่อแพ็ค" ให้ของที่นับเป็นไม้
+ *
+ * ต้องมีค่านี้ถึงจะแปลง "3 แพ็ค 5 ไม้" ↔ จำนวนไม้ได้ ถ้าเว้นว่างไว้
+ * หน้าเว็บจะให้กรอกได้แต่ช่องเศษ กรอกเป็นแพ็คไม่ได้เลย
+ *
+ * แตะเฉพาะแถวที่หน่วยย่อยเป็น "ไม้" ของที่ขายเป็นถุง/มัด/ที่/ใบ/ขวด
+ * ไม่เกี่ยว และข้าวโพดฝัก (1 ฝัก = 2 อัน) applyItemUnits ตั้งไว้แล้ว
+ * รันซ้ำได้
+ */
+function applyPerPack() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  clearStockValidation_();
+  var map = ensureCols_(sh, ITEM_COLS);
+  var last = sh.getLastRow();
+  if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
+
+  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  var done = [], skipped = [];
+  vals.forEach(function (r, i) {
+    var name = String(r[map['สินค้า']] || '').trim();
+    if (!name) return;
+    var sub = String(r[map['หน่วยย่อย']] || '').trim();
+    if (sub !== 'ไม้') { skipped.push(name + ' (' + (sub || 'ยังไม่ได้ตั้งหน่วย') + ')'); return; }
+    if (Number(r[map['หน่วยย่อยต่อแพ็ค']]) === STICKS_PER_PACK) return;   // ถูกอยู่แล้ว
+    sh.getRange(i + 2, map['หน่วยย่อยต่อแพ็ค'] + 1).setValue(STICKS_PER_PACK);
+    sh.getRange(i + 2, map['หน่วยแพ็ค'] + 1).setValue('แพ็ค');
+    done.push(name);
+  });
+
+  Logger.log('ตั้ง 1 แพ็ค = ' + STICKS_PER_PACK + ' ไม้ ให้ ' + done.length + ' รายการ' +
+             (done.length ? ':\n  ' + done.join('\n  ') : ''));
+  if (skipped.length) {
+    Logger.log('\nไม่ได้แตะ ' + skipped.length + ' รายการ (ไม่ได้นับเป็นไม้):\n  ' + skipped.join('\n  '));
+  }
 }
 
 /* ───────────── ตั้งหน่วยขายให้ตรงกับที่ขายจริง ───────────── */
