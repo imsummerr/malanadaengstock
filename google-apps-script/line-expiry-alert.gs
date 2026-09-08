@@ -593,7 +593,8 @@ function setLineGroup(name, groupId) {
   props.setProperty('LINE_GROUPS', JSON.stringify(next));
 
   Logger.log('บันทึกแล้ว LINE_GROUPS = ' + JSON.stringify(next));
-  Logger.log('อย่าลืมไปใส่ค่าเดียวกันในโปรเจกต์ pos-backend ด้วย');
+  Logger.log('ทุกไฟล์อยู่โปรเจกต์เดียวกันแล้ว ตั้งที่นี่ที่เดียวพอ');
+  Logger.log('เช็คว่าส่งได้จริงด้วย testRemindNow');
 }
 
 /** ล้างข้อมูลชั่วคราวทิ้งเมื่อตั้งค่าเสร็จแล้ว */
