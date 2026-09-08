@@ -60,14 +60,24 @@ var INTAKE_EXPENSE_ALIAS = {
 };
 
 /**
- * วิธีจ่าย — เรียงตามลำดับที่ตรวจ เจอตัวไหนก่อนใช้ตัวนั้น
+ * วิธีจ่าย — ที่เขียนในไลน์มีแค่ 2 อย่าง ไม่เขียนว่าบัตร = โอน
+ *
+ * เงินสดไม่มีทางนี้เลย เงินสดคือเงินหน้าร้านที่พนักงานสาขาหยิบจากลิ้นชักไปจ่าย
+ * ซึ่งลงในหน้า POS อยู่แล้ว ถ้ารับ "เงินสด" ทางไลน์ด้วย ยอดจะถูกหักสองรอบ
+ * แต่ยังต้องจับคำไว้ เพื่อตัดออกจากชื่อรายการ ไม่ให้กลายเป็น "ปลาดอลลี่ เงินสด"
+ * แล้วเตือนคนพิมพ์ว่าให้ไปลงหน้า POS แทน
+ *
+ * เรียงตามลำดับที่ตรวจ เจอตัวไหนก่อนใช้ตัวนั้น
  * ไม่ใส่คำว่า "สด" เดี่ยว ๆ เพราะไปชนกับ "ค่าของสด"
  */
 var INTAKE_PAY_PATTERNS = [
   { re: /บัตรเครดิต|เครดิต|บัตร|credit\s*card|credit/gi, name: 'บัตรเครดิต' },
   { re: /โอนจ่าย|จ่ายโอน|โอน|พร้อมเพย์|promptpay|transfer/gi, name: 'โอน' },
-  { re: /เงินสด|cash/gi, name: 'เงินสด' }
+  { re: /เงินสด|cash/gi, name: 'เงินสด', reject: true }
 ];
+
+/** ไม่ได้เขียนว่าบัตร = โอน — ทั้งซื้อของและค่าใช้จ่าย */
+var INTAKE_DEFAULT_PAY = 'โอน';
 
 /**
  * คำนำหน้า — ใส่แล้วบอทจะรับแน่นอน ไม่ว่าจะพิมพ์อะไรตามมา
@@ -389,7 +399,8 @@ function intakeHelpText_() {
          '💳 รูดบัตร — เติมคำว่า "บัตร" ต่อท้าย\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
          '   ปลาดอลลี่ 68 บาท 800 กรัม บัตร\n' +
-         '   (โอนก็พิมพ์ "โอน" · ไม่พิมพ์อะไร = เงินสด)\n\n' +
+         '   (ไม่พิมพ์อะไร = โอน · ทางไลน์มีแค่ 2 อย่างนี้)\n' +
+         '   จ่ายเงินสดหน้าร้าน ลงในหน้า POS ไม่ใช่ทางนี้\n\n' +
          '📦 ของเข้าครัวกลาง — บอกจำนวนไม้ต่อท้าย\n' +
          '   ไส้กรอกหนังกรอบ 1 แพ็ค 90 บาท ได้ 26 ไม้\n' +
          '   (ยอดสต็อกขยับให้ + แจ้งวันหมดอายุให้เอง)\n\n' +
@@ -439,13 +450,16 @@ function intakeNum_(s) {
 /**
  * ตัดคำบอกวิธีจ่ายออกจากข้อความ แล้วบอกว่าเจอวิธีไหน
  * คืน method = '' ถ้าไม่ได้บอกมา (ให้ตัวเรียกตัดสินใจเอง)
+ * cash = true คือเขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ — ตัดคำออกแล้วให้เป็นโอน
  */
 function intakePayOf_(text) {
   var t = String(text || '');
   for (var i = 0; i < INTAKE_PAY_PATTERNS.length; i++) {
     var p = INTAKE_PAY_PATTERNS[i];
     var next = t.replace(p.re, ' ');
-    if (next !== t) return { method: p.name, text: next };
+    if (next === t) continue;
+    return p.reject ? { method: '', text: next, cash: true }
+                    : { method: p.name, text: next };
   }
   return { method: '', text: t };
 }
@@ -487,15 +501,13 @@ function intakeParseText_(text) {
   var told = '';
   for (i = 0; i < out.length; i++) if (out[i].pay) { told = out[i].pay; break; }
 
-  // ไม่ได้บอกมาก็เดาตามวิธีทำงานของร้าน:
-  //   ค่าใช้จ่าย → โอน   เพราะที่จ่ายด้วยเงินสดหน้าร้าน พนักงานลงในหน้า POS อยู่แล้ว
-  //                     ที่มาลงทางไลน์คือพวกที่โอนจ่าย ไม่ได้หยิบเงินจากลิ้นชัก
-  //   ซื้อของ    → เงินสด เพราะไปตลาดส่วนใหญ่จ่ายสด
-  // เดาผิดก็พิมพ์ "เงินสด" หรือ "บัตร" กำกับได้ตลอด
-  var payExpense = intakeProp_('INTAKE_DEFAULT_PAY_EXPENSE', 'โอน');
-  var payBuy     = intakeProp_('INTAKE_DEFAULT_PAY_BUY', 'เงินสด');
+  // ไม่ได้บอกมา = โอน ทั้งซื้อของและค่าใช้จ่าย
+  // ที่จ่ายด้วยเงินสดหน้าร้าน พนักงานลงในหน้า POS อยู่แล้ว
+  // ที่มาลงทางไลน์คือพวกที่โอนหรือรูดบัตร ไม่ได้หยิบเงินจากลิ้นชัก
+  // อยากได้บัตรก็พิมพ์ "บัตร" กำกับ
+  var pay = intakeProp_('INTAKE_DEFAULT_PAY', INTAKE_DEFAULT_PAY);
   for (i = 0; i < out.length; i++) {
-    out[i].pay = out[i].pay || told || (out[i].expense ? payExpense : payBuy);
+    out[i].pay = out[i].pay || told || pay;
   }
 
   return out;
@@ -560,6 +572,7 @@ function intakeParseLine_(line) {
   return {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     pay: pay.method, expense: intakeIsExpense_(name),
+    cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     saidMoney: saidMoney, saidUnit: saidUnit
   };
 }
@@ -1117,7 +1130,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
 
   var buyLines = [], expLines = [], stockLines = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0;
-  var unmatched = false;
+  var unmatched = false, saidCash = false;
   var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
 
   var lock = LockService.getScriptLock();
@@ -1134,6 +1147,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
     for (i = 0; i < items.length; i++) {
       it = items[i];
       if (it.baht > 0 && it.pay === 'บัตรเครดิต') cardTotal += it.baht;
+      if (it.cash) saidCash = true;
 
       if (it.expense) {
         if (!expSheet) { expSheet = intakeExpenseSheet_(); expSeq = intakeSeqOf_(expSheet, date); }
@@ -1205,6 +1219,11 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
   if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
+  // เงินสดหน้าร้านลงในหน้า POS อยู่แล้ว รับทางไลน์ด้วยยอดจะถูกหักสองรอบ
+  if (saidCash) {
+    msg += '\n\n⚠️ ทางไลน์รับแค่ "โอน" กับ "บัตร" — บันทึกให้เป็นโอนไปก่อน' +
+           '\nถ้าจ่ายด้วยเงินสดหน้าร้านจริง พิมพ์ "ลบ" แล้วไปลงในหน้า POS แทน';
+  }
   msg += '\n\nผิดตรงไหนพิมพ์ "ลบ" ได้เลย';
   return msg;
 }
