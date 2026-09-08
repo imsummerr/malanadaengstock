@@ -604,11 +604,11 @@ function viewCount(v) {
     <p class="lead">ต้องนับให้ครบทุกรายการ ยอดที่นับได้จะกลายเป็นยอดตั้งต้นใหม่</p>
 
     <label class="fld">สถานที่</label>
-    <select id="c-loc" onchange="paintCount()">${locs.map(l =>
+    <select id="c-loc" onchange="fillCountRows()">${locs.map(l =>
       `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
 
     <div class="progress"><div id="c-bar"></div></div>
-    <p class="note" id="c-prog">นับแล้ว 0 / ${countItems().length}</p>
+    <p class="note" id="c-prog">กำลังโหลดรายการ…</p>
   </div>
 
   <div class="card">
@@ -618,7 +618,23 @@ function viewCount(v) {
     <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
   </div>`;
 
-  document.getElementById('c-rows').innerHTML = countItems().map((it, i) => `
+  fillCountRows();
+}
+
+/**
+ * สร้างช่องกรอกใหม่ตามสถานที่ที่เลือก
+ *
+ * ต้องสร้างใหม่ทุกครั้งที่เปลี่ยนสถานที่ ไม่ใช่แค่ทาสีทับ
+ * เพราะแต่ละที่มีรายการไม่เท่ากัน (ครัวกลางมีผงปรุง/บรรจุภัณฑ์เพิ่มมาอีกชุด)
+ * ถ้าไม่สร้างใหม่ จำนวนแถวที่มีอยู่จริงกับรายการที่โค้ดวนจะไม่ตรงกัน
+ * แล้ว getElementById จะได้ null ทั้งหน้าค้างไปเลย
+ */
+function fillCountRows() {
+  const box = document.getElementById('c-rows');
+  if (!box) return;
+  const list = countItems();
+
+  box.innerHTML = list.length ? list.map((it, i) => `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
@@ -626,17 +642,22 @@ function viewCount(v) {
              ${it.perPack > 1 ? '' : 'disabled'} oninput="paintProgress()">
       <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
              placeholder="${esc(it.subUnit)}" oninput="paintProgress()">
-    </div>`).join('');
+    </div>`).join('')
+    : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
   paintCount();
 }
 
 function paintCount() {
-  const loc = document.getElementById('c-loc').value;
+  const el = document.getElementById('c-loc');
+  if (!el) return;
+  const loc = el.value;
   countItems().forEach((it, i) => {
+    const cell = document.getElementById('cs-' + i);
+    if (!cell) return;
     // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
     // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
-    document.getElementById('cs-' + i).innerHTML = isOwner()
+    cell.innerHTML = isOwner()
       ? 'ระบบว่ามี ' + esc(fmtPack(balOf(loc, it.name), it))
       : '&nbsp;';
   });
@@ -646,14 +667,16 @@ function paintCount() {
 function paintProgress() {
   let done = 0;
   const items = countItems();
+  let rendered = 0;
   items.forEach((it, i) => {
-    const p = document.getElementById('cp-' + i).value;
-    const r = document.getElementById('cr2-' + i).value;
-    const ok = (p !== '' || r !== '');
+    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
+    if (!pEl || !rEl) return;          // แถวยังไม่ถูกสร้าง
+    rendered++;
+    const ok = (pEl.value !== '' || rEl.value !== '');
     if (ok) done++;
     document.getElementById('cr-' + i).classList.toggle('done', ok);
   });
-  const total = items.length;
+  const total = rendered;
   const left  = total - done;
   const pct = total ? Math.round(done / total * 100) : 0;
   document.getElementById('c-bar').style.width = pct + '%';
@@ -664,17 +687,19 @@ function paintProgress() {
   // ปิดปุ่มไว้จนกว่าจะนับครบ กดไม่ได้เลย ไม่ใช่กดแล้วค่อยเด้งเตือน
   const btn = document.getElementById('c-btn');
   if (btn) {
-    btn.disabled = left > 0;
-    btn.textContent = left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
+    btn.disabled = total === 0 || left > 0;
+    btn.textContent = total === 0 ? 'ไม่มีสินค้าให้นับ'
+                    : left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
   }
 }
 
 async function submitCount() {
-  const rows = countItems().map((it, i) => ({
-    item: it.name,
-    packs: document.getElementById('cp-' + i).value,
-    rem:   document.getElementById('cr2-' + i).value
-  }));
+  const rows = countItems().map((it, i) => {
+    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
+    if (!pEl || !rEl) return null;
+    return { item: it.name, packs: pEl.value, rem: rEl.value };
+  }).filter(Boolean);
+  if (!rows.length) return toast('ไม่มีสินค้าให้นับที่นี่');
   const missing = rows.filter(r => r.packs === '' && r.rem === '');
   if (missing.length) {
     toast('ยังนับไม่ครบ ขาดอีก ' + missing.length + ' รายการ<br>' +
