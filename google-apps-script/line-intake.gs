@@ -1633,6 +1633,85 @@ function diagnoseLineIntake() {
 }
 
 /**
+ * ยิงเข้า URL ที่ deploy ไว้จริง แล้วดูว่ามันเสิร์ฟโค้ดเวอร์ชันไหน
+ *
+ * ปุ่ม ▶ ในหน้าแก้ไขรันโค้ดล่าสุดที่เซฟ แต่ LINE ยิงเข้า URL ซึ่งเสิร์ฟ
+ * "เวอร์ชันที่กด Deploy ไว้" สองอันนี้ต่างกันได้ และเป็นต้นเหตุที่หาสาเหตุยากที่สุด
+ * เพราะทุกอย่างในหน้าแก้ไขดูถูกหมด แต่ของจริงข้างนอกเป็นโค้ดเก่า
+ *
+ * UrlFetchApp ยิงแบบไม่มี session ของเบราว์เซอร์ จึงเห็นแบบเดียวกับที่ LINE เห็น
+ * ได้ผลพลอยได้คือเช็คเรื่องสิทธิ์เข้าถึงไปในตัว
+ *
+ * ต้องตั้ง Script Property ชื่อ INTAKE_WEBHOOK_URL เป็น URL ที่ลงท้าย /exec ก่อน
+ * (ตัวเดียวกับที่ใส่ใน LINE) — หาไม่เจอก็ข้ามไป ไม่ขวางการตรวจอย่างอื่น
+ */
+function intakeCheckDeployed_() {
+  var url = String(intakeProp_('INTAKE_WEBHOOK_URL', '')).trim();
+  if (!url) {
+    Logger.log('ℹ️  ข้ามการเช็คเวอร์ชันที่ deploy — ยังไม่ได้ตั้ง INTAKE_WEBHOOK_URL');
+    Logger.log('   ตั้งไว้แล้วจะเช็คให้อัตโนมัติว่า deploy ติดหรือยัง ไม่ต้องเปิดเบราว์เซอร์เอง');
+    Logger.log('   ⚙️ การตั้งค่าโปรเจกต์ → คุณสมบัติสคริปต์ → ใส่ URL ที่ลงท้าย /exec\n');
+    return true;
+  }
+
+  if (!/\/exec$/.test(url)) {
+    Logger.log('❌ INTAKE_WEBHOOK_URL ต้องลงท้าย /exec — ตอนนี้เป็น\n   ' + url);
+    Logger.log('   /dev ใช้กับ LINE ไม่ได้ เอา /exec มาจาก จัดการการทำให้ใช้งานได้');
+    return false;
+  }
+
+  var res;
+  try {
+    res = UrlFetchApp.fetch(url + '?action=ping', { muteHttpExceptions: true,
+                                                    followRedirects: true });
+  } catch (e) {
+    Logger.log('❌ ต่อ URL ที่ deploy ไว้ไม่ได้: ' + e.message);
+    return false;
+  }
+
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+
+  if (code !== 200) {
+    Logger.log('❌ URL ที่ deploy ไว้ตอบ ' + code + ' — LINE ก็จะเจอแบบเดียวกัน');
+    Logger.log('   401/403 = "ผู้ที่มีสิทธิ์เข้าถึง" ยังไม่ได้ตั้งเป็น ทุกคน');
+    Logger.log('   404 = URL ผิด หรือ deployment ถูกลบไปแล้ว');
+    return false;
+  }
+  if (/<html/i.test(text)) {
+    Logger.log('❌ URL ที่ deploy ไว้ตอบเป็นหน้าเว็บ ไม่ใช่ข้อมูล — น่าจะเป็นหน้าให้ล็อกอิน');
+    Logger.log('   ตั้ง "ผู้ที่มีสิทธิ์เข้าถึง" เป็น ทุกคน แล้ว deploy ใหม่');
+    return false;
+  }
+
+  var got = {};
+  try { got = JSON.parse(text); } catch (e) {}
+  var mods = got['ระบบที่เวอร์ชันนี้มี'];
+
+  if (!mods) {
+    Logger.log('❌ เวอร์ชันที่ deploy อยู่เป็นโค้ดเก่า — ยังไม่รู้จัก ping ด้วยซ้ำ');
+    Logger.log('   มันตอบว่า: ' + text.slice(0, 120));
+    Logger.log('\n   แปลว่าที่แก้โค้ดไปยังไม่ถึง LINE เลย ทำ 3 ข้อนี้');
+    Logger.log('   1) วางโค้ดใหม่ให้ครบ แล้วกด Ctrl+S บันทึก');
+    Logger.log('   2) ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้ → ✏️');
+    Logger.log('      ⭐ ช่อง "เวอร์ชัน" ต้องเลือก "ใหม่" ไม่ใช่เลขเวอร์ชันเก่า');
+    Logger.log('   3) รันฟังก์ชันนี้ใหม่');
+    return false;
+  }
+
+  var missing = Object.keys(mods).filter(function (k) { return !mods[k]; });
+  if (missing.length) {
+    Logger.log('❌ เวอร์ชันที่ deploy อยู่ยังขาดไฟล์: ' + missing.join(', '));
+    Logger.log('   วางไฟล์ที่ขาดลงโปรเจกต์ แล้ว deploy โดยเลือก เวอร์ชัน: ใหม่');
+    return false;
+  }
+
+  Logger.log('✅ เวอร์ชันที่ deploy อยู่มีครบทุกไฟล์ และเปิดจากข้างนอกได้');
+  Logger.log('   ' + url + '\n');
+  return true;
+}
+
+/**
  * 🧪 แยกให้ชัดว่าติด "ขาเข้า" หรือ "ขาออก"
  *   ขาเข้า  = LINE ส่ง webhook มาถึงสคริปต์ไหม
  *   ขาออก  = สคริปต์ส่งข้อความกลับไปหา LINE ได้ไหม
@@ -1644,6 +1723,11 @@ function testIntakeSend() {
   try { seen = JSON.parse(props.getProperty('INTAKE_SENDERS') || '{}'); } catch (e) {}
   var ids = Object.keys(seen);
   var lastHit = props.getProperty('INTAKE_LAST_HIT') || '';
+
+  // ── เช็คก่อนว่า "เวอร์ชันที่ deploy อยู่" เป็นโค้ดใหม่จริงไหม ──
+  // ตัวจับ INTAKE_LAST_HIT อยู่ในโค้ดใหม่ ถ้า deploy ยังไม่ติด มันจะขึ้น ❌ อยู่ดี
+  // ไม่ว่า LINE จะยิงมาหรือไม่ อ่านผลผิดแล้วไล่หาผิดทางทั้งกระบวน
+  if (!intakeCheckDeployed_()) return;
 
   // ── ขาเข้า ──
   // INTAKE_LAST_HIT ถูกจดทันทีที่ webhook มาถึง ก่อนกรองอะไรทั้งสิ้น
