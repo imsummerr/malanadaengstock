@@ -1406,6 +1406,36 @@ function intakeAccounting_(what) {
  * ตอบด้วย reply token ก่อน (ไม่กินโควต้าข้อความฟรี)
  * token หมดอายุแล้วค่อย push ตามไป จะได้ไม่เงียบหายไปเฉย ๆ
  */
+/**
+ * บอกว่าต้องเอา URL ไหนไปใส่ใน LINE
+ *
+ * ⚠️ ScriptApp.getService().getUrl() คืน URL ลงท้าย /dev ตอนรันจากหน้าแก้ไข
+ *    /dev ต้อง login ด้วยบัญชี Google ก่อนถึงเข้าได้ LINE จึงใช้ไม่ได้เลย
+ *    ยิงไปแล้วเจอหน้า login ไม่ถึงโค้ด บอทเลยเงียบสนิทแบบไม่มี error
+ *    และแปลง /dev เป็น /exec เองไม่ได้ เพราะคนละ deployment id
+ *    เคยพิมพ์ URL นี้ออกมาแล้วบอกว่า "เอาไปใส่ใน LINE" ซึ่งผิด แก้แล้ว
+ */
+function intakeWebhookHint_() {
+  var url = '';
+  try { url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+
+  if (/\/exec$/.test(url)) {
+    return '✅ Webhook URL ที่ต้องเอาไปใส่ใน LINE Developers Console:\n  ' + url;
+  }
+
+  var head = /\/dev$/.test(url)
+    ? '⚠️ ตัวนี้เป็น URL ทดสอบ (/dev) — เอาไปใส่ใน LINE ไม่ได้\n' +
+      '   ' + url + '\n' +
+      '   /dev ต้อง login ด้วยบัญชี Google ก่อน LINE เข้าไม่ถึง บอทจะเงียบสนิท\n\n'
+    : '⚠️ ยังไม่ได้ Deploy เป็นเว็บแอป — LINE ยิงเข้ามาไม่ได้\n\n';
+
+  return head +
+    'เอา URL ที่ลงท้าย /exec มาจากตรงนี้แทน:\n' +
+    '  ทำให้ใช้งานได้ (ขวาบน) → จัดการการทำให้ใช้งานได้ → ก๊อป URL เว็บแอป\n\n' +
+    'ครั้งต่อ ๆ ไปที่แก้โค้ด ให้กด ✏️ ที่ตัวเดิม → เวอร์ชัน: ใหม่\n' +
+    'อย่ากด "ทำให้ใช้งานได้ใหม่" เพราะจะได้ URL ใหม่ แล้วต้องไล่แก้ทั้ง LINE และหน้าเว็บ';
+}
+
 function intakeReply_(ctx, text) {
   var token = intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '');
   if (!token) {
@@ -1483,10 +1513,7 @@ function setupLineIntake() {
   var sh = intakeSheet_();
   Logger.log('สร้าง/พบชีต "' + INTAKE_SHEET + '" แล้ว (' + sh.getLastRow() + ' แถว)');
 
-  var url = '';
-  try { url = ScriptApp.getService().getUrl(); } catch (e) {}
-  Logger.log('\nWebhook URL ที่ต้องเอาไปใส่ใน LINE Developers Console:\n  ' +
-             (url || '(ยังไม่ได้ Deploy — กด Deploy → New deployment → Web app ก่อน)'));
+  Logger.log('\n' + intakeWebhookHint_());
 
   Logger.log(intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '')
     ? '\nLINE_CHANNEL_ACCESS_TOKEN ✅'
@@ -1567,10 +1594,7 @@ function diagnoseLineIntake() {
   }
 
   // 4) URL ที่ต้องเอาไปใส่ใน LINE
-  var url = '';
-  try { url = ScriptApp.getService().getUrl(); } catch (e) {}
-  Logger.log(url ? ok + 'Webhook URL ของโปรเจกต์นี้:\n       ' + url
-                 : warn + 'ยังไม่ได้ Deploy เป็นเว็บแอป — LINE ยิงเข้ามาไม่ได้');
+  Logger.log(intakeWebhookHint_());
 
   // 5) ล็อกต้นทางไว้หรือเปล่า
   var allow = intakeProp_('INTAKE_ALLOW', '');

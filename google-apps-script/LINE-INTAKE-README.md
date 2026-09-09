@@ -306,6 +306,17 @@
 2. **Webhook settings** → วาง Web app URL ที่ได้จากข้อ 3 → **Update**
 3. เปิดสวิตช์ **Use webhook**
 
+> ### ⚠️ URL ต้องลงท้าย `/exec` เท่านั้น
+> ```
+> ✅ …/AKfycb…/exec     ← เอาอันนี้
+> ❌ …/AKfycb…/dev      ← ใช้ไม่ได้
+> ```
+> `/dev` เป็น URL ทดสอบ ต้อง login ด้วยบัญชี Google ก่อนถึงเข้าได้
+> LINE ยิงไปแล้วเจอหน้า login ไม่ถึงโค้ด **บอทจะเงียบสนิทแบบไม่มี error ให้ดูเลย**
+> และแปลง `/dev` เป็น `/exec` เองไม่ได้ เพราะเป็นคนละ deployment id
+>
+> เอา `/exec` มาจาก **ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้ → ก๊อป URL เว็บแอป**
+
 **หน้าที่ 2 — LINE Official Account Manager** (https://manager.line.biz/)
 
 4. เลือกบัญชีบอท → **การตั้งค่า (Settings)** → **การตอบกลับ (Response settings)**
