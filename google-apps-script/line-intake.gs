@@ -36,7 +36,9 @@ var INTAKE_SHEET = 'ซื้อของเข้า';
 var INTAKE_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่', 'สถานที่', 'ผู้บันทึก',
   'รายการ', 'ชื่อที่พิมพ์มา', 'จำนวนเงิน', 'น้ำหนัก(กรัม)', 'บาท/กก.',
-  'จำนวน', 'หน่วย', 'ที่มา', 'ข้อความต้นฉบับ', 'messageId', 'วิธีจ่าย'
+  'จำนวน', 'หน่วย', 'ที่มา', 'ข้อความต้นฉบับ', 'messageId', 'วิธีจ่าย',
+  // ต่อท้ายเสมอ ห้ามแทรกกลาง ไม่งั้นคอลัมน์ของแถวเก่าจะเลื่อนความหมาย
+  'ประเภทซื้อ'   // วัตถุดิบ = เข้าสต็อก เป็นต้นทุนขาย · พัฒนาสูตร = ไม่เข้าทั้งคู่
 ];
 
 /* ── ค่าใช้จ่ายรายวัน (ค่าที่ ค่าแก๊ส ฯลฯ) ────────────────────────
@@ -78,6 +80,20 @@ var INTAKE_PAY_PATTERNS = [
 
 /** ไม่ได้เขียนว่าบัตร = โอน — ทั้งซื้อของและค่าใช้จ่าย */
 var INTAKE_DEFAULT_PAY = 'โอน';
+
+/**
+ * ของที่ซื้อมาลองสูตร ไม่ใช่วัตถุดิบขาย
+ *
+ * ต้องแยกออกจากวัตถุดิบ 2 เหตุผล
+ *   1) ไม่เข้าสต็อกครัวกลาง เพราะไม่ได้เอาไปขาย ถ้าเข้า ยอดคงเหลือจะเกินจริง
+ *      แล้วตอนเช็คสต็อกจะกลายเป็น "ของหาย" ทั้งที่เอาไปลองสูตรหมดแล้ว
+ *   2) ไม่ใช่ต้นทุนขาย ถ้าเอาไปรวม กำไรขั้นต้นจะดูแย่กว่าความจริง
+ *      เดือนไหนลองสูตรเยอะจะเห็นเป็นขาดทุนทั้งที่ขายได้ปกติ
+ */
+var INTAKE_RND_RE = /ลองสูตร|พัฒนาสูตร|สูตรใหม่|ทดสอบสูตร|คิดสูตร|ทดลอง|r\s*&\s*d|rnd/gi;
+
+var INTAKE_KIND_STOCK = 'วัตถุดิบ';
+var INTAKE_KIND_RND   = 'พัฒนาสูตร';
 
 /**
  * คำนำหน้า — ใส่แล้วบอทจะรับแน่นอน ไม่ว่าจะพิมพ์อะไรตามมา
@@ -537,6 +553,15 @@ function intakeParseLine_(line) {
   text = pay.text.trim();
   if (!text) return null;
 
+  // เช่นเดียวกับ "ทดลอง" / "ลองสูตร" — ตัดออกไม่งั้นชื่อจะเป็น "ทดลอง ปลาดอลลี่"
+  var rnd = INTAKE_RND_RE.test(text);
+  INTAKE_RND_RE.lastIndex = 0;               // regex มี /g ต้องรีเซ็ตเอง ไม่งั้นครั้งถัดไปเพี้ยน
+  if (rnd) {
+    text = text.replace(INTAKE_RND_RE, ' ').trim();
+    INTAKE_RND_RE.lastIndex = 0;
+    if (!text) return null;
+  }
+
   var baht = 0, gram = 0, qty = 0, unit = '', bare = [], counts = [];
   var saidMoney = false, saidUnit = false;
   var re = intakeUnitRe_(), m;
@@ -579,6 +604,7 @@ function intakeParseLine_(line) {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     pay: pay.method, expense: intakeIsExpense_(name),
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
+    rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
     saidMoney: saidMoney, saidUnit: saidUnit
   };
 }
@@ -600,6 +626,9 @@ var INTAKE_CHAT_WORDS = /ไหม|มั้ย|เหรอ|หรอ|หรื
 function intakeConfident_(it, names) {
   if (INTAKE_CHAT_WORDS.test(it.raw)) return false;
   if (it.expense) return true;
+  // พิมพ์ "ทดลอง" มาเอง = ตั้งใจสั่งบอทแน่ ๆ และของลองสูตรมักเป็นของใหม่
+  // ที่ยังไม่มีในชีตรายการสินค้า ถ้าไม่รับตรงนี้จะโดนกรองทิ้งเกือบทุกครั้ง
+  if (it.rnd) return true;
   if (intakeMatchItem_(it.raw, names).matched) return true;
   if (it.saidMoney) return true;
   return false;
@@ -1046,6 +1075,21 @@ function intakeSheet_() {
     sh.setFrozenRows(1);
     sh.setColumnWidth(INTAKE_HEADERS.indexOf('รายการ') + 1, 160);
     sh.setColumnWidth(INTAKE_HEADERS.indexOf('ข้อความต้นฉบับ') + 1, 240);
+    return sh;
+  }
+
+  // ชีตที่มีอยู่ก่อนแล้ว — เติมหัวคอลัมน์ที่เพิ่มมาทีหลังให้ครบ
+  // ต่อท้ายอย่างเดียว ไม่แตะของเดิม แถวเก่าจึงยังอ่านถูกทุกช่อง
+  var width = Math.max(sh.getLastColumn(), 1);
+  var head  = sh.getRange(1, 1, 1, width).getValues()[0]
+                .map(function (h) { return String(h).trim(); });
+  var add = INTAKE_HEADERS.filter(function (h) { return head.indexOf(h) === -1; });
+  if (add.length) {
+    if (sh.getMaxColumns() < width + add.length) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), width + add.length - sh.getMaxColumns());
+    }
+    sh.getRange(1, width + 1, 1, add.length).setValues([add])
+      .setFontWeight('bold').setBackground('#fee2e2').setFontColor('#991b1b');
   }
   return sh;
 }
@@ -1134,8 +1178,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   var byName = {};
   stockItems.forEach(function (x) { byName[x.name] = x; });
 
-  var buyLines = [], expLines = [], stockLines = [];
-  var buyTotal = 0, expTotal = 0, cardTotal = 0;
+  var buyLines = [], expLines = [], stockLines = [], rndLines = [];
+  var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
   var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
 
@@ -1173,12 +1217,22 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
         buySeq++;
         var hit   = intakeMatchItem_(it.raw, names);
         var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
+        var kind  = it.rnd ? INTAKE_KIND_RND : INTAKE_KIND_STOCK;
         buyRows.push([
           date, time, 'L' + stamp + '-' + ('00' + buySeq).slice(-3),
           ctx.location, ctx.who,
           hit.name, it.raw, it.baht || '', it.gram || '', perKg,
-          it.qty || '', it.unit, source, rawText, ctx.msgId, it.pay
+          it.qty || '', it.unit, source, rawText, ctx.msgId, it.pay, kind
         ]);
+
+        if (it.rnd) {
+          // ของลองสูตร — ไม่เข้าสต็อก ไม่งั้นยอดคงเหลือเกินจริง
+          // แล้วตอนเช็คสต็อกจะกลายเป็นของหาย ทั้งที่เอาไปลองสูตรหมดแล้ว
+          rndTotal += it.baht || 0;
+          rndLines.push('• ' + it.raw + ' — ' + intakeAmountText_(it) + intakePayTag_(it.pay));
+          continue;
+        }
+
         buyTotal += it.baht || 0;
         if (!hit.matched) unmatched = true;
         buyLines.push('• ' + hit.name + (hit.matched ? '' : ' *') + ' — ' +
@@ -1214,13 +1268,17 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   var blocks = [];
   if (buyLines.length)   blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
   if (expLines.length)   blocks.push('🧾 ค่าใช้จ่าย\n' + expLines.join('\n'));
+  if (rndLines.length)   blocks.push('🧪 ลองสูตร (ไม่เข้าสต็อก)\n' + rndLines.join('\n'));
   if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));
 
-  var msg = '✅ บันทึกแล้ว ' + (buyLines.length + expLines.length) + ' รายการ\n\n' + blocks.join('\n\n');
+  var msg = '✅ บันทึกแล้ว ' +
+            (buyLines.length + expLines.length + rndLines.length) +
+            ' รายการ\n\n' + blocks.join('\n\n');
 
   var sums = [];
   if (buyTotal) sums.push('ซื้อของ ' + intakeMoney_(buyTotal));
   if (expTotal) sums.push('ค่าใช้จ่าย ' + intakeMoney_(expTotal));
+  if (rndTotal) sums.push('ลองสูตร ' + intakeMoney_(rndTotal));
   if (sums.length) msg += '\n\nรวม ' + sums.join(' · ') + ' บาท';
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
