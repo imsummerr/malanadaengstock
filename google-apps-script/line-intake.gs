@@ -112,6 +112,14 @@ function intakeProp_(key, fallback) {
  * LINE จะยิงซ้ำเรื่อย ๆ และสุดท้ายปิด webhook ให้เอง
  */
 function handleLineIntake_(body) {
+  // จดไว้ก่อนทำอะไรทั้งสิ้นว่า "LINE ยิงมาถึงโค้ดนี้แล้ว"
+  // เป็นหลักฐานชิ้นเดียวที่แยก "ปัญหาฝั่ง LINE" ออกจาก "ปัญหาในโค้ด" ได้เด็ดขาด
+  // ไม่มีตัวนี้ เวลาบอทเงียบจะเดาไม่ออกว่า webhook มาไม่ถึง หรือมาถึงแล้วโดนกรองทิ้ง
+  try {
+    intakeProps_().setProperty('INTAKE_LAST_HIT',
+      Utilities.formatDate(new Date(), intakeTz_(), 'd/M/yyyy HH:mm:ss'));
+  } catch (e) {}
+
   try {
     var events = (body && body.events) || [];
     for (var i = 0; i < events.length; i++) {
@@ -132,6 +140,7 @@ function intakeHandleEvent_(ev) {
   if (!ev || !ev.type) return;
 
   var srcId = intakeSourceId_(ev);
+  intakeRememberSender_(srcId);   // จดทุกต้นทางเสมอ แม้ตัวที่ไม่รับ ไว้ให้ showIntakeSenders ดู
   if (!intakeAllowed_(srcId)) {
     Logger.log('line-intake: ไม่รับจาก ' + srcId + ' (ไม่อยู่ใน INTAKE_ALLOW)');
     return;
@@ -272,10 +281,7 @@ function intakeSourceId_(ev) {
  */
 function intakeAllowed_(srcId) {
   var allow = intakeProp_('INTAKE_ALLOW', '');
-  if (!allow) {
-    intakeRememberSender_(srcId);   // จดไว้ให้เอาไปใส่ INTAKE_ALLOW ทีหลัง
-    return true;
-  }
+  if (!allow) return true;
   var list = allow.split(',');
   for (var i = 0; i < list.length; i++) {
     if (String(list[i]).trim() === srcId) return true;
@@ -1633,21 +1639,45 @@ function diagnoseLineIntake() {
  * รันหลังจากพิมพ์อะไรสักอย่างในกลุ่มแล้ว
  */
 function testIntakeSend() {
+  var props = intakeProps_();
   var seen = {};
-  try { seen = JSON.parse(intakeProps_().getProperty('INTAKE_SENDERS') || '{}'); } catch (e) {}
+  try { seen = JSON.parse(props.getProperty('INTAKE_SENDERS') || '{}'); } catch (e) {}
   var ids = Object.keys(seen);
+  var lastHit = props.getProperty('INTAKE_LAST_HIT') || '';
 
   // ── ขาเข้า ──
-  if (!ids.length) {
+  // INTAKE_LAST_HIT ถูกจดทันทีที่ webhook มาถึง ก่อนกรองอะไรทั้งสิ้น
+  // จึงเป็นหลักฐานว่า LINE ยิงถึงโค้ดจริง แยกออกจาก "มาถึงแล้วโดนกรองทิ้ง"
+  if (!lastHit) {
     Logger.log('❌ ขาเข้า: ยังไม่เคยมีข้อความจากไลน์มาถึงสคริปต์นี้เลย\n');
-    Logger.log('   แปลว่า LINE ยังไม่ได้ส่ง webhook มา — ปัญหาอยู่ฝั่ง LINE ไม่ใช่โค้ด');
-    Logger.log('   ไปเปิดสวิตช์ Webhook ที่');
-    Logger.log('     https://manager.line.biz/ → การตั้งค่า → การตอบกลับ → เปิด Webhook');
-    Logger.log('   แล้วพิมพ์อะไรก็ได้ในกลุ่ม จากนั้นรันฟังก์ชันนี้ใหม่');
+    Logger.log('   ปัญหาอยู่ฝั่ง LINE หรือ URL ไม่ใช่ในโค้ด — ไล่ 4 ข้อนี้');
+    Logger.log('   1) Webhook URL ต้องลงท้าย /exec ไม่ใช่ /dev');
+    Logger.log('      เอามาจาก ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้');
+    Logger.log('   2) URL ต้องเป็นของ deployment ล่าสุด — เปิด <URL>?action=ping');
+    Logger.log('      ต้องเห็น "รับไลน์ · line-intake.gs": true');
+    Logger.log('   3) developers.line.biz → Messaging API → เปิด Use webhook');
+    Logger.log('   4) manager.line.biz → การตั้งค่า → การตอบกลับ → เปิด Webhook');
+    Logger.log('      ข้อ 4 คนลืมบ่อยที่สุด ปิดอยู่ = LINE ไม่ส่งมาเลย');
+    Logger.log('\n   แก้แล้วพิมพ์อะไรก็ได้ในกลุ่ม จากนั้นรันฟังก์ชันนี้ใหม่');
     return;
   }
-  Logger.log('✅ ขาเข้า: มีข้อความมาถึงแล้ว ' + ids.length + ' ต้นทาง — webhook ใช้ได้');
-  ids.forEach(function (id) { Logger.log('     ' + id + '   (ล่าสุด ' + seen[id] + ')'); });
+  Logger.log('✅ ขาเข้า: LINE ยิงมาถึงโค้ดแล้ว ล่าสุด ' + lastHit);
+
+  if (!ids.length) {
+    Logger.log('   (แต่ยังไม่มีต้นทางถูกจด — เป็น event ที่ไม่ใช่ข้อความ เช่น เข้า/ออกกลุ่ม)');
+  } else {
+    var allow = intakeProp_('INTAKE_ALLOW', '');
+    ids.forEach(function (id) {
+      var okSrc = !allow || allow.split(',').some(function (a) { return a.trim() === id; });
+      Logger.log('     ' + (okSrc ? '✅' : '⛔') + ' ' + id + '   (ล่าสุด ' + seen[id] + ')' +
+                 (okSrc ? '' : '  ← ไม่อยู่ใน INTAKE_ALLOW จึงถูกทิ้ง'));
+    });
+    if (allow) {
+      Logger.log('   INTAKE_ALLOW = ' + allow);
+      Logger.log('   ถ้ามี ⛔ ให้รัน clearIntakeAllow() หรือ allowIntakeSenders(\'' +
+                 ids.join("', '") + '\')');
+    }
+  }
 
   // ── ขาออก ──
   var token = intakeProp_('LINE_CHANNEL_ACCESS_TOKEN', '');
