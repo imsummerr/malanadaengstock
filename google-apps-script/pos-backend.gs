@@ -40,8 +40,10 @@ var DELIVERY_HEADERS = [
   'ของเพิ่ม', 'ข้อมูล', 'order_id'
 ];
 
+// 'วิธีจ่าย' ต่อท้ายไว้ ไม่แทรกกลาง แถวเก่าที่ยังว่างถือเป็นเงินสด
 var EXPENSE_HEADERS = [
-  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id'
+  'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id',
+  'วิธีจ่าย'
 ];
 
 // ประเภทค่าใช้จ่ายที่เลือกได้ ต้องตรงกับ EXPENSE_TYPES ใน pos.html
@@ -153,10 +155,21 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
 
-    // ถ้าโปรเจกต์นี้มีสคริปต์แจ้งเตือน LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
+    // ถ้าโปรเจกต์นี้มีสคริปต์ LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
     // (Apps Script มี doPost ได้ตัวเดียวต่อโปรเจกต์ ตัวนี้จึงทำหน้าที่เป็นตัวแยกทาง)
     if (body.destination || body.events) {
-      if (typeof handleLineWebhook_ === 'function') return handleLineWebhook_(body);
+      // line-expiry-alert.gs — จด Group ID ของกลุ่มที่มีคนพิมพ์ ไว้ใช้ตอนตั้งค่า
+      if (typeof handleLineWebhook_ === 'function') {
+        try { handleLineWebhook_(body); } catch (e) { Logger.log('handleLineWebhook_: ' + e.message); }
+      }
+      // line-intake.gs — อ่านข้อความ/รูปที่ส่งมา แล้วบันทึกลงชีต
+      if (typeof handleLineIntake_ === 'function') return handleLineIntake_(body);
+
+      // ไม่มี handleLineIntake_ = เวอร์ชันที่ deploy อยู่ถูกถ่ายไว้ตอนที่ยังไม่มี
+      // line-intake.gs ในโปรเจกต์ ตรงนี้เคยตอบ 200 OK เปล่า ๆ แล้วจบ
+      // LINE เห็นว่าส่งสำเร็จ ขึ้น "อ่านแล้ว" แต่ไม่มีอะไรเกิดขึ้น ไม่มี error ให้ดูด้วย
+      // หาสาเหตุกันนานมาก จึงให้มันฟ้องกลับเข้าไลน์เลย จะได้รู้ตัวทันที
+      try { lineIntakeMissing_(body); } catch (err) { Logger.log('lineIntakeMissing_: ' + err.message); }
       return ContentService.createTextOutput('OK');
     }
 
@@ -182,7 +195,8 @@ function doGet(e) {
   cacheClear_();
   try {
     var p = e.parameter || {};
-    if (p.action === 'version')  return json_(handleVersion_());
+    // ping เป็นชื่อพ้องของ version — เอกสารกับข้อความในไลน์อ้างถึงทั้งสองชื่อ
+    if (p.action === 'version' || p.action === 'ping') return json_(handleVersion_());
     if (p.action === 'posStats') return json_(handleStats_(p));
     if (p.action === 'posBills') return json_(handleBills_(p));
     if (p.action === 'history')  return json_(handleHistory_(p));
@@ -211,13 +225,62 @@ function handleVersion_() {
               'stockBootstrap'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
-    sheets: sheets
+    sheets: sheets,
+    // ไฟล์ .gs อยู่โปรเจกต์เดียวกันหมด แต่ deployment เก่าอาจถ่ายไว้ตอนยังไม่มีบางไฟล์
+    // ดูตรงนี้จะรู้ทันทีว่า "เวอร์ชันที่ deploy อยู่จริง" มีอะไรครบบ้าง
+    // เคยเสียเวลาหาสาเหตุนานมากตอนที่ LINE ยิงเข้า deployment ที่ยังไม่มี line-intake.gs
+    // แล้วมันตอบ 200 OK เปล่า ๆ บอทเลยเงียบโดยไม่มี error ให้ดู
+    'ระบบที่เวอร์ชันนี้มี': {
+      'POS · pos-backend.gs':            typeof handleOrder_        === 'function',
+      'รับไลน์ · line-intake.gs':        typeof handleLineIntake_   === 'function',
+      'บัญชี · accounting.gs':           typeof accMonthSummary_    === 'function',
+      'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function',
+      'เตือนนับสต็อก · stock-audit.gs':   typeof remindStockCount    === 'function'
+    }
   };
 }
 
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * LINE ยิงมาถึงแล้ว แต่เวอร์ชันที่ deploy อยู่ไม่มี line-intake.gs
+ * ตอบกลับเข้าไลน์ให้รู้ตัว ไม่งั้นจะเห็นแค่ "อ่านแล้ว" แล้วเงียบ ซึ่งหาสาเหตุยากมาก
+ * เพราะทุกอย่างในหน้าแก้ไขดูถูกหมด แต่ URL ที่ LINE ใช้เสิร์ฟโค้ดเก่าอยู่
+ *
+ * ส่งครั้งเดียวต่อ 10 นาที ต่อให้พิมพ์รัว ๆ ก็ไม่สแปมกลุ่ม
+ */
+function lineIntakeMissing_(body) {
+  var ev = (body && body.events || [])[0];
+  if (!ev || !ev.replyToken) return;
+
+  var token = PropertiesService.getScriptProperties()
+                .getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!token) return;
+
+  var cache = CacheService.getScriptCache();
+  if (cache.get('intake_missing_warned')) return;
+  cache.put('intake_missing_warned', '1', 600);
+
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    method: 'post', contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({
+      replyToken: ev.replyToken,
+      messages: [{ type: 'text', text:
+        '⚠️ ข้อความมาถึงแล้ว แต่เวอร์ชันที่ deploy อยู่ยังไม่มีตัวอ่านข้อความ\n\n' +
+        'URL ที่ LINE ใช้ ชี้ไปที่ deployment เก่าที่ถ่ายไว้ตอนยังไม่มี line-intake.gs\n\n' +
+        'แก้แบบนี้\n' +
+        '1. Apps Script → วาง line-intake.gs ให้ครบ แล้วกด Ctrl+S\n' +
+        '2. ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้ → ✏️\n' +
+        '   เวอร์ชัน: "ใหม่" (ห้ามเลือกเลขเวอร์ชันเก่า) → ทำให้ใช้งานได้\n' +
+        '3. เช็คด้วย <URL>?action=ping ต้องเห็น\n' +
+        '   "รับไลน์ · line-intake.gs": true' }]
+    }),
+    muteHttpExceptions: true
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -513,7 +576,8 @@ function handleExpense_(body) {
       e.type || 'อื่น ๆ',
       e.note || '',
       amount,
-      e.expenseId || ''
+      e.expenseId || '',
+      e.method || 'เงินสด'
     ]);
     return { success: true, orderNo: no };
   } finally {
@@ -647,7 +711,24 @@ function addDeliveryStats_(stats, from, to, branch) {
   }
 }
 
-/** สรุปเงินสดที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ) */
+/**
+ * จ่ายด้วยเงินสดหน้าร้านไหม — คือหยิบเงินออกจากลิ้นชักจริง ๆ
+ * ช่องว่าง = แถวเก่าก่อนมีคอลัมน์ "วิธีจ่าย" สมัยนั้นลงแต่เงินสด จึงถือเป็นเงินสด
+ */
+function isCashExpense_(method) {
+  var m = String(method || '').trim();
+  return m === '' || m === 'เงินสด';
+}
+
+/**
+ * สรุปเงินที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ)
+ *
+ * แยกเงินสดออกจากโอน/บัตร เพราะสองอย่างนี้คนละความหมายกัน
+ *   เงินสด  = พนักงานหยิบเงินจากลิ้นชักไปจ่าย ตอนปิดร้านเงินในลิ้นชักจะหายไปเท่านั้น
+ *   โอน/บัตร = จ่ายจากบัญชีหรือบัตร เงินในลิ้นชักไม่ได้ลดลงเลย
+ * ถ้าเอามารวมกันแล้วหักออกจากยอดขายหมด ยอด "เงินสดคงเหลือ" จะต่ำกว่าความจริง
+ * แล้วตอนปิดร้านจะนับเงินไม่ตรงกับที่ระบบบอก
+ */
 function addExpenseStats_(stats, from, to, branch) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
   if (!sheet || sheet.getLastRow() < 2) { stats.netCash = stats.revenue || 0; return; }
@@ -663,12 +744,17 @@ function addExpenseStats_(stats, from, to, branch) {
     if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
 
     var amt = num_(r[idx['จำนวนเงิน']]);
+    var pay = (idx['วิธีจ่าย'] === undefined) ? '' : r[idx['วิธีจ่าย']];
+
     stats.expenseTotal += amt;
     stats.expenseCount++;
+    if (isCashExpense_(pay)) stats.expenseCash += amt;
+    else                     stats.expenseOther += amt;
     addTo_(stats.expenseByType, r[idx['ประเภท']] || 'อื่น ๆ', amt);
+    addTo_(stats.expenseByPay, String(pay || 'เงินสด').trim() || 'เงินสด', amt);
   }
-  // เงินสดสุทธิ = ยอดขายหน้าร้าน ลบเงินที่จ่ายออกไป
-  stats.netCash = (stats.revenue || 0) - stats.expenseTotal;
+  // เงินสดคงเหลือ = ยอดขายหน้าร้าน ลบเฉพาะที่จ่ายด้วยเงินสด
+  stats.netCash = (stats.revenue || 0) - stats.expenseCash;
 }
 
 /**
@@ -830,9 +916,10 @@ function handleBills_(p) {
     }
   }
 
-  // ── เงินสดที่จ่ายออกจากร้านวันเดียวกัน — เอาไปหักตอนนับเงินปลายวัน ──
+  // ── เงินที่จ่ายออกจากร้านวันเดียวกัน ──
+  // แยกเงินสดออกจากโอน/บัตร เพราะตอนนับเงินปลายวันหักได้เฉพาะเงินสด
   var expSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXPENSE);
-  var expenses = [], expenseTotal = 0;
+  var expenses = [], expenseTotal = 0, expenseCash = 0;
   if (expSheet) {
     var ex = rowsOfDate_(expSheet, readWidth_(expSheet, EXPENSE_HEADERS), date);
     var xi = ex.idx;
@@ -840,14 +927,17 @@ function handleBills_(p) {
       var x = ex.rows[m];
       if (branch && !sameBranch_(x[xi['สาขา']], branch)) continue;
       var amt = num_(x[xi['จำนวนเงิน']]);
+      var pay = (xi['วิธีจ่าย'] === undefined) ? '' : x[xi['วิธีจ่าย']];
       expenseTotal += amt;
+      if (isCashExpense_(pay)) expenseCash += amt;
       expenses.push({
         no:     x[xi['เลขที่']],
         time:   x[xi['เวลา']],
         staff:  x[xi['พนักงาน']],
         type:   x[xi['ประเภท']],
         note:   x[xi['รายละเอียด']],
-        amount: amt
+        amount: amt,
+        pay:    String(pay || 'เงินสด').trim() || 'เงินสด'
       });
     }
     expenses.sort(function (a, b) { return String(b.time).localeCompare(String(a.time)); });
@@ -865,8 +955,8 @@ function handleBills_(p) {
     date: date, branch: branch,
     count: posCount, revenue: sum,
     deliveryCount: dlvCount, deliveryItems: dlvItems,
-    expenses: expenses, expenseTotal: expenseTotal,
-    netCash: sum - expenseTotal,
+    expenses: expenses, expenseTotal: expenseTotal, expenseCash: expenseCash,
+    netCash: sum - expenseCash,
     bills: bills
   } };
 }
@@ -876,6 +966,7 @@ function emptyStats_() {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
     expenseTotal: 0, expenseCount: 0, expenseByType: {}, netCash: 0,
+    expenseCash: 0, expenseOther: 0, expenseByPay: {},
     byHour: emptyHours_(),
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
@@ -1023,8 +1114,11 @@ var SHEET_WASTE    = 'ของเสีย';
 
 var CENTRAL = 'ครัวกลาง';
 
+// "เตือนสาขาเมื่อเหลือ(แพ็ค)" เว้นว่างได้ — เว้นแล้วสาขาใช้จุดเตือนเดียวกับครัวกลาง
+// (สาขาเก็บของน้อยกว่าครัวกลางมาก ปกติควรตั้งให้ต่ำกว่า)
 var ITEM_COLS = ['สินค้า', 'หน่วยย่อย', 'หน่วยแพ็ค', 'หน่วยย่อยต่อแพ็ค',
-                 'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'หมายเหตุ'];
+                 'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)',
+                 'เตือนสาขาเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'หมายเหตุ'];
 
 // ค่าที่ใส่ได้ในคอลัมน์ "ใช้ที่" — เว้นว่าง = ใช้ทุกที่
 //   ครัวกลาง = ของที่มีเฉพาะครัวกลาง เช่น วัตถุดิบดิบ ผงปรุง ของใช้
@@ -1166,10 +1260,17 @@ function getStockItemsRaw_() {
       perPack:  per > 0 ? per : 1,
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
+      lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim()
     });
   }
   return out;
+}
+
+/** จุดเตือนของแต่ละที่ (หน่วยแพ็ค) — สาขาเว้นว่างไว้ก็ใช้ตัวเดียวกับครัวกลาง */
+function lowPacksFor_(item, loc) {
+  if (String(loc || '').trim() === CENTRAL) return item.lowPacks || 0;
+  return item.lowPacksBranch > 0 ? item.lowPacksBranch : (item.lowPacks || 0);
 }
 
 function findStockItem_(name) {
@@ -1277,16 +1378,23 @@ function stockBalancesRaw_() {
 /* ───────────────────────── แจ้ง LINE ───────────────────────── */
 
 // ── กลุ่ม LINE ของแต่ละสถานที่ ──
-// line-expiry-alert.gs อยู่คนละโปรเจกต์ เรียกข้ามกันไม่ได้ จึงต้องตั้งค่าที่นี่ด้วย
-// ใส่ Group ID (ขึ้นต้น C...) ให้ตรงกับที่ตั้งไว้ใน BRANCH_LINE_GROUPS ของอีกไฟล์
-// เว้นว่าง = ส่งไปปลายทางกลาง (LINE_TARGET_ID) แทน
+// ทุกไฟล์อยู่โปรเจกต์เดียวกันแล้ว LINE_GROUPS ตั้งที่เดียว ใช้ร่วมกันหมด
+// เว้นว่าง = ส่งไปปลายทางกลาง (LINE_TARGET_ID) แทน · ไม่มีทั้งคู่ = ไม่ส่ง (ห้าม broadcast)
+//
 // ตั้งค่าใน โปรเจกต์ > การตั้งค่าสคริปต์ > คุณสมบัติสคริปต์ (ไม่ใช่ในโค้ด — repo นี้ public)
-//   LINE_CHANNEL_ACCESS_TOKEN = token ของบอท (ตัวเดียวกับโปรเจกต์ line-expiry-alert)
+//   LINE_CHANNEL_ACCESS_TOKEN = token ของบอท
 //   LINE_GROUPS = {"ครัวกลาง":"Cxxxx","ตลาดทรัพย์พัฒนา":"Cyyyy"}
-// Script Properties ไม่แชร์ข้ามโปรเจกต์ ต้องใส่ทั้งสองโปรเจกต์ ค่าเดียวกัน
-//   กลุ่มครัวกลาง ← ของครัวกลางใกล้หมด · ของเสียครัวกลาง
-//   กลุ่มสาขา    ← เช็คสต็อกรายสัปดาห์ · ของเสียสาขา
-// (ของเข้าไม่ได้แจ้งจากไฟล์นี้ line-expiry-alert.gs แจ้งให้)
+// ห้ามใส่ในชีต — ไม่มีโค้ดไหนอ่าน Group ID จากชีตเลย
+//
+//   กลุ่มครัวกลาง ← ของหาย · ของครัวกลางใกล้หมด · ของเสียครัวกลาง · เตือนนับสต็อก
+//   กลุ่มสาขา    ← ของหาย · ของสาขาใกล้หมด · เช็คสต็อกรายสัปดาห์ · ของเสียสาขา
+// (ของเข้าไม่ได้แจ้งจากตรงนี้ checkNewIncoming ใน line-expiry-alert.gs แจ้งให้)
+//
+// LINE_GROUPS เป็นทะเบียนสาขาไปในตัว — ช่องเลือกสถานที่ในเว็บสต็อก
+// กับรายชื่อที่ระบบเตือนนับสต็อก มาจาก ครัวกลาง + key ทั้งหมดในนี้
+// สาขาที่ยังไม่เปิด (เช่น แบริ่ง) ไม่ต้องใส่ ระบบจะข้ามไปเอง
+//
+// ดูค่าปัจจุบัน: showLineGroups()   เพิ่มทีละกลุ่ม: setLineGroup('ชื่อ', 'Cxxxx')
 var STOCK_BRANCH_GROUPS = {};   // สำรอง — ปกติใช้ Script Property LINE_GROUPS แทน
 
 function stockLineGroups_() {
@@ -1302,9 +1410,8 @@ function stockLineGroups_() {
 
 /**
  * ส่งข้อความเข้ากลุ่ม LINE ของสถานที่นั้น
- * ใช้ Script Property ชื่อเดียวกับอีกโปรเจกต์ (LINE_CHANNEL_ACCESS_TOKEN)
- * แต่ต้องตั้งค่าแยกในโปรเจกต์นี้ด้วย เพราะ Script Properties ไม่แชร์ข้ามโปรเจกต์
  * ส่งไม่สำเร็จก็ไม่ทำให้การบันทึกล้มเหลว — ของลงชีตแล้วถือว่าบันทึกสำเร็จ
+ * คืน { sent, message } ให้ผู้เรียกเอาไปบอกต่อว่าทำไมไม่ได้ส่ง
  */
 function stockNotify_(location, text) {
   var props = PropertiesService.getScriptProperties();
@@ -1338,29 +1445,44 @@ function stockNotify_(location, text) {
 }
 
 /**
- * เตือนเมื่อของครัวกลางเหลือน้อย
+ * เตือนเมื่อของเหลือน้อย — แจ้งเข้ากลุ่มไลน์ของที่นั้นเอง
+ * ครัวกลางใช้ช่อง "เตือนเมื่อเหลือ(แพ็ค)" สาขาใช้ "เตือนสาขาเมื่อเหลือ(แพ็ค)"
+ *
  * แจ้ง "ตอนตกลงมาต่ำกว่าจุดเตือน" ครั้งเดียว แล้วจำสถานะไว้
  * ไม่ใช่เตือนทุกครั้งที่ส่งของออก ไม่งั้นไลน์จะเด้งรัว
  * พอเติมของจนเกินจุดเตือนแล้ว ล้างสถานะ รอบหน้าถึงเตือนใหม่
+ * สถานะจำแยกตามสถานที่ — ครัวกลางใกล้หมดไม่ได้แปลว่าสาขาใกล้หมดด้วย
  */
-function checkLowStock_(itemNames) {
+function checkLowStock_(itemNames, location) {
+  var loc = String(location || CENTRAL).trim();
   var items = {};
   getStockItems_().forEach(function (i) { items[i.name] = i; });
-  var bal = stockBalances_()[CENTRAL] || {};
+  var bal = stockBalances_()[loc] || {};
   var props = PropertiesService.getScriptProperties();
   var hits = [];
 
   (itemNames || []).forEach(function (name) {
     var it = items[name];
-    if (!it || !(it.lowPacks > 0)) return;
-    var limit = it.lowPacks * it.perPack;
+    if (!it) return;
+    var lowPacks = lowPacksFor_(it, loc);
+    if (!(lowPacks > 0)) return;
+    var limit = lowPacks * it.perPack;
     var have  = Number(bal[name]) || 0;
-    var key   = 'LOWSTOCK_' + name;
+    var key   = 'LOWSTOCK_' + loc + '_' + name;
     var wasLow = props.getProperty(key) === '1';
-    var isLow  = have <= limit;
+
+    // คีย์เดิมสมัยที่เตือนแต่ครัวกลาง ไม่มีชื่อสถานที่คั่น — ย้ายมาคีย์ใหม่
+    // ถ้าไม่ย้าย ของที่ต่ำอยู่แล้วจะถูกแจ้งซ้ำอีกรอบตอนอัปเดตโค้ด
+    if (!wasLow && loc === CENTRAL && props.getProperty('LOWSTOCK_' + name) === '1') {
+      wasLow = true;
+      props.setProperty(key, '1');
+      props.deleteProperty('LOWSTOCK_' + name);
+    }
+
+    var isLow = have <= limit;
     if (isLow && !wasLow) {
       hits.push('• ' + name + ' เหลือ ' + fmtPack_(have, it) +
-                '  (จุดเตือน ' + it.lowPacks + ' ' + it.packUnit + ')');
+                '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')');
       props.setProperty(key, '1');
     } else if (!isLow && wasLow) {
       props.deleteProperty(key);
@@ -1368,7 +1490,8 @@ function checkLowStock_(itemNames) {
   });
 
   if (!hits.length) return;
-  stockNotify_(CENTRAL, '⚠️ ของครัวกลางใกล้หมด\n\n' + hits.join('\n') + '\n\nสั่งของเพิ่มด้วยครับ');
+  stockNotify_(loc, '⚠️ ของ' + loc + 'ใกล้หมด\n\n' + hits.join('\n') + '\n\n' +
+    (loc === CENTRAL ? 'สั่งของเพิ่มด้วยครับ' : 'แจ้งครัวกลางเบิกของเพิ่มด้วยครับ'));
 }
 
 /* ───────────────────────── บันทึกความเคลื่อนไหว ───────────────────────── */
@@ -1497,7 +1620,8 @@ function handleStockToShop_(body) {
   // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs แจ้งให้เอง
   // พร้อมจำนวนแพ็ค วงเล็บบอกว่า 1 แพ็คมีกี่ไม้ และวันหมดอายุ
   // (อายุเก็บอยู่ในไฟล์นั้นที่เดียว จะได้ไม่ต้องเก็บตารางอายุซ้ำสองที่)
-  checkLowStock_([p.item.name]);                  // ส่งออกแล้วครัวกลางอาจตกต่ำกว่าจุดเตือน
+  checkLowStock_([p.item.name], CENTRAL);         // ส่งออกแล้วครัวกลางอาจตกต่ำกว่าจุดเตือน
+                                                  // สาขาได้ของเพิ่ม ไม่ต้องเช็ค มีแต่จะขึ้น
 
   return { success: true, text: fmtPack_(p.total, p.item), lineSent: false,
            lineMsg: 'บอทของเข้าจะแจ้งกลุ่ม ' + branch + ' ให้ภายใน 5 นาที' };
@@ -1535,7 +1659,7 @@ function handleStockWaste_(body) {
     p.item.name + '  ' + text + '\nสาเหตุ ' + reason +
     '\nผู้บันทึก ' + p.session.name);
 
-  if (loc === CENTRAL) checkLowStock_([p.item.name]);
+  checkLowStock_([p.item.name], loc);   // ตัดของออกแล้วที่นั้นอาจตกต่ำกว่าจุดเตือน
   return { success: true, text: text, lineSent: line.sent, lineMsg: line.message };
 }
 
@@ -1575,12 +1699,14 @@ function handleStockCount_(body) {
   var before = stockBalances_()[loc] || {};
   var now = new Date();
   var diffs = [], out = [];
+  var counts = [];   // ส่งต่อให้ stock-audit.gs เทียบของหายกับเงิน
 
   items.forEach(function (it) {
     var r = got[it.name];
     var counted = toBase_(r.packs, r.rem, it.perPack);
     var sys = Number(before[it.name]) || 0;
     var diff = round_(counted - sys);
+    counts.push({ item: it, counted: counted, sys: sys, diff: diff });
     out.push({
       'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name,
       'รายการ': it.name, 'จำนวน': counted, 'หน่วย': it.subUnit,
@@ -1600,9 +1726,18 @@ function handleStockCount_(body) {
                           : 'ตรงกับระบบทุกรายการ 🎉');
   var line = stockNotify_(loc, msg);
 
-  checkLowStock_(items.map(function (it) { return it.name; }));
+  // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
+  // ส่งไม่สำเร็จหรือไม่มีไฟล์นั้น ก็ไม่ทำให้การนับล้มเหลว — ของลงชีตแล้ว
+  var shrink = null;
+  if (typeof auditAfterCount_ === 'function') {
+    try { shrink = auditAfterCount_(loc, counts, now); }
+    catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
+  }
+
+  checkLowStock_(items.map(function (it) { return it.name; }), loc);
   return { success: true, counted: items.length, diffs: diffs.length,
-           lineSent: line.sent, lineMsg: line.message };
+           lineSent: line.sent, lineMsg: line.message,
+           shrink: shrink };
 }
 
 /** ข้อมูลตั้งต้นของหน้าสต็อก — รายการสินค้า สถานที่ และยอดคงเหลือ */
@@ -1638,7 +1773,8 @@ function handleStockBootstrap_(p) {
       name: loc,
       rows: items.filter(function (it) { return m[it.name]; }).map(function (it) {
         var have = Number(m[it.name]) || 0;
-        var limit = it.lowPacks > 0 ? it.lowPacks * it.perPack : 0;
+        var lowPacks = lowPacksFor_(it, loc);
+        var limit = lowPacks > 0 ? lowPacks * it.perPack : 0;
         return { item: it.name, base: have, text: fmtPack_(have, it),
                  low: limit > 0 && have <= limit };
       })
@@ -1691,13 +1827,14 @@ var STOCK_ITEM_SEED = [
   ['เห็ดออรินจิ', 'ไม้', '1 ไม้'],
   ['เส้นมันเทศ', 'กรัม', '55 กรัม'],
   ['เส้นอุด้ง', 'กรัม', '50 กรัม'],
-  ['สาหร่าย', 'กรัม', '5 กรัม'],
+  ['เส้นแก้ว', 'กรัม', '50 กรัม'],
+  ['สาหร่าย', 'กระปุก', '1 แพ็ค 10 กระปุก · ตักที่ละ 5 กรัม'],
   ['ผักกาดขาว', 'กรัม', '100 กรัม'],
-  ['เห็ดเข็ม', 'กรัม', '50 กรัม'],
+  ['เห็ดเข็ม', 'ถุง', 'จัดเซ็ตใส่ถุง · ถุงละ 50 กรัม'],
   ['เห็ดชิเมจิ', 'กรัม', '50 กรัม'],
   ['กวางตุ้ง', 'กรัม', '50 กรัม'],
   ['ผักบุ้ง', 'กรัม', '100 กรัม'],
-  ['ข้าวโพด', 'กรัม', '25 กรัม'],
+  ['ข้าวโพด', 'ท่อน', '1 ฝักแบ่ง 2 ท่อน · ท่อนละ 25 กรัม'],
   ['กะหล่ำ', 'กรัม', '100 กรัม']
 ];
 
@@ -1725,7 +1862,7 @@ function setupStock() {
     row['หน่วยย่อย'] = s[1];
     row['หน่วยแพ็ค'] = 'แพ็ค';
     row['หมายเหตุ'] = s[2];
-    appendByCols_(items, map, row);   // หน่วยย่อยต่อแพ็ค / ราคา เว้นว่าง ให้กรอกเอง
+    appendByCols_(items, map, row);   // หน่วยย่อยต่อแพ็ค / ราคา ให้ fixItemList เติม
     added++;
   });
 
@@ -1742,7 +1879,8 @@ function setupStock() {
   Logger.log('ติดตั้งเรียบร้อย — เพิ่มสินค้าใหม่ ' + added + ' รายการ\n' +
              'รัน fixItemList ต่อ จะใส่ราคา หน่วย และ 1 แพ็ค = 10 ไม้ ให้เอง\n' +
              'เหลือที่ต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
-             '  • เตือนเมื่อเหลือ(แพ็ค) = เหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
+             '  • เตือนเมื่อเหลือ(แพ็ค) = ครัวกลางเหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
+             '  • เตือนสาขาเมื่อเหลือ(แพ็ค) = จุดเตือนของสาขา (เว้นว่าง = ใช้ตัวเดียวกับครัวกลาง)\n' +
              'เสร็จแล้วอย่าลืม Deploy เวอร์ชันใหม่');
 }
 
@@ -1930,6 +2068,7 @@ var PRICE_LIST = {
   'ดอลลี่': 10,
   'ปลาหมึกกรอบ': 10,
   'แมงกะพรุน': 10,
+  'รากบัว': 10,
   'สามชั้นพันเห็ดเข็มทอง': 10,
   'สามชั้นพันสาหร่าย': 10,
   'ผักกาดขาว': 10,
@@ -1946,6 +2085,7 @@ var PRICE_LIST = {
   'เห็ดชิเมจิ': 10,
   'เส้นมันเทศ': 10,
   'เส้นอุด้ง': 10,
+  'เส้นแก้ว': 10,
   'วุ้นเส้น': 10,
   'วุ้นเส้นเกาหลี': 10,
   'เส้นแก้ว': 10,
@@ -2290,22 +2430,39 @@ function applyPerPack() {
  * perPack = หน่วยย่อยต่อ 1 แพ็ค  (ปกติ 1 คือไม่ได้แพ็ครวม)
  */
 var ITEM_UNITS = {
-  // ผักจัดเซ็ตใส่ถุง ขายถุงละ 10
-  'ผักกาดขาว':     { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'ผักบุ้ง':        { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'กวางตุ้ง':       { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'เห็ดเข็มทอง':    { sub: 'ถุง', pack: 'แพ็ค', perPack: 1, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  // ผักจัดเซ็ตใส่ถุง ขายถุงละ 10 · แพ็คส่งสาขา 10 ถุง
+  'ผักกาดขาว':     { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'ผักบุ้ง':        { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'กวางตุ้ง':       { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
+  'เห็ดเข็มทอง':    { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
 
-  // เส้นมัดขาย มัดละ 10
-  'เส้นมันเทศ':     { sub: 'มัด', pack: 'แพ็ค', perPack: 1, note: 'มัดละ 10 บาท' },
-  'เส้นอุด้ง':      { sub: 'มัด', pack: 'แพ็ค', perPack: 1, note: 'มัดละ 10 บาท' },
+  // เส้นมัดขาย มัดละ 10 · แพ็คส่งสาขา 10 มัด
+  'เส้นมันเทศ':     { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
+  'เส้นอุด้ง':      { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
+  'เส้นแก้ว':       { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
 
-  // ตักจากกระปุก ที่ละ 5 กรัม
-  'สาหร่ายกระปุก':  { sub: 'ที่',  pack: 'กระปุก', perPack: 1, note: 'ที่ละ 5 กรัม' },
+  // ขายเป็นกระปุก · แพ็คส่งสาขา 10 กระปุก
+  'สาหร่ายกระปุก':  { sub: 'กระปุก', pack: 'แพ็ค', perPack: 10, note: '1 แพ็ค 10 กระปุก · กระปุกละ 10 บาท' },
 
-  // 1 ฝักผ่าได้ 2 อัน ขายอันละ 10 → นับเป็นอัน แพ็คคือฝัก
-  'ข้าวโพดฝัก':     { sub: 'อัน', pack: 'ฝัก',  perPack: 2, note: '1 ฝักแบ่ง 2 อัน อันละ 10 บาท' }
+  // 1 ฝักผ่าได้ 2 ท่อน ขายท่อนละ 10 (เจ้าของร้านยืนยันคำว่า "ท่อน")
+  'ข้าวโพดฝัก':     { sub: 'ท่อน', pack: 'ฝัก',  perPack: 2, note: '1 ฝักแบ่ง 2 ท่อน · ท่อนละ 10 บาท' }
 };
+
+/**
+ * ชื่อในชีตกับชื่อใน PRICE_LIST / ITEM_UNITS ไม่ตรงกัน — seed ใช้ชื่อสั้นกว่า
+ * ไม่มีตัวนี้ ITEM_UNITS กับราคาจะหาไม่เจอแล้วเงียบไป ของพวกนี้เลยไม่เคยได้หน่วยที่ถูก
+ */
+var ITEM_ALIAS = {
+  'สาหร่าย':  'สาหร่ายกระปุก',
+  'เห็ดเข็ม':  'เห็ดเข็มทอง',
+  'ข้าวโพด':  'ข้าวโพดฝัก'
+};
+
+/** ชื่อที่ใช้เปิดตาราง ITEM_UNITS / PRICE_LIST */
+function itemKey_(name) {
+  var n = String(name || '').trim();
+  return ITEM_ALIAS[n] || n;
+}
 
 /** ของที่เลิกขายแล้ว — ลบออกจากชีตรายการสินค้า */
 var ITEM_DISCONTINUED = ['เนื้อแดง', 'หมึก', 'รากบัว', 'กะหล่ำ',
@@ -2330,9 +2487,11 @@ function applyItemUnits() {
 
   Object.keys(ITEM_UNITS).forEach(function (name) {
     var u = ITEM_UNITS[name];
+    // ชีตอาจใช้ชื่อสั้น (สาหร่าย / ข้าวโพด / เห็ดเข็ม) ต้องยอมรับทั้งสองแบบ
     var idx = -1;
     for (var i = 0; i < vals.length; i++) {
-      if (String(vals[i][map['สินค้า']] || '').trim() === name) { idx = i; break; }
+      var got = String(vals[i][map['สินค้า']] || '').trim();
+      if (got === name || itemKey_(got) === name) { idx = i; break; }
     }
     if (idx === -1) { missing.push(name); return; }
 

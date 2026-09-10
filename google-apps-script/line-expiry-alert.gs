@@ -547,6 +547,10 @@ function findCol_(headers, candidates) {
 //   6) รัน setLineGroup('ครัวกลาง', 'Cxxxx...') เพื่อบันทึกลง LINE_GROUPS
 //   7) เสร็จแล้ว ปิด Use webhook หรือใส่ Webhook URL เดิมกลับ
 //      แล้วรัน clearFoundGroups() ล้างข้อมูลชั่วคราวทิ้ง
+//
+// 📥 ถ้าติดตั้ง line-intake.gs (ส่งไลน์แล้วบันทึกลงชีต) ไว้ด้วย ข้ามข้อ 7 ไป
+//    อันนั้นต้องเปิด Use webhook ค้างไว้ตลอด และ Webhook URL ต้องชี้มาที่เว็บแอป
+//    ของโปรเจกต์นี้อยู่แล้ว — ฟังก์ชันหา Group ID ด้านล่างทำงานคู่กันไปได้เลย
 
 var PROP_FOUND = 'LINE_GROUPS_FOUND';
 
@@ -612,7 +616,8 @@ function setLineGroup(name, groupId) {
   props.setProperty('LINE_GROUPS', JSON.stringify(next));
 
   Logger.log('บันทึกแล้ว LINE_GROUPS = ' + JSON.stringify(next));
-  Logger.log('อย่าลืมไปใส่ค่าเดียวกันในโปรเจกต์ pos-backend ด้วย');
+  Logger.log('ทุกไฟล์อยู่โปรเจกต์เดียวกันแล้ว ตั้งที่นี่ที่เดียวพอ');
+  Logger.log('เช็คว่าส่งได้จริงด้วย testRemindNow');
 }
 
 /** ล้างข้อมูลชั่วคราวทิ้งเมื่อตั้งค่าเสร็จแล้ว */
