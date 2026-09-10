@@ -204,7 +204,7 @@
    ต่อกับ Apps Script ตัวเดียวกับ pos.html / pos-dashboard.html
    → login ครั้งเดียวใช้ได้ทุกหน้า
    ════════════════════════════════════════════════════════ */
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxIqmfGDfWhKwU7HnbR2Yd18tRha3bGw_BVEuj7bAQdmTxUgpPptKmO8vSxTLwKoJ1rhw/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbw8NgDmJJh156qSmXHfLqk2oZ5wKlDU37HrzOGBOIPAl8gQ1e9jDRcF-WTh9-2FKxeVLQ/exec';
 
 function apiUrl() {
   let s = {};
@@ -212,13 +212,20 @@ function apiUrl() {
   return (s.apiUrl || DEFAULT_API_URL || '').trim();
 }
 
-const auth = { token: '', name: '', branch: '', role: 'staff' };
+const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
+
+/* ช่อง "สาขา" ในชีตผู้ใช้งาน อาจมีหลายที่
+   คนที่ทำทั้งหน้าร้านและครัวกลาง เขียนแยกแถวในชีต หรือใส่ช่องเดียวคั่นด้วย , / |
+   ฝั่งเซิร์ฟเวอร์รวมมาให้แล้ว ตรงนี้แค่แตกกลับเป็น list */
+const splitLocs = v => String(v || '').split(/[,/|\n]+/).map(x => x.trim()).filter(Boolean);
+
 function readAuth() {
   try {
     auth.token  = sessionStorage.getItem('pos_token')  || '';
     auth.name   = sessionStorage.getItem('pos_name')   || '';
     auth.branch = sessionStorage.getItem('pos_branch') || '';
     auth.role   = sessionStorage.getItem('pos_role')   || 'staff';
+    auth.branches = splitLocs(sessionStorage.getItem('pos_branches') || auth.branch);
   } catch (e) {}
 }
 function isOwner() { return auth.role === 'owner'; }
@@ -226,8 +233,9 @@ function isOwner() { return auth.role === 'owner'; }
      สาขา = ครัวกลาง → พนักงานครัวกลาง  สต็อกคงเหลือ / ของเข้าครัวกลาง / เช็คสต็อก / ของเสีย
      สาขา = ชื่อสาขา  → พนักงานสาขา      ของเข้าร้าน / เช็คสต็อก / ของเสีย เฉพาะสาขาตัวเอง
      เจ้าของร้าน ทำได้ทุกอย่างทุกสถานที่ */
-function isCentral() { return isOwner() || auth.branch === 'ครัวกลาง'; }
-function isBranch()  { return isOwner() || (!!auth.branch && auth.branch !== 'ครัวกลาง'); }
+const myLocs = () => (auth.branches.length ? auth.branches : splitLocs(auth.branch));
+function isCentral() { return isOwner() || myLocs().indexOf('ครัวกลาง') !== -1; }
+function isBranch()  { return isOwner() || myLocs().some(l => l && l !== 'ครัวกลาง'); }
 function canSee(who) {
   if (who === 'owner')   return isOwner();
   if (who === 'both')    return isCentral() || isBranch();
@@ -297,6 +305,7 @@ async function doLogin() {
       sessionStorage.setItem('pos_token', data.token);
       sessionStorage.setItem('pos_name', data.name);
       sessionStorage.setItem('pos_branch', data.branch || '');
+      sessionStorage.setItem('pos_branches', (data.branches || []).join(', ') || (data.branch || ''));
       sessionStorage.setItem('pos_role', data.role === 'owner' ? 'owner' : 'staff');
       showApp();
     } else {
@@ -314,7 +323,7 @@ async function doLogin() {
 
 function doLogout() {
   const token = auth.token;
-  ['pos_token', 'pos_name', 'pos_branch', 'pos_role'].forEach(k => sessionStorage.removeItem(k));
+  ['pos_token', 'pos_name', 'pos_branch', 'pos_branches', 'pos_role'].forEach(k => sessionStorage.removeItem(k));
   if (token) {
     fetch(apiUrl(), {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -334,11 +343,25 @@ let D = { items: [], locations: [], stock: [], central: 'ครัวกลา�
 
 const itemOf = n => D.items.find(i => i.name === n) || null;
 
+/* สินค้าบางอย่างมีเฉพาะครัวกลาง (ผงปรุง วัตถุดิบดิบ) บางอย่างมีเฉพาะหน้าร้าน
+   (น้ำซุปที่ผสมเสร็จแล้ว) ช่อง "ใช้ที่" ในชีตรายการสินค้าเป็นตัวกำหนด
+   เว้นว่าง = ใช้ได้ทั้งสองที่ */
+const SCOPE_CENTRAL = 'ครัวกลาง', SCOPE_SHOP = 'ร้าน';
+
+/** สินค้าที่ลงได้ที่สถานที่นี้ */
+function itemsFor(loc) {
+  const want = (loc === D.central) ? SCOPE_CENTRAL : SCOPE_SHOP;
+  return D.items.filter(i => !i.scope || i.scope === want);
+}
+
 /** สถานที่ที่ผู้ใช้คนนี้ลงรายการได้ — เจ้าของทุกที่ ครัวกลางเฉพาะครัวกลาง สาขาเฉพาะสาขาตัวเอง */
 function allowedLocs() {
   if (isOwner()) return D.locations;
-  if (auth.branch === 'ครัวกลาง') return [D.central];
-  return D.locations.filter(l => l === auth.branch);
+  const mine = myLocs();
+  const out = D.locations.filter(l => mine.indexOf(l) !== -1);
+  // เผื่อสาขาของตัวเองยังไม่โผล่ในรายชื่อที่เซิร์ฟเวอร์ส่งมา
+  mine.forEach(l => { if (out.indexOf(l) === -1) out.push(l); });
+  return out;
 }
 
 function toBase(packs, rem, perPack) {
@@ -444,7 +467,7 @@ function viewMove(v, kind) {
 
   const locField = c.fixedLoc
     ? `<input id="f-loc" value="${esc(D.central)}" readonly style="background:var(--bg)">`
-    : `<select id="f-loc" onchange="recalc()">${locs.map(l =>
+    : `<select id="f-loc" onchange="fillItems(); recalc()">${locs.map(l =>
         `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
 
   v.innerHTML = `<div class="card">
@@ -455,9 +478,7 @@ function viewMove(v, kind) {
     ${locField}
 
     <label class="fld">สินค้า</label>
-    <select id="f-item" onchange="syncUnits(); recalc()">
-      ${D.items.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
-    </select>
+    <select id="f-item" onchange="syncUnits(); recalc()"></select>
 
     <div class="qtyrow" style="margin-top:12px">
       <div>
@@ -486,8 +507,24 @@ function viewMove(v, kind) {
     <p class="note" id="f-note-line"></p>
   </div>`;
 
+  fillItems();
   syncUnits();
   recalc();
+}
+
+/** เติมรายการสินค้าในช่องเลือก ตามสถานที่ที่เลือกอยู่ */
+function fillItems() {
+  const sel = document.getElementById('f-item');
+  if (!sel) return;
+  const locEl = document.getElementById('f-loc');
+  const loc = locEl ? locEl.value : D.central;
+  const keep = sel.value;
+  const list = itemsFor(loc);
+  sel.innerHTML = list.length
+    ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
+    : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
+  if (keep && list.some(i => i.name === keep)) sel.value = keep;
+  syncUnits();
 }
 
 function syncUnits() {
@@ -565,6 +602,12 @@ async function submitMove(kind) {
 }
 
 /* ── เช็คสต็อกรายสัปดาห์ — บังคับนับให้ครบ ── */
+/** สินค้าที่ต้องนับที่สถานที่ที่เลือกอยู่ในแท็บเช็คสต็อก */
+function countItems() {
+  const el = document.getElementById('c-loc');
+  return itemsFor(el ? el.value : D.central);
+}
+
 function viewCount(v) {
   const locs = allowedLocs();
 
@@ -573,11 +616,11 @@ function viewCount(v) {
     <p class="lead">ต้องนับให้ครบทุกรายการ ยอดที่นับได้จะกลายเป็นยอดตั้งต้นใหม่</p>
 
     <label class="fld">สถานที่</label>
-    <select id="c-loc" onchange="paintCount()">${locs.map(l =>
+    <select id="c-loc" onchange="fillCountRows()">${locs.map(l =>
       `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
 
     <div class="progress"><div id="c-bar"></div></div>
-    <p class="note" id="c-prog">นับแล้ว 0 / ${D.items.length}</p>
+    <p class="note" id="c-prog">กำลังโหลดรายการ…</p>
   </div>
 
   <div class="card">
@@ -587,7 +630,23 @@ function viewCount(v) {
     <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
   </div>`;
 
-  document.getElementById('c-rows').innerHTML = D.items.map((it, i) => `
+  fillCountRows();
+}
+
+/**
+ * สร้างช่องกรอกใหม่ตามสถานที่ที่เลือก
+ *
+ * ต้องสร้างใหม่ทุกครั้งที่เปลี่ยนสถานที่ ไม่ใช่แค่ทาสีทับ
+ * เพราะแต่ละที่มีรายการไม่เท่ากัน (ครัวกลางมีผงปรุง/บรรจุภัณฑ์เพิ่มมาอีกชุด)
+ * ถ้าไม่สร้างใหม่ จำนวนแถวที่มีอยู่จริงกับรายการที่โค้ดวนจะไม่ตรงกัน
+ * แล้ว getElementById จะได้ null ทั้งหน้าค้างไปเลย
+ */
+function fillCountRows() {
+  const box = document.getElementById('c-rows');
+  if (!box) return;
+  const list = countItems();
+
+  box.innerHTML = list.length ? list.map((it, i) => `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
@@ -595,17 +654,22 @@ function viewCount(v) {
              ${it.perPack > 1 ? '' : 'disabled'} oninput="paintProgress()">
       <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
              placeholder="${esc(it.subUnit)}" oninput="paintProgress()">
-    </div>`).join('');
+    </div>`).join('')
+    : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
   paintCount();
 }
 
 function paintCount() {
-  const loc = document.getElementById('c-loc').value;
-  D.items.forEach((it, i) => {
+  const el = document.getElementById('c-loc');
+  if (!el) return;
+  const loc = el.value;
+  countItems().forEach((it, i) => {
+    const cell = document.getElementById('cs-' + i);
+    if (!cell) return;
     // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
     // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
-    document.getElementById('cs-' + i).innerHTML = isOwner()
+    cell.innerHTML = isOwner()
       ? 'ระบบว่ามี ' + esc(fmtPack(balOf(loc, it.name), it))
       : '&nbsp;';
   });
@@ -614,14 +678,17 @@ function paintCount() {
 
 function paintProgress() {
   let done = 0;
-  D.items.forEach((it, i) => {
-    const p = document.getElementById('cp-' + i).value;
-    const r = document.getElementById('cr2-' + i).value;
-    const ok = (p !== '' || r !== '');
+  const items = countItems();
+  let rendered = 0;
+  items.forEach((it, i) => {
+    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
+    if (!pEl || !rEl) return;          // แถวยังไม่ถูกสร้าง
+    rendered++;
+    const ok = (pEl.value !== '' || rEl.value !== '');
     if (ok) done++;
     document.getElementById('cr-' + i).classList.toggle('done', ok);
   });
-  const total = D.items.length;
+  const total = rendered;
   const left  = total - done;
   const pct = total ? Math.round(done / total * 100) : 0;
   document.getElementById('c-bar').style.width = pct + '%';
@@ -632,17 +699,19 @@ function paintProgress() {
   // ปิดปุ่มไว้จนกว่าจะนับครบ กดไม่ได้เลย ไม่ใช่กดแล้วค่อยเด้งเตือน
   const btn = document.getElementById('c-btn');
   if (btn) {
-    btn.disabled = left > 0;
-    btn.textContent = left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
+    btn.disabled = total === 0 || left > 0;
+    btn.textContent = total === 0 ? 'ไม่มีสินค้าให้นับ'
+                    : left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
   }
 }
 
 async function submitCount() {
-  const rows = D.items.map((it, i) => ({
-    item: it.name,
-    packs: document.getElementById('cp-' + i).value,
-    rem:   document.getElementById('cr2-' + i).value
-  }));
+  const rows = countItems().map((it, i) => {
+    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
+    if (!pEl || !rEl) return null;
+    return { item: it.name, packs: pEl.value, rem: rEl.value };
+  }).filter(Boolean);
+  if (!rows.length) return toast('ไม่มีสินค้าให้นับที่นี่');
   const missing = rows.filter(r => r.packs === '' && r.rem === '');
   if (missing.length) {
     toast('ยังนับไม่ครบ ขาดอีก ' + missing.length + ' รายการ<br>' +
@@ -672,8 +741,15 @@ async function submitCount() {
 async function loadData() {
   const r = await apiGet({ action: 'stockBootstrap' });
   D = r.data;
+  // เซิร์ฟเวอร์เป็นตัวตัดสินว่าคนนี้ทำที่ไหนได้บ้าง ยึดค่าที่ส่งกลับมาเป็นหลัก
+  if (D.branches && D.branches.length) {
+    auth.branches = D.branches.slice();
+    auth.branch = D.branches[0];
+    try { sessionStorage.setItem('pos_branches', D.branches.join(', ')); } catch (e) {}
+  }
+  const where = myLocs().join(' + ');
   document.getElementById('hdr-sub').textContent =
-    auth.name + (auth.branch ? ' • ' + auth.branch : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
+    auth.name + (where ? ' • ' + where : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
 }
 
 async function showApp() {
