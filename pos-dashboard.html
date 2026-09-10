@@ -95,6 +95,18 @@
     .kpi.hero .value { color: #fff; }
     .kpi.hero .value small { color: #a9a9b2; }
 
+    .hourpick { display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
+                font-size: 13px; color: var(--muted); margin: 2px 0 12px; }
+    .hourpick select { font: inherit; color: var(--ink); background: var(--paper);
+                       border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; }
+    .hour-thai { font-weight: 700; color: var(--ink); }
+    .hour-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .hour-summary div { flex: 1 1 140px; border: 1px solid var(--line); border-radius: 12px;
+                        padding: 10px 12px; }
+    .hour-summary .cap { font-size: 11.5px; color: var(--muted); margin-bottom: 3px; }
+    .hour-summary .num { font-size: 21px; font-weight: 800; line-height: 1; }
+    .hour-summary .foot { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
     /* ── การ์ดกราฟ ── */
     .charts { display: flex; flex-direction: column; gap: 14px; }
     .chart-card { padding: 16px; }
@@ -241,6 +253,22 @@
             <span class="legend"><span class="swatch"></span> ยอดขายสุทธิ</span>
           </div>
           <div id="chart-daily"></div>
+        </div>
+
+        <div class="card chart-card" style="margin-bottom:14px;">
+          <h2>ขายดีช่วงไหนของวัน</h2>
+          <p class="sub">รวมทุกวันที่เลือกไว้ · แท่งคือจำนวนบิลหน้าร้านในชั่วโมงนั้น</p>
+
+          <div class="hourpick">
+            <span>นับเฉพาะช่วง</span>
+            <select id="hour-from" onchange="drawHourly()"></select>
+            <span>ถึง</span>
+            <select id="hour-to" onchange="drawHourly()"></select>
+            <span id="hour-thai" class="hour-thai"></span>
+          </div>
+
+          <div id="hour-summary" class="hour-summary"></div>
+          <div id="chart-hour"></div>
         </div>
 
         <div class="grid-2">
@@ -664,6 +692,11 @@ function render() {
   if (isEmpty) return;
 
   drawDaily(stats.byDate);
+  hourStats = (stats.byHour && stats.byHour.length === 24)
+    ? stats.byHour
+    : [];   // หลังบ้านรุ่นเก่ายังไม่ส่ง byHour มา
+  fillHourPickers();
+  drawHourly();
   drawRanked('chart-soup',   stats.soup,   'ออเดอร์');
   drawRanked('chart-expense', stats.expenseByType || {}, '฿');
   drawRanked('chart-spice',  stats.spice,  'ออเดอร์');
@@ -709,6 +742,128 @@ function drawDaily(rows) {
     <line x1="${padL}" x2="${W - padR}" y1="${padT + innerH}" y2="${padT + innerH}" stroke="#d5d5d9" stroke-width="1"/>
     ${labels}
   </svg>`;
+  attachTips(el);
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   ขายดีช่วงไหนของวัน — รวมทุกวันในช่วงที่เลือก แล้วดูรายชั่วโมง
+   ════════════════════════════════════════════════════════════ */
+let hourStats = [];   // [{hour, orders, revenue, delivery}] 24 ช่อง
+
+/** เรียกชั่วโมงแบบไทย 19 -> "1 ทุ่ม" */
+function thaiHour(h) {
+  if (h === 0) return 'เที่ยงคืน';
+  if (h === 12) return 'เที่ยง';
+  if (h <= 5) return 'ตี ' + h;
+  if (h <= 11) return h + ' โมงเช้า';
+  if (h <= 15) return 'บ่าย ' + (h - 12) + ' โมง';
+  if (h <= 18) return (h - 12) + ' โมงเย็น';
+  return (h - 18) + ' ทุ่ม';
+}
+
+function fillHourPickers() {
+  const from = document.getElementById('hour-from');
+  const to   = document.getElementById('hour-to');
+  if (from.options.length) return;
+  for (let h = 0; h < 24; h++) {
+    const label = String(h).padStart(2, '0') + ':00 (' + thaiHour(h) + ')';
+    from.add(new Option(label, h));
+    to.add(new Option(label, h));
+  }
+  from.value = 19;   // 1 ทุ่ม
+  to.value   = 21;   // 3 ทุ่ม
+}
+
+function drawHourly() {
+  const el = document.getElementById('chart-hour');
+  const rows = hourStats.length ? hourStats : [];
+  const totalOrders = rows.reduce((s, r) => s + r.orders, 0);
+  if (!totalOrders) {
+    el.innerHTML = '<p class="empty-note">ไม่มีข้อมูล</p>';
+    document.getElementById('hour-summary').innerHTML = '';
+    document.getElementById('hour-thai').textContent = '';
+    return;
+  }
+
+  let a = Number(document.getElementById('hour-from').value);
+  let b = Number(document.getElementById('hour-to').value);
+  if (b < a) { const t = a; a = b; b = t; }   // เลือกสลับกันก็ยังใช้ได้
+  const inWindow = h => h >= a && h <= b;
+
+  document.getElementById('hour-thai').textContent = '(' + thaiHour(a) + ' – ' + thaiHour(b) + ')';
+
+  // ── สรุปตัวเลขของช่วงที่เลือก ──
+  const win = rows.filter(r => inWindow(r.hour));
+  const winOrders = win.reduce((s, r) => s + r.orders, 0);
+  const winRevenue = win.reduce((s, r) => s + r.revenue, 0);
+  const winDelivery = win.reduce((s, r) => s + r.delivery, 0);
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+  const share = totalOrders ? Math.round(winOrders / totalOrders * 100) : 0;
+  const busiest = rows.slice().sort((x, y) => y.orders - x.orders)[0];
+
+  document.getElementById('hour-summary').innerHTML =
+    '<div><div class="cap">บิลในช่วงนี้</div>' +
+      '<div class="num digits">' + winOrders.toLocaleString('th-TH') + '</div>' +
+      '<div class="foot">' + share + '% ของบิลทั้งหมด</div></div>' +
+    '<div><div class="cap">ยอดขายในช่วงนี้</div>' +
+      '<div class="num digits">' + baht(winRevenue) + '</div>' +
+      '<div class="foot">จากทั้งหมด ' + baht(totalRevenue) + ' ฿</div></div>' +
+    '<div><div class="cap">เดลิเวอรี่ในช่วงนี้</div>' +
+      '<div class="num digits">' + winDelivery.toLocaleString('th-TH') + '</div>' +
+      '<div class="foot">ออเดอร์ (ไม่รวมในยอดหน้าร้าน)</div></div>' +
+    '<div><div class="cap">ชั่วโมงที่ขายดีที่สุด</div>' +
+      '<div class="num">' + thaiHour(busiest.hour) + '</div>' +
+      '<div class="foot">' + busiest.orders.toLocaleString('th-TH') + ' บิล · ' +
+        String(busiest.hour).padStart(2, '0') + ':00</div></div>';
+
+  // ── กราฟแท่ง 24 ชั่วโมง ──
+  const W = 760, H = 250, padL = 44, padR = 12, padT = 14, padB = 42;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const niceMax = niceCeil(Math.max.apply(null, rows.map(r => r.orders)) || 1);
+  const slot = innerW / 24;
+  const bw = Math.max(4, slot - 6);
+
+  let grid = '', bars = '', labels = '', band = '';
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = niceMax * i / ticks;
+    const y = padT + innerH - (v / niceMax) * innerH;
+    grid += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y + '" y2="' + y +
+            '" stroke="var(--line)" stroke-width="1"/>' +
+            '<text class="tick" x="' + (padL - 8) + '" y="' + (y + 4) +
+            '" text-anchor="end">' + shortNum(v) + '</text>';
+  }
+
+  // แถบไฮไลต์ช่วงที่เลือก วาดใต้แท่ง
+  const bx = padL + slot * a, bwid = slot * (b - a + 1);
+  band = '<rect x="' + bx + '" y="' + padT + '" width="' + bwid + '" height="' + innerH +
+         '" fill="var(--red)" opacity="0.07"/>';
+
+  rows.forEach(r => {
+    const h = (r.orders / niceMax) * innerH;
+    const x = padL + slot * r.hour + (slot - bw) / 2;
+    const y = padT + innerH - h;
+    const on = inWindow(r.hour);
+    const tip = thaiHour(r.hour) + ' (' + String(r.hour).padStart(2, '0') + ':00) · ' +
+                r.orders + ' บิล · ' + baht(r.revenue) + ' ฿' +
+                (r.delivery ? ' · เดลิเวอรี่ ' + r.delivery : '');
+    bars += '<path class="bar" d="' + roundedTopBar(x, y, bw, Math.max(h, r.orders ? 2 : 0), 4) +
+            '" fill="var(--red)" opacity="' + (on ? 1 : 0.26) +
+            '" data-tip="' + escapeHtml(tip) + '"></path>';
+    if (r.hour % 3 === 0) {
+      labels += '<text class="tick" x="' + (x + bw / 2) + '" y="' + (H - 22) +
+                '" text-anchor="middle">' + String(r.hour).padStart(2, '0') + '</text>';
+    }
+  });
+
+  el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;max-height:270px;">' +
+    band + grid + bars +
+    '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + (padT + innerH) + '" y2="' + (padT + innerH) +
+      '" stroke="#d5d5d9" stroke-width="1"/>' + labels +
+    '<text class="tick" x="' + (padL + innerW / 2) + '" y="' + (H - 5) +
+      '" text-anchor="middle">เวลา (นาฬิกา)</text>' +
+    '</svg>';
   attachTips(el);
 }
 
@@ -916,6 +1071,20 @@ function demoStats() {
     deliveryAddons: Math.round(orders * 0.21),
     deliveryItems: share({ 'หม่าล่ารวม': .09, 'หม่าล่าหน้าแดง': .07, 'อุด้ง': .06, 'หม่าล่าทะเล': .05 }, orders),
     avgTicket: Math.round(revenue / orders * 100) / 100,
+    // รูปแบบร้านหม่าล่า — คนแน่นช่วงเย็นถึงหัวค่ำ
+    byHour: (function () {
+      const w = { 10:.01, 11:.03, 12:.05, 13:.04, 14:.03, 15:.03, 16:.05, 17:.09,
+                  18:.13, 19:.16, 20:.15, 21:.11, 22:.07, 23:.05 };
+      const out = [];
+      for (let h = 0; h < 24; h++) {
+        const share = w[h] || 0;
+        out.push({ hour: h,
+                   orders: Math.round(orders * share),
+                   revenue: Math.round(revenue * share),
+                   delivery: Math.round(orders * 0.18 * share) });
+      }
+      return out;
+    })(),
     expenseTotal: Math.round(revenue * 0.09),
     expenseCount: Math.round(orders * 0.02),
     expenseByType: share({ 'ค่าที่': .40, 'ค่าไม้เสียบ': .20, 'ค่าของสด': .18,

@@ -548,6 +548,9 @@ function handleStats_(p) {
     var total    = num_(r[idx['ยอดสุทธิ']]);
     var discount = num_(r[idx['ส่วนลด']]);
 
+    var hr = hourOf_(r[idx['เวลา']]);
+    if (hr >= 0) { stats.byHour[hr].orders++; stats.byHour[hr].revenue += total; }
+
     stats.orders++;
     stats.revenue  += total;
     stats.discount += discount;
@@ -591,6 +594,9 @@ function addDeliveryStats_(stats, from, to, branch) {
     var date = normDate_(r[idx['วันที่']]);
     if (!date || date < from || date > to) continue;
     if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
+
+    var dhr = hourOf_(r[idx['เวลา']]);
+    if (dhr >= 0 && stats.byHour && stats.byHour[dhr]) stats.byHour[dhr].delivery++;
 
     stats.deliveryOrders++;
     stats.deliveryItemCount += num_(r[idx['รวมจำนวน']]);
@@ -832,6 +838,7 @@ function emptyStats_() {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
     expenseTotal: 0, expenseCount: 0, expenseByType: {}, netCash: 0,
+    byHour: emptyHours_(),
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},
     byDate: [], branches: []
   };
@@ -844,6 +851,29 @@ function listBranches_(values, idx) {
     if (b && !seen[b]) { seen[b] = true; out.push(b); }
   }
   return out.sort();
+}
+
+/**
+ * อ่านชั่วโมง (0-23) จากช่อง "เวลา"
+ * Google Sheets อาจแสดงเป็น "19:30:00" หรือ "7:30:00 PM" แล้วแต่รูปแบบที่ตั้งไว้
+ * รับได้ทั้งสองแบบ ถ้าอ่านไม่ออกคืน -1
+ */
+function hourOf_(v) {
+  var str = String(v == null ? '' : v).trim();
+  var m = str.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return -1;
+  var h = parseInt(m[1], 10);
+  if (isNaN(h)) return -1;
+  if (/PM|pm|หลังเที่ยง/.test(str) && h < 12) h += 12;
+  if (/AM|am|ก่อนเที่ยง/.test(str) && h === 12) h = 0;
+  return (h >= 0 && h <= 23) ? h : -1;
+}
+
+/** ช่องเก็บยอดราย 24 ชั่วโมง */
+function emptyHours_() {
+  var out = [];
+  for (var h = 0; h < 24; h++) out.push({ hour: h, orders: 0, revenue: 0, delivery: 0 });
+  return out;
 }
 
 function bump_(obj, key)        { if (!key) return; obj[key] = (obj[key] || 0) + 1; }
