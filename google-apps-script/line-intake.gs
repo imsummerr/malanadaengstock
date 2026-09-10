@@ -579,33 +579,18 @@ function intakeParseLine_(line) {
     if (!text) return null;
   }
 
-  var baht = 0, gram = 0, qty = 0, unit = '', bare = [], counts = [];
-  var saidMoney = false, saidUnit = false;
+  var bag = intakeBag_();
   var re = intakeUnitRe_(), m;
 
   while ((m = re.exec(text)) !== null) {
     if (m[0] === '') { re.lastIndex++; continue; }   // กันวนไม่รู้จบ
-    var val = intakeNum_(m[1]);
-    switch (intakeUnitKind_(m[2])) {
-      case 'money': if (!baht) baht = val;        saidMoney = true; break;
-      case 'kg':    if (!gram) gram = val * 1000; saidUnit  = true; break;
-      case 'g':     if (!gram) gram = val;        saidUnit  = true; break;
-      case 'khit':  if (!gram) gram = val * 100;  saidUnit  = true; break;
-      case 'count':
-        // เก็บไว้ทุกตัว ไม่ใช่แค่ตัวแรก — "1 แพ็ค ได้ 26 ไม้" มีสองหน่วยในบรรทัดเดียว
-        // แพ็คคือที่ซื้อมา ไม้คือที่เสียบได้จริง ซึ่งเป็นตัวที่ชีตสต็อกต้องการ
-        counts.push({ n: val, unit: String(m[2]).trim() });
-        if (!qty) { qty = val; unit = String(m[2]).trim(); }
-        saidUnit = true;
-        break;
-      default:      bare.push(val);
-    }
+    intakeApplyUnit_(bag, intakeNum_(m[1]), m[2]);
   }
 
   // เลขเปล่า ๆ เติมช่องที่ยังว่าง: ราคาก่อน แล้วค่อยจำนวน
-  for (var i = 0; i < bare.length; i++) {
-    if (!baht)     baht = bare[i];
-    else if (!qty) qty  = bare[i];
+  for (var i = 0; i < bag.bare.length; i++) {
+    if (!bag.baht)     bag.baht = bag.bare[i];
+    else if (!bag.qty) bag.qty  = bag.bare[i];
   }
 
   // คำเชื่อมที่คนพิมพ์คั่นระหว่างจำนวน ("1 แพ็ค ได้ 26 ไม้") ไม่ใช่ส่วนหนึ่งของชื่อของ
@@ -615,15 +600,43 @@ function intakeParseLine_(line) {
   if (!name) return null;
 
   // ไม่มีตัวเลขเลย = เป็นประโยคคุยกันเฉย ๆ ไม่ใช่รายการของ
-  if (!baht && !gram && !qty) return null;
+  if (!bag.baht && !bag.gram && !bag.qty) return null;
 
   return {
-    raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
+    raw: name, baht: bag.baht, gram: bag.gram, qty: bag.qty, unit: bag.unit,
+    counts: bag.counts,
     pay: pay.method, expense: intakeIsExpense_(name),
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
-    saidMoney: saidMoney, saidUnit: saidUnit
+    saidMoney: bag.saidMoney, saidUnit: bag.saidUnit
   };
+}
+
+/** ถุงเปล่าไว้ใส่ตัวเลขที่จับได้จากบรรทัดหนึ่ง */
+function intakeBag_() {
+  return { baht: 0, gram: 0, qty: 0, unit: '', counts: [], bare: [],
+           saidMoney: false, saidUnit: false };
+}
+
+/**
+ * ใส่ "ตัวเลข + หน่วย" ที่จับได้ลงในถุง — ใช้ร่วมกันทั้งทางพิมพ์และทางอ่านบิล
+ * แยกออกมาเพื่อให้สองทางแปลหน่วยเหมือนกันเป๊ะ ต่างกันแค่ตัวจับหน่วย
+ */
+function intakeApplyUnit_(bag, val, unit) {
+  switch (intakeUnitKind_(unit)) {
+    case 'money': if (!bag.baht) bag.baht = val;        bag.saidMoney = true; return;
+    case 'kg':    if (!bag.gram) bag.gram = val * 1000; bag.saidUnit  = true; return;
+    case 'g':     if (!bag.gram) bag.gram = val;        bag.saidUnit  = true; return;
+    case 'khit':  if (!bag.gram) bag.gram = val * 100;  bag.saidUnit  = true; return;
+    case 'count':
+      // เก็บไว้ทุกตัว ไม่ใช่แค่ตัวแรก — "1 แพ็ค ได้ 26 ไม้" มีสองหน่วยในบรรทัดเดียว
+      // แพ็คคือที่ซื้อมา ไม้คือที่เสียบได้จริง ซึ่งเป็นตัวที่ชีตสต็อกต้องการ
+      bag.counts.push({ n: val, unit: String(unit).trim() });
+      if (!bag.qty) { bag.qty = val; bag.unit = String(unit).trim(); }
+      bag.saidUnit = true;
+      return;
+    default: bag.bare.push(val);
+  }
 }
 
 /**
@@ -880,7 +893,142 @@ function intakeFetchImage_(messageId) {
 var INTAKE_OCR_SKIP = new RegExp(
   'รวม|ทั้งสิ้น|สุทธิ|ยอด|เงินสด|เงินทอน|ทอน|ส่วนลด|ภาษี|มูลค่าเพิ่ม|จำนวนเงิน' +
   '|ใบเสร็จ|ใบกำกับ|ใบส่งของ|ใบเสนอ|เลขที่|วันที่|เวลา|โทร|สาขา|ผู้รับ|ผู้ขาย|ลูกค้า|ขอบคุณ' +
-  '|total|subtotal|cash|change|discount|vat|net|tel|invoice|receipt|thank', 'i');
+  '|สงวนสิทธิ|เปลี่ยน\\s*/?\\s*คืน|สมาชิก|แต้ม|พนักงาน|แคชเชียร์' +
+  '|total|subtotal|cash|change|discount|vat|vatable|net|tel|invoice|receipt|thank' +
+  '|tax\\s*id|pos\\s*id|user\\s*#|rcpt|qr\\s*payment|payment|member|point|store|branch', 'i');
+
+/**
+ * หัวบิล/ท้ายบิลที่เป็นชื่อร้านหรือรหัสล้วน ๆ — ไม่มีตัวหนังสือไทยเลย
+ * เช่น "BCM VILLAGGIO SAP PATTANA" หรือ "E05110003A1246"
+ * ปล่อยไว้จะกลายเป็นรายการของราคาหลักแสน เพราะเลขรหัสถูกอ่านเป็นราคา
+ */
+function intakeOcrJunkLine_(t) {
+  if (/[ก-๙]/.test(t)) return false;               // มีไทย = น่าจะเป็นชื่อของ
+  return /^[A-Za-z0-9#*\/.\-_ ()]+$/.test(t);      // อังกฤษ/ตัวเลข/สัญลักษณ์ล้วน
+}
+
+/**
+ * ตัวเลข+หน่วยที่ "ยืนเดี่ยว" จริง ๆ — ต้องมีช่องว่างคั่นหน้า และไม่มีตัวหนังสือต่อท้าย
+ *   "หมูสามชั้น 2 กก."   → 2 กก. คือน้ำหนักที่ซื้อจริง
+ *   "นิสชินไก่เผ็ด60ก"   → "60ก" คือขนาดซองที่ติดมากับชื่อสินค้า ไม่ใช่จำนวนที่ซื้อ
+ *
+ * ในบิลชื่อสินค้าเต็มไปด้วยตัวเลข (60ก / 75 / P1) ถ้าใช้ตัวจับหน่วยแบบหลวมเหมือน
+ * ทางพิมพ์ ชื่อจะถูกแทะจนเหลือ "นิสชินไก่เผ็ด ก" แล้ว 60 จะกลายเป็นจำนวนที่ซื้อ
+ */
+function intakeOcrUnitRe_() {
+  return new RegExp('(?:^|\\s)(\\d+(?:[.,]\\d+)?)\\s*(' +
+                    INTAKE_UNIT_RE + ')(?![ก-๙A-Za-z0-9])', 'gi');
+}
+
+/**
+ * บรรทัดหนึ่งในบิล → หนึ่งรายการ (null = ไม่ใช่รายการของ)
+ *
+ * บิลที่ร้านค้าพิมพ์มาเขียนคนละแบบกับที่คนพิมพ์เข้าไลน์เอง
+ *   "1P นิสชินบะหมี่        10.00"
+ * คือขึ้นต้นด้วยจำนวน+รหัสหมวด (1P / 1A / 2P) และ "ราคาอยู่ท้ายบรรทัด"
+ *
+ * โยนเข้าตัวแยกข้อความของทางพิมพ์ตรง ๆ จะพังสองอย่าง
+ *   1) หยิบ "1" จาก "1P" มาเป็นราคา ทิ้ง 10.00 ที่เป็นราคาจริง
+ *      → ของ 10 บาทกลายเป็น 1 บาททุกบรรทัด
+ *   2) แทะตัวเลขที่ติดมากับชื่อ "นิสชินไก่เผ็ด60ก" เหลือ "นิสชินไก่เผ็ด ก"
+ *      แล้ว 60 กลายเป็นจำนวนที่ซื้อ
+ *
+ * ตรงนี้จึงอ่านเองทั้งบรรทัด: เลขท้ายสุดคือราคา เลขหน้ารหัสหมวดคือจำนวน
+ * ที่เหลือคือชื่อ เก็บตามที่พิมพ์ในบิลเป๊ะ ๆ เจ้าของร้านจะได้ทานกับบิลได้
+ */
+function intakeOcrLine_(line) {
+  var t = String(line || '').trim();
+  if (!t) return null;
+
+  // จำนวน+รหัสหมวดหน้าบรรทัด "1P " / "1A " / "12P "
+  // ต้องเป็นตัวพิมพ์ใหญ่ตัวเดียว ไม่งั้น "3 kg หมู" จะโดนตัดจนน้ำหนักหาย
+  // และเป็นละตินเท่านั้น ไม่งั้น "3 ถุง" จะโดนตัดด้วย
+  var qty  = 0;
+  var head = t.match(/^(\d{1,3})\s*[A-Z](?![A-Za-z])\s*/);
+  if (head) {
+    qty = intakeNum_(head[1]);
+    t   = t.slice(head[0].length);
+  } else {
+    // บิลบางเจ้าไล่เลขไว้หน้าบรรทัดเฉย ๆ "1 หมูสามชั้น 285.00"
+    // เลขแบบนี้ไม่รู้ว่าเลขบรรทัดหรือจำนวน จึงตัดออกจากชื่อแต่ไม่เอาไปลงเป็นจำนวน
+    // ("2 กก. หมู 450" ห้ามตัด ไม่งั้นน้ำหนักหาย — เช็คว่าคำถัดไปเป็นหน่วยหรือเปล่า)
+    var num = t.match(/^(\d{1,3})\s+/);
+    if (num && !new RegExp('^(' + INTAKE_UNIT_RE + ')(?![ก-๙A-Za-z0-9])', 'i')
+                    .test(t.slice(num[0].length))) {
+      t = t.slice(num[0].length);
+    }
+  }
+
+  // บรรทัดส่วนลดของบิล — "1Pลด ย่าย่าSD ผัดฉ่า  -1.00"
+  // ตัดจำนวนไปแล้วจะเหลือขึ้นต้นด้วย "ลด" ข้ามไป ไม่ใช่ของที่ซื้อเข้า
+  if (/^ลด/.test(t)) return null;
+
+  // เขียนหน่วยเงินมาชัด ๆ ("ปลาดอลลี่ 68 บาท 800 กรัม") = โน้ตที่คนเขียนเอง
+  // ไม่ใช่บิลพิมพ์ แบบนี้ตัวแยกข้อความปกติอ่านได้ดีกว่า เพราะคนเขียนคั่นหน่วยไว้ครบ
+  if (/(บาท|฿|บ\.|thb|baht)/i.test(t)) return intakeParseLine_(t);
+
+  // ราคาอยู่ท้ายบรรทัด — ติดลบ = ส่วนลด/คืนของ ข้ามไป
+  var m = t.match(/(-?\d[\d,]*(?:\.\d{1,2})?)\s*$/);
+  if (!m) return null;
+  var baht = intakeNum_(m[1]);
+  if (!(baht > 0)) return null;
+
+  // น้ำหนัก/จำนวนที่เขียนแยกเป็นคำ ๆ ("หมูสามชั้น 2 กก. 450") ดึงออกมาจากชื่อ
+  var bag  = intakeBag_();
+  var name = t.slice(0, m.index);
+  var re   = intakeOcrUnitRe_(), u;
+  while ((u = re.exec(name)) !== null) {
+    if (u[0] === '') { re.lastIndex++; continue; }   // กันวนไม่รู้จบ
+    intakeApplyUnit_(bag, intakeNum_(u[1]), u[2]);
+  }
+
+  name = name.replace(intakeOcrUnitRe_(), ' ');
+
+  // "นมสด 2 x 15.00   30.00" — บิลเขียนจำนวน × ราคาต่อหน่วย ยอดรวมอยู่ท้ายสุด
+  var mult = name.match(/(\d+(?:[.,]\d+)?)\s*[xX×]\s*\d+(?:[.,]\d+)?/);
+  if (mult) {
+    if (!bag.qty) bag.qty = intakeNum_(mult[1]);
+    name = name.replace(mult[0], ' ');
+  }
+
+  name = name.replace(/\s{2,}/g, ' ')
+             .replace(/^[\s*.·:;\-]+/, '').replace(/[\s*.·:;\-]+$/, '').trim();
+  if (name.replace(/[^ก-๙a-z]/gi, '').length < 2) return null;   // ไม่เหลือชื่อของจริง ๆ
+
+  return {
+    raw: name, baht: baht, gram: bag.gram,
+    // จำนวนจากหน่วยในชื่อมาก่อน ไม่มีก็ใช้เลขหน้ารหัสหมวด
+    // "1P" ไม่ต้องบอก มันคือค่าปกติของทุกบรรทัด บอกไปก็รกเปล่า ๆ
+    qty: bag.qty || (qty > 1 ? qty : 0), unit: bag.unit, counts: bag.counts,
+    pay: '', expense: intakeIsExpense_(name), cash: false, rnd: false,
+    saidMoney: true, saidUnit: bag.saidUnit
+  };
+}
+
+/**
+ * บิลบอกวิธีจ่ายไว้ในตัวเอง — เห็น VISA/MASTER/บัตรเครดิต = รูดบัตร
+ * ที่เหลือ (QR / พร้อมเพย์ / เงินสด) ลงเป็นโอนตามที่ตกลงกันไว้
+ * ถ้ารูดบัตรแล้วลงเป็นโอน ยอดที่ต้องจ่ายรอบบัตรจะขาดไป
+ */
+function intakeOcrPay_(text) {
+  var t = String(text || '');
+  if (/บัตรเครดิต|บัตรเดบิต|รูดบัตร|visa|master\s*card|jcb|unionpay|amex|credit|debit/i.test(t)) {
+    return 'บัตรเครดิต';
+  }
+  return intakeProp_('INTAKE_DEFAULT_PAY', INTAKE_DEFAULT_PAY);
+}
+
+/**
+ * บิลบอกว่าจ่ายเงินสดมา — ทางไลน์ไม่รับเงินสด (ลงในหน้า POS อยู่แล้ว)
+ * ไม่บอกจะกลายเป็นบันทึกซ้ำสองทาง เงินสดในลิ้นชักกับยอดโอนจะเพี้ยนทั้งคู่
+ * "เงินทอน" เป็นตัวชี้ที่แน่นอนกว่า เพราะมีเฉพาะตอนจ่ายสดจริง ๆ
+ */
+function intakeOcrCash_(text) {
+  var t = String(text || '');
+  if (/บัตรเครดิต|บัตรเดบิต|visa|master\s*card|jcb|unionpay|amex|credit|debit/i.test(t)) return false;
+  if (/qr|พร้อมเพย์|promptpay|โอน|transfer/i.test(t)) return false;
+  return /เงินทอน|เงินสด|\bcash\b|\bchange\b/i.test(t);
+}
 
 /**
  * อ่านรูปฟรีด้วย OCR ของ Google Drive
@@ -962,30 +1110,75 @@ function intakeOcrImage_(blob) {
     items: items,
     raw: String(text || ''),          // ส่งข้อความดิบกลับไปด้วย ไว้โชว์ตอนอ่านไม่ออก
     note: items.length
-      ? 'อ่านด้วย OCR ฟรี ตัวเลขอาจเพี้ยนได้ ตรวจสอบอีกทีนะครับ'
+      ? 'อ่านด้วย OCR ฟรี ตัวเลขอาจเพี้ยนได้ ตรวจสอบอีกทีนะครับ' + intakeOcrCheckSum_(text, items)
       : (String(text).trim() ? 'อ่านตัวหนังสือได้ แต่ไม่เจอบรรทัดที่มีทั้งชื่อของและราคา'
                              : 'OCR อ่านตัวหนังสือในรูปไม่ออกเลย')
   };
 }
 
+/** ยอดรวมที่บิลเขียนไว้เอง — ไม่เจอคืน 0 */
+function intakeOcrTotal_(text) {
+  var lines = String(text || '').split(/[\n\r]+/);
+  var re = /(total|รวมทั้งสิ้น|ยอดรวม|รวมเงิน|ยอดสุทธิ|รวมสุทธิ|จำนวนเงินรวม)/i;
+  for (var i = 0; i < lines.length; i++) {
+    if (!re.test(lines[i])) continue;
+    var m = lines[i].match(/(\d[\d,]*(?:\.\d{1,2})?)\s*$/);
+    if (m) return intakeNum_(m[1]);
+  }
+  return 0;
+}
+
+/**
+ * ทานยอด: เอาที่แยกได้ไปเทียบกับยอดรวมที่บิลเขียนไว้
+ * ต่างกันได้สองสาเหตุ — บิลมีส่วนลด (ที่ข้ามไปเพราะไม่ใช่ของที่ซื้อ)
+ * หรือ OCR อ่านตกไปบางบรรทัด ทั้งสองอย่างเจ้าของร้านควรรู้ก่อนปิดยอด
+ * ไม่แก้ตัวเลขให้เอง เพราะแก้แล้วจะทานกับบิลจริงไม่ได้อีก
+ */
+function intakeOcrCheckSum_(text, items) {
+  var total = intakeOcrTotal_(text);
+  if (!total) return '';
+
+  var sum = 0;
+  for (var i = 0; i < items.length; i++) sum += Number(items[i].baht) || 0;
+  var diff = Math.round((sum - total) * 100) / 100;
+  if (Math.abs(diff) < 1) return '';
+
+  return '\n⚠️ รวมรายการได้ ' + intakeMoney_(sum) + ' บาท แต่บิลเขียนยอด ' +
+         intakeMoney_(total) + ' บาท (ต่าง ' + intakeMoney_(Math.abs(diff)) + ')' +
+         (diff > 0 ? '\nน่าจะเป็นเพราะบิลมีส่วนลด — ส่วนลดไม่ใช่ของที่ซื้อ เลยไม่ได้บันทึก'
+                   : '\nน่าจะอ่านตกไปบางบรรทัด') +
+         '\nถ้าอยากให้ตรงเป๊ะ พิมพ์ "ลบ" แล้วพิมพ์เองอีกที';
+}
+
 /** ข้อความดิบจาก OCR → รายการของ (กรองบรรทัดขยะของบิลออกก่อน) */
 function intakeOcrItems_(text) {
   var lines = String(text || '').split(/[\n\r]+/);
-  var keep  = [];
+  var out   = [];
+  var i;
 
-  for (var i = 0; i < lines.length; i++) {
+  for (i = 0; i < lines.length && out.length < INTAKE_MAX_ITEMS; i++) {
     var t = lines[i].trim();
     if (!t) continue;
     if (INTAKE_OCR_SKIP.test(t)) continue;
     if (/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}/.test(t)) continue;   // วันที่
     if (/^\d{1,2}:\d{2}/.test(t)) continue;                       // เวลา
     if (!/[ก-๙a-z]/i.test(t)) continue;                           // ไม่มีตัวหนังสือเลย
-    keep.push(t);
+    if (intakeOcrJunkLine_(t)) continue;                          // ชื่อร้าน/รหัสล้วน ๆ
+
+    var one = intakeOcrLine_(t);
+    // เศษตัวอักษรเดี่ยว ๆ จาก OCR ไม่ใช่ชื่อของ
+    if (one && String(one.raw).length >= 2) out.push(one);
   }
 
-  return intakeParseText_(keep.join('\n')).filter(function (it) {
-    return String(it.raw).length >= 2;   // เศษตัวอักษรเดี่ยว ๆ จาก OCR ไม่ใช่ชื่อของ
-  });
+  // วิธีจ่ายอ่านจากบิลทั้งใบ ไม่ใช่รายบรรทัด — บิลเขียนไว้ท้ายใบใบเดียวสำหรับทุกรายการ
+  var pay  = intakeOcrPay_(text);
+  var cash = intakeOcrCash_(text);
+  for (i = 0; i < out.length; i++) {
+    out[i].pay  = out[i].pay || pay;
+    out[i].cash = out[i].cash || cash;
+  }
+
+  return out;
 }
 
 /* ──────────────── ทางเสียเงิน: อ่านด้วย Claude ──────────────── */
