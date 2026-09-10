@@ -263,8 +263,18 @@ function intakeOnImage_(ev, ctx) {
       ? intakeReadImage_(blob, intakeProp_('ANTHROPIC_API_KEY', ''))
       : intakeOcrImage_(blob);
   } catch (err) {
-    intakeReply_(ctx, '📷 อ่านรูปไม่สำเร็จครับ: ' + (err && err.message ? err.message : err) +
-                      '\n\nพิมพ์เป็นข้อความมาแทนได้เลย');
+    var msg = (err && err.message ? err.message : String(err));
+    // ข้อความสิทธิ์ Drive มาเป็นภาษาของบัญชี (บางทีเป็นญี่ปุ่น) อ่านไม่ออกว่าต้องทำอะไร
+    // จับจากชื่อ API แทนตัวข้อความ แล้วบอกวิธีแก้เป็นภาษาไทยให้เลย
+    var noPerm = /drive\.files\.(create|insert)|PERMISSION_DENIED|authorization/i.test(msg);
+    intakeReply_(ctx, '📷 อ่านรูปไม่สำเร็จครับ' +
+      (noPerm
+        ? '\n\nสคริปต์ยังไม่ได้รับสิทธิ์ใช้ Google Drive\n' +
+          'เปิด Apps Script แล้วทำ 2 ขั้นนี้\n' +
+          '1. รันฟังก์ชัน authorizeDriveOcr → กดอนุญาต\n' +
+          '2. Deploy ใหม่ (เวอร์ชัน: ใหม่) ← ข้ามข้อนี้ไม่ได้'
+        : ': ' + msg) +
+      '\n\nระหว่างนี้พิมพ์เป็นข้อความมาแทนได้เลย');
     return;
   }
 
@@ -872,6 +882,51 @@ var INTAKE_OCR_SKIP = new RegExp(
  *
  * ต้องเปิดบริการ Drive API ในโปรเจกต์ก่อน (บริการ → Drive API) ไม่งั้น Drive จะ undefined
  */
+/**
+ * 🔑 รันครั้งเดียว — บังคับให้ Apps Script ขอสิทธิ์เข้าถึง Drive
+ *
+ * "เปิดบริการ Drive API" กับ "อนุญาตให้สคริปต์ใช้ Drive" เป็นคนละเรื่อง
+ * เปิดบริการแล้วแต่ยังไม่เคยมีโค้ดเรียก Drive จริง Apps Script จะไม่เคยขออนุญาต
+ * พอ LINE ส่งรูปมาถึงค่อยพัง ขึ้นว่า "ไม่มีสิทธิ์เรียก drive.files.create"
+ *
+ * ฟังก์ชันนี้สร้างไฟล์จิ๋วแล้วลบทิ้งทันที เพื่อให้หน้าต่างขออนุญาตเด้งขึ้นมา
+ * กดอนุญาตแล้ว **ต้อง Deploy ใหม่ด้วย** เพราะเว็บแอปยึดสิทธิ์ตอนที่ deploy ไว้
+ */
+function authorizeDriveOcr() {
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    Logger.log('❌ ยังไม่ได้เปิดบริการ Drive API');
+    Logger.log('   แถบซ้าย → บริการ (Services) → ➕ → Drive API → เพิ่ม');
+    Logger.log('   แล้วรันฟังก์ชันนี้ใหม่');
+    return;
+  }
+
+  var blob  = Utilities.newBlob('ทดสอบสิทธิ์ OCR', 'text/plain', 'intake-auth-check.txt');
+  var name  = 'line-intake-auth-' + new Date().getTime();
+  var docId = '';
+  try {
+    // เรียก API ตัวเดียวกับที่ intakeOcrImage_ ใช้ จะได้ขอสิทธิ์ตรงกันเป๊ะ
+    var resource = { mimeType: 'application/vnd.google-apps.document' };
+    if (typeof Drive.Files.create === 'function') {
+      resource.name = name;
+      docId = Drive.Files.create(resource, blob, { ocrLanguage: 'th' }).id;
+    } else {
+      resource.title = name;
+      docId = Drive.Files.insert(resource, blob, { ocr: true, ocrLanguage: 'th' }).id;
+    }
+    Logger.log('✅ ใช้ Drive ได้แล้ว — อ่านรูปบิลได้');
+    Logger.log('');
+    Logger.log('⚠️ เหลืออีกขั้น: ต้อง Deploy ใหม่ด้วย');
+    Logger.log('   เว็บแอปยึดสิทธิ์ตอนที่ deploy ไว้ ไม่ได้ยึดตามที่เพิ่งกดอนุญาต');
+    Logger.log('   ไม่ deploy = ส่งรูปมาก็ยังขึ้นว่าไม่มีสิทธิ์เหมือนเดิม');
+    Logger.log('   ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้ → ✏️ → เวอร์ชัน: ใหม่');
+  } catch (e) {
+    Logger.log('❌ ยังใช้ Drive ไม่ได้: ' + e.message);
+    Logger.log('   ถ้าเพิ่งมีหน้าต่างขออนุญาตเด้งขึ้นมา ให้กดอนุญาตแล้วรันซ้ำ');
+  } finally {
+    if (docId) { try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {} }
+  }
+}
+
 function intakeOcrImage_(blob) {
   if (typeof Drive === 'undefined' || !Drive.Files) {
     throw new Error('ยังไม่ได้เปิดบริการ Drive API ในโปรเจกต์ (ดูวิธีใน LINE-INTAKE-README.md)');
