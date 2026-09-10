@@ -273,7 +273,7 @@ function auditSales_(loc, fromStamp, toStamp) {
  *
  * ครัวกลางซื้อเข้าเป็นกิโล แต่ชีตสต็อกนับ "หลังเสียบไม้/จัดถุงแล้ว" เสมอ
  * เจอหน่วยกรัม/กิโลในชีตนี้ = ยังไม่ได้ตั้งหน่วย ไม่ใช่ของที่ขายเป็นกิโลจริง
- * รัน previewPackAndPrice แล้ว applyPackAndPrice เพื่อแก้
+ * รัน fixItemList ใน pos-backend.gs เพื่อตั้งหน่วยและราคาให้ครบ
  */
 // ทุกหน่วยที่ "นับเป็นชิ้นแล้วขายชิ้นละ 10" — POS นับรวมกันหมดใน รวมไม้
 // ตกหล่นตัวไหน ของตัวนั้นจะหลุดไปกลุ่ม "เทียบไม่ได้" แล้วของหายจะไม่ถูกจับ
@@ -515,7 +515,7 @@ function auditAfterCount_(loc, counts, now) {
     if (g.rawUnits.length) {
       // ชีตสต็อกต้องนับหลังเสียบไม้/จัดถุงแล้ว เจอกรัมแปลว่ายังไม่ได้ตั้งหน่วย
       lines.push('เพราะยังตั้งหน่วยเป็นกิโล/กรัมอยู่: ' + g.rawUnits.slice(0, 5).join(', '));
-      lines.push('แก้โดยรัน applyPackAndPrice ใน Apps Script');
+      lines.push('แก้โดยรัน fixItemList ใน Apps Script');
     } else {
       lines.push('ดูเองในหน้าคำนวณของหาย');
     }
