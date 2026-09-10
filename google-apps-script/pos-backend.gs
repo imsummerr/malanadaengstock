@@ -159,6 +159,12 @@ function doPost(e) {
       }
       // line-intake.gs — อ่านข้อความ/รูปที่ส่งมา แล้วบันทึกลงชีต
       if (typeof handleLineIntake_ === 'function') return handleLineIntake_(body);
+
+      // ไม่มี handleLineIntake_ = เวอร์ชันที่ deploy อยู่ถูกถ่ายไว้ตอนที่ยังไม่มี
+      // line-intake.gs ในโปรเจกต์ ตรงนี้เคยตอบ 200 OK เปล่า ๆ แล้วจบ
+      // LINE เห็นว่าส่งสำเร็จ ขึ้น "อ่านแล้ว" แต่ไม่มีอะไรเกิดขึ้น ไม่มี error ให้ดูด้วย
+      // หาสาเหตุกันนานมาก จึงให้มันฟ้องกลับเข้าไลน์เลย จะได้รู้ตัวทันที
+      try { lineIntakeMissing_(body); } catch (err) { Logger.log('lineIntakeMissing_: ' + err.message); }
       return ContentService.createTextOutput('OK');
     }
 
@@ -197,6 +203,44 @@ function doGet(e) {
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * LINE ยิงมาถึงแล้ว แต่เวอร์ชันที่ deploy อยู่ไม่มี line-intake.gs
+ * ตอบกลับเข้าไลน์ให้รู้ตัว ไม่งั้นจะเห็นแค่ "อ่านแล้ว" แล้วเงียบ ซึ่งหาสาเหตุยากมาก
+ * เพราะทุกอย่างในหน้าแก้ไขดูถูกหมด แต่ URL ที่ LINE ใช้เสิร์ฟโค้ดเก่าอยู่
+ *
+ * ส่งครั้งเดียวต่อ 10 นาที ต่อให้พิมพ์รัว ๆ ก็ไม่สแปมกลุ่ม
+ */
+function lineIntakeMissing_(body) {
+  var ev = (body && body.events || [])[0];
+  if (!ev || !ev.replyToken) return;
+
+  var token = PropertiesService.getScriptProperties()
+                .getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!token) return;
+
+  var cache = CacheService.getScriptCache();
+  if (cache.get('intake_missing_warned')) return;
+  cache.put('intake_missing_warned', '1', 600);
+
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    method: 'post', contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({
+      replyToken: ev.replyToken,
+      messages: [{ type: 'text', text:
+        '⚠️ ข้อความมาถึงแล้ว แต่เวอร์ชันที่ deploy อยู่ยังไม่มีตัวอ่านข้อความ\n\n' +
+        'URL ที่ LINE ใช้ ชี้ไปที่ deployment เก่าที่ถ่ายไว้ตอนยังไม่มี line-intake.gs\n\n' +
+        'แก้แบบนี้\n' +
+        '1. Apps Script → วาง line-intake.gs ให้ครบ แล้วกด Ctrl+S\n' +
+        '2. ทำให้ใช้งานได้ → จัดการการทำให้ใช้งานได้ → ✏️\n' +
+        '   เวอร์ชัน: "ใหม่" (ห้ามเลือกเลขเวอร์ชันเก่า) → ทำให้ใช้งานได้\n' +
+        '3. เช็คด้วย <URL>?action=ping ต้องเห็น\n' +
+        '   "รับไลน์ · line-intake.gs": true' }]
+    }),
+    muteHttpExceptions: true
+  });
 }
 
 /**
