@@ -279,9 +279,16 @@ function intakeOnImage_(ev, ctx) {
   }
 
   if (!read.items.length) {
+    // โชว์ข้อความดิบที่ OCR อ่านได้ด้วย ไม่งั้นแยกไม่ออกว่า OCR อ่านมั่ว
+    // หรือ OCR อ่านถูกแต่ตัวแยกข้อความทิ้งของดี — คนละปัญหา คนละวิธีแก้
+    var peek = String(read.raw || '').replace(/\s*\n\s*/g, ' / ').trim();
     intakeReply_(ctx, '📷 เปิดรูปได้ แต่ไม่เจอรายการของที่ซื้อครับ' +
-                      (read.note ? '\n(' + read.note + ')' : '') +
-                      '\n\nลองถ่ายให้ชัดขึ้น หรือพิมพ์เป็นข้อความมาแทน');
+      (read.note ? '\n(' + read.note + ')' : '') +
+      (peek ? '\n\nOCR อ่านได้ว่า:\n' + peek.slice(0, 400) +
+              (peek.length > 400 ? '…' : '') : '') +
+      '\n\nถ้าข้อความข้างบนมั่ว = OCR ฟรีไปไม่ถึง' +
+      '\nตั้ง ANTHROPIC_API_KEY ให้ Claude อ่านแทนจะแม่นกว่ามาก (~1 บาท/รูป)' +
+      '\n\nระหว่างนี้พิมพ์เป็นข้อความมาได้เลย');
     return;
   }
 
@@ -953,6 +960,7 @@ function intakeOcrImage_(blob) {
   var items = intakeOcrItems_(text);
   return {
     items: items,
+    raw: String(text || ''),          // ส่งข้อความดิบกลับไปด้วย ไว้โชว์ตอนอ่านไม่ออก
     note: items.length
       ? 'อ่านด้วย OCR ฟรี ตัวเลขอาจเพี้ยนได้ ตรวจสอบอีกทีนะครับ'
       : (String(text).trim() ? 'อ่านตัวหนังสือได้ แต่ไม่เจอบรรทัดที่มีทั้งชื่อของและราคา'
@@ -1657,12 +1665,24 @@ function setupLineIntake() {
 function testIntakeOcr(fileId) {
   if (!fileId) { Logger.log('ใส่ File ID ของรูปด้วย เช่น testIntakeOcr(\'1AbC...\')'); return; }
   var read = intakeOcrImage_(DriveApp.getFileById(fileId).getBlob());
-  Logger.log('อ่านได้ ' + read.items.length + ' รายการ  (' + read.note + ')');
+
+  // โชว์ข้อความดิบก่อนเสมอ — ถ้าตรงนี้มั่ว จะปรับตัวแยกข้อความยังไงก็ไม่ช่วย
+  Logger.log('───── ข้อความดิบที่ OCR อ่านได้ ─────');
+  Logger.log(String(read.raw || '(ว่าง — อ่านตัวหนังสือไม่ออกเลย)'));
+  Logger.log('─────────────────────────────────\n');
+
+  Logger.log('แยกได้ ' + read.items.length + ' รายการ  (' + read.note + ')');
   var names = intakeItemNames_();
   read.items.forEach(function (it) {
     var hit = intakeMatchItem_(it.raw, names);
     Logger.log('  • ' + hit.name + (hit.matched ? '' : ' (ไม่ตรงชีต)') + '  |  ' + intakeAmountText_(it));
   });
+
+  if (!read.items.length) {
+    Logger.log('\nอ่านข้อความดิบข้างบนแล้วเทียบดู');
+    Logger.log('  ตัวหนังสือมั่ว/ว่าง = OCR ฟรีไปไม่ถึง → ตั้ง ANTHROPIC_API_KEY ให้ Claude อ่าน');
+    Logger.log('  ตัวหนังสืออ่านออกแต่ไม่ถูกแยก = บอกผมได้ ผมปรับตัวแยกข้อความให้');
+  }
 }
 
 /**
