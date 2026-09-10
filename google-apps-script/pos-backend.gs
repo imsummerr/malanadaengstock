@@ -158,6 +158,12 @@ function doPost(e) {
     // ถ้าโปรเจกต์นี้มีสคริปต์ LINE อยู่ด้วย ให้ส่งต่อ webhook ของ LINE ไปให้มัน
     // (Apps Script มี doPost ได้ตัวเดียวต่อโปรเจกต์ ตัวนี้จึงทำหน้าที่เป็นตัวแยกทาง)
     if (body.destination || body.events) {
+      // ปุ่ม Verify ของ LINE ยิงมาแบบไม่มี event เลย และรอคำตอบแค่ราว ๆ วินาทีเดียว
+      // ถ้าไปแตะ Properties หรือชีตก่อนตอบ จะขึ้น "A timeout occurred" บ้างไม่ขึ้นบ้าง
+      // ทั้งที่ของจริงใช้ได้ ทำให้เข้าใจผิดว่าตั้งค่าผิด — ตอบ OK กลับทันทีเลย
+      // (ของจริงส่งมาพร้อม event อย่างน้อยหนึ่งตัวเสมอ ไม่หลุดทางนี้)
+      if (!body.events || !body.events.length) return ContentService.createTextOutput('OK');
+
       // line-expiry-alert.gs — จด Group ID ของกลุ่มที่มีคนพิมพ์ ไว้ใช้ตอนตั้งค่า
       if (typeof handleLineWebhook_ === 'function') {
         try { handleLineWebhook_(body); } catch (e) { Logger.log('handleLineWebhook_: ' + e.message); }
