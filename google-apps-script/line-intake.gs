@@ -201,6 +201,7 @@ function intakeOnText_(ev, ctx) {
     case 'pl':    intakeReply_(ctx, intakeAccounting_('month')); return;
     case 'card':  intakeReply_(ctx, intakeAccounting_('card'));  return;
     case 'loss':  intakeReply_(ctx, intakeAccounting_('loss'));  return;
+    case 'raw':   intakeReply_(ctx, intakeLastRaw_());           return;
   }
 
   var stripped = intakeStripPrefix_(raw);
@@ -277,6 +278,12 @@ function intakeOnImage_(ev, ctx) {
       '\n\nระหว่างนี้พิมพ์เป็นข้อความมาแทนได้เลย');
     return;
   }
+
+  // เก็บข้อความดิบไว้ให้พิมพ์ "ดิบ" ดูย้อนหลังได้ — เวลาลงผิดจะได้แยกออกว่า
+  // OCR อ่านตัวหนังสือมั่ว หรืออ่านถูกแต่ตัวแยกข้อความจับผิด คนละปัญหา คนละวิธีแก้
+  try {
+    intakeProps_().setProperty('INTAKE_LAST_RAW', String(read.raw || '').slice(0, 4000));
+  } catch (e) {}
 
   if (!read.items.length) {
     // โชว์ข้อความดิบที่ OCR อ่านได้ด้วย ไม่งั้นแยกไม่ออกว่า OCR อ่านมั่ว
@@ -408,6 +415,7 @@ function intakeCommandOf_(text) {
   if (/^(งบ|งบเดือนนี้|บัญชี|กำไร|กำไรเดือนนี้)$/.test(t))     return 'pl';
   if (/^(บัตร|บัตรเครดิต|รอบบัตร|ยอดบัตร)$/.test(t))           return 'card';
   if (/^(ของหาย|ของขาด|เช็คของหาย|ตรวจของหาย)$/.test(t))       return 'loss';
+  if (/^(ดิบ|ข้อความดิบ|อ่านได้ว่า|raw|ocr)$/.test(t))          return 'raw';
   if (/^(ช่วย|ช่วยด้วย|วิธีใช้|help|\?)$/.test(t))             return 'help';
   return '';
 }
@@ -453,7 +461,8 @@ function intakeHelpText_() {
          '   ลบ          ลบรายการล่าสุด\n' +
          '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
          '   งบ          สรุปรายรับรายจ่ายเดือนนี้\n' +
-         '   บัตร        ยอดบัตรเครดิตที่ต้องจ่าย';
+         '   บัตร        ยอดบัตรเครดิตที่ต้องจ่าย\n' +
+         '   ดิบ         ข้อความที่ OCR อ่านได้จากรูปล่าสุด';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -921,22 +930,26 @@ function intakeOcrUnitRe_() {
 }
 
 /**
- * บรรทัดหนึ่งในบิล → หนึ่งรายการ (null = ไม่ใช่รายการของ)
+ * บรรทัดหนึ่งในบิล → หนึ่งแถว
+ *   null                    ไม่ใช่แถวของบิล
+ *   { discount: true }      แถวส่วนลด — ไม่เอาเข้าชีต แต่ต้องนับไว้ให้ราคาเรียงตรงคอลัมน์
+ *   { item: {...} }         ได้ชื่อของพร้อมราคาครบในบรรทัดเดียว
+ *   { item: {...}, wait:1 } ได้ชื่อของ แต่ราคาอยู่คนละบรรทัด (รอคอลัมน์ราคา)
  *
  * บิลที่ร้านค้าพิมพ์มาเขียนคนละแบบกับที่คนพิมพ์เข้าไลน์เอง
  *   "1P นิสชินบะหมี่        10.00"
  * คือขึ้นต้นด้วยจำนวน+รหัสหมวด (1P / 1A / 2P) และ "ราคาอยู่ท้ายบรรทัด"
  *
- * โยนเข้าตัวแยกข้อความของทางพิมพ์ตรง ๆ จะพังสองอย่าง
+ * โยนเข้าตัวแยกข้อความของทางพิมพ์ตรง ๆ จะพลาดสองอย่าง
  *   1) หยิบ "1" จาก "1P" มาเป็นราคา ทิ้ง 10.00 ที่เป็นราคาจริง
  *      → ของ 10 บาทกลายเป็น 1 บาททุกบรรทัด
  *   2) แทะตัวเลขที่ติดมากับชื่อ "นิสชินไก่เผ็ด60ก" เหลือ "นิสชินไก่เผ็ด ก"
  *      แล้ว 60 กลายเป็นจำนวนที่ซื้อ
  *
- * ตรงนี้จึงอ่านเองทั้งบรรทัด: เลขท้ายสุดคือราคา เลขหน้ารหัสหมวดคือจำนวน
- * ที่เหลือคือชื่อ เก็บตามที่พิมพ์ในบิลเป๊ะ ๆ เจ้าของร้านจะได้ทานกับบิลได้
+ * และราคาต้องเป็น "คำแยก" เท่านั้น — เลขที่ติดกับตัวหนังสือคือขนาดซอง
+ * ไม่ใช่ราคา ("ผัดฉ่า75" = ขนาด 75 กรัม ราคา 10 บาทอยู่คนละบรรทัด)
  */
-function intakeOcrLine_(line) {
+function intakeOcrRow_(line) {
   var t = String(line || '').trim();
   if (!t) return null;
 
@@ -944,10 +957,12 @@ function intakeOcrLine_(line) {
   // ต้องเป็นตัวพิมพ์ใหญ่ตัวเดียว ไม่งั้น "3 kg หมู" จะโดนตัดจนน้ำหนักหาย
   // และเป็นละตินเท่านั้น ไม่งั้น "3 ถุง" จะโดนตัดด้วย
   var qty  = 0;
+  var coded = false;                 // บิลเขียนรหัสหมวดไว้ = แถวนี้เป็นรายการของแน่ ๆ
   var head = t.match(/^(\d{1,3})\s*[A-Z](?![A-Za-z])\s*/);
   if (head) {
-    qty = intakeNum_(head[1]);
-    t   = t.slice(head[0].length);
+    qty   = intakeNum_(head[1]);
+    t     = t.slice(head[0].length);
+    coded = true;
   } else {
     // บิลบางเจ้าไล่เลขไว้หน้าบรรทัดเฉย ๆ "1 หมูสามชั้น 285.00"
     // เลขแบบนี้ไม่รู้ว่าเลขบรรทัดหรือจำนวน จึงตัดออกจากชื่อแต่ไม่เอาไปลงเป็นจำนวน
@@ -959,23 +974,33 @@ function intakeOcrLine_(line) {
     }
   }
 
+  // ราคาต้องเป็นคำแยก — "ปลาดอลลี่ 68" ใช่ · "ผัดฉ่า75" ไม่ใช่ (75 คือขนาดซอง)
+  var m = t.match(/(?:^|(\s+))(-?\d[\d,]*(?:\.\d{1,2})?)\s*$/);
+
+  // บิลห้างที่เขียนรหัสหมวดมา ราคาในคอลัมน์ขวาพิมพ์ทศนิยมสองตำแหน่งเสมอ (10.00)
+  // เลขจำนวนเต็มโดด ๆ ท้ายชื่อจึงเป็นเศษของชื่อที่ OCR แยกคำพลาด
+  // ("มาม่าOKคาโบเผ็ด1" อ่านได้เป็น "มาม่า 0 K คาโบเผ็ด 1" — 1 ไม่ใช่ราคา)
+  // ปล่อยให้ไปรอราคาจากคอลัมน์แทน เว้นแต่เว้นวรรคห่างชัดว่าเป็นคนละคอลัมน์
+  if (m && coded && m[2].indexOf('.') === -1 && String(m[1] || '').length < 2) m = null;
+
   // บรรทัดส่วนลดของบิล — "1Pลด ย่าย่าSD ผัดฉ่า  -1.00"
-  // ตัดจำนวนไปแล้วจะเหลือขึ้นต้นด้วย "ลด" ข้ามไป ไม่ใช่ของที่ซื้อเข้า
-  if (/^ลด/.test(t)) return null;
+  // ตัดจำนวนไปแล้วจะเหลือขึ้นต้นด้วย "ลด" ไม่ใช่ของที่ซื้อเข้า แต่ยังต้องคืนแถวไป
+  // ให้ตัวเรียงคอลัมน์รู้ว่ามีแถวนี้อยู่ ไม่งั้นราคา -1.00 จะไปตกใส่ของชิ้นถัดไป
+  if (/^ลด/.test(t)) return { discount: true, wait: !m };
 
   // เขียนหน่วยเงินมาชัด ๆ ("ปลาดอลลี่ 68 บาท 800 กรัม") = โน้ตที่คนเขียนเอง
   // ไม่ใช่บิลพิมพ์ แบบนี้ตัวแยกข้อความปกติอ่านได้ดีกว่า เพราะคนเขียนคั่นหน่วยไว้ครบ
-  if (/(บาท|฿|บ\.|thb|baht)/i.test(t)) return intakeParseLine_(t);
+  if (/(บาท|฿|บ\.|thb|baht)/i.test(t)) {
+    var typed = intakeParseLine_(t);
+    return typed ? { item: typed } : null;
+  }
 
-  // ราคาอยู่ท้ายบรรทัด — ติดลบ = ส่วนลด/คืนของ ข้ามไป
-  var m = t.match(/(-?\d[\d,]*(?:\.\d{1,2})?)\s*$/);
-  if (!m) return null;
-  var baht = intakeNum_(m[1]);
-  if (!(baht > 0)) return null;
+  var baht = m ? intakeNum_(m[2]) : 0;
+  if (m && baht <= 0) return { discount: true };      // ติดลบ = ส่วนลด/คืนของ
 
   // น้ำหนัก/จำนวนที่เขียนแยกเป็นคำ ๆ ("หมูสามชั้น 2 กก. 450") ดึงออกมาจากชื่อ
   var bag  = intakeBag_();
-  var name = t.slice(0, m.index);
+  var name = m ? t.slice(0, m.index) : t;
   var re   = intakeOcrUnitRe_(), u;
   while ((u = re.exec(name)) !== null) {
     if (u[0] === '') { re.lastIndex++; continue; }   // กันวนไม่รู้จบ
@@ -995,7 +1020,11 @@ function intakeOcrLine_(line) {
              .replace(/^[\s*.·:;\-]+/, '').replace(/[\s*.·:;\-]+$/, '').trim();
   if (name.replace(/[^ก-๙a-z]/gi, '').length < 2) return null;   // ไม่เหลือชื่อของจริง ๆ
 
-  return {
+  // ไม่มีราคาในบรรทัด และบิลก็ไม่ได้เขียนรหัสหมวดไว้ = ไม่รู้ว่าเป็นแถวของหรือข้อความเฉย ๆ
+  // ปล่อยผ่านไปจะไปแย่งราคาจากคอลัมน์ขวาของชิ้นที่ใช่
+  if (!m && !coded) return null;
+
+  var item = {
     raw: name, baht: baht, gram: bag.gram,
     // จำนวนจากหน่วยในชื่อมาก่อน ไม่มีก็ใช้เลขหน้ารหัสหมวด
     // "1P" ไม่ต้องบอก มันคือค่าปกติของทุกบรรทัด บอกไปก็รกเปล่า ๆ
@@ -1003,6 +1032,21 @@ function intakeOcrLine_(line) {
     pay: '', expense: intakeIsExpense_(name), cash: false, rnd: false,
     saidMoney: true, saidUnit: bag.saidUnit
   };
+  return m ? { item: item } : { item: item, wait: true };
+}
+
+/**
+ * เอาตัวเลขจากคอลัมน์ราคาไปใส่แถวที่รออยู่ตัวแรก (เรียงตามลำดับในบิล)
+ * ไม่มีแถวไหนรอแล้ว = เก็บไว้ใน spare เผื่อบิลเรียงคอลัมน์ราคาไว้ก่อนชื่อ
+ */
+function intakeOcrFill_(rows, spare, n) {
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].wait) continue;
+    rows[i].wait = false;
+    if (rows[i].item && n > 0) rows[i].item.baht = n;   // ติดลบ = ส่วนลด ไม่ใช่ราคาของ
+    return;
+  }
+  spare.push(n);
 }
 
 /**
@@ -1116,6 +1160,19 @@ function intakeOcrImage_(blob) {
   };
 }
 
+/**
+ * ข้อความดิบจาก OCR ของรูปล่าสุด — พิมพ์ "ดิบ" ในไลน์เพื่อดู
+ * มีไว้ตอบคำถามเดียว: ที่ลงผิดเป็นเพราะ OCR อ่านตัวหนังสือมั่ว
+ * หรือ OCR อ่านถูกแล้วแต่ตัวแยกข้อความจับผิด — คนละปัญหา คนละวิธีแก้
+ */
+function intakeLastRaw_() {
+  var raw = String(intakeProp_('INTAKE_LAST_RAW', '') || '').trim();
+  if (!raw) return '📷 ยังไม่มีรูปที่เพิ่งอ่านครับ\nส่งรูปบิลมาก่อน แล้วพิมพ์ "ดิบ" อีกที';
+  var show = raw.slice(0, 1500);
+  return '📄 ข้อความที่ OCR อ่านได้จากรูปล่าสุด\n\n' + show +
+         (raw.length > show.length ? '\n…(ยาวกว่านี้)' : '');
+}
+
 /** ยอดรวมที่บิลเขียนไว้เอง — ไม่เจอคืน 0 */
 function intakeOcrTotal_(text) {
   var lines = String(text || '').split(/[\n\r]+/);
@@ -1147,35 +1204,62 @@ function intakeOcrCheckSum_(text, items) {
          intakeMoney_(total) + ' บาท (ต่าง ' + intakeMoney_(Math.abs(diff)) + ')' +
          (diff > 0 ? '\nน่าจะเป็นเพราะบิลมีส่วนลด — ส่วนลดไม่ใช่ของที่ซื้อ เลยไม่ได้บันทึก'
                    : '\nน่าจะอ่านตกไปบางบรรทัด') +
-         '\nถ้าอยากให้ตรงเป๊ะ พิมพ์ "ลบ" แล้วพิมพ์เองอีกที';
+         '\nอยากรู้ว่า OCR อ่านอะไรได้บ้าง พิมพ์ "ดิบ" · จะพิมพ์เองก็พิมพ์ "ลบ" ก่อน';
 }
 
-/** ข้อความดิบจาก OCR → รายการของ (กรองบรรทัดขยะของบิลออกก่อน) */
+/**
+ * ข้อความดิบจาก OCR → รายการของ
+ *
+ * บิลที่ช่องราคาห่างจากชื่อมาก ๆ (บิลห้างส่วนใหญ่) OCR จะแยกราคาไปไว้คนละบรรทัด
+ * ได้ออกมาเป็นชื่อของเรียงกันเป็นพืด แล้วตามด้วยราคาเรียงกันอีกพืด
+ * ถ้าอ่านทีละบรรทัดแบบตรง ๆ จะไม่เจอราคาสักตัว
+ *
+ * ตรงนี้จึงเก็บ "แถว" ไว้ตามลำดับในบิล แล้วค่อยเอาตัวเลขจากคอลัมน์ราคา
+ * มาเติมให้แถวที่รออยู่ตัวแรกไปเรื่อย ๆ — บิลจะเรียงแบบไหนก็ตรงกัน
+ * แถวส่วนลดต้องนับด้วย ไม่งั้น -1.00 จะไปตกใส่ของชิ้นถัดไป
+ */
 function intakeOcrItems_(text) {
   var lines = String(text || '').split(/[\n\r]+/);
-  var out   = [];
-  var i;
+  var rows  = [], spare = [], i, j;
 
-  for (i = 0; i < lines.length && out.length < INTAKE_MAX_ITEMS; i++) {
+  for (i = 0; i < lines.length; i++) {
     var t = lines[i].trim();
     if (!t) continue;
     if (INTAKE_OCR_SKIP.test(t)) continue;
     if (/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}/.test(t)) continue;   // วันที่
     if (/^\d{1,2}:\d{2}/.test(t)) continue;                       // เวลา
+
+    // บรรทัดที่มีแต่ตัวเลขล้วน = คอลัมน์ราคาที่ OCR แยกออกมาไว้ต่างหาก
+    if (/^[-\d.,\s]+$/.test(t)) {
+      var nums = t.match(/-?\d[\d,]*(?:\.\d{1,2})?/g) || [];
+      for (j = 0; j < nums.length; j++) intakeOcrFill_(rows, spare, intakeNum_(nums[j]));
+      continue;
+    }
+
     if (!/[ก-๙a-z]/i.test(t)) continue;                           // ไม่มีตัวหนังสือเลย
     if (intakeOcrJunkLine_(t)) continue;                          // ชื่อร้าน/รหัสล้วน ๆ
 
-    var one = intakeOcrLine_(t);
-    // เศษตัวอักษรเดี่ยว ๆ จาก OCR ไม่ใช่ชื่อของ
-    if (one && String(one.raw).length >= 2) out.push(one);
+    var row = intakeOcrRow_(t);
+    if (row) rows.push(row);
+  }
+
+  // ยังมีแถวที่รอราคา และมีตัวเลขเหลือ = บิลใบนี้ OCR อ่านคอลัมน์ราคาขึ้นมาก่อนชื่อ
+  for (i = 0; i < rows.length && spare.length; i++) {
+    if (rows[i].wait) intakeOcrFill_([rows[i]], [], spare.shift());
   }
 
   // วิธีจ่ายอ่านจากบิลทั้งใบ ไม่ใช่รายบรรทัด — บิลเขียนไว้ท้ายใบใบเดียวสำหรับทุกรายการ
   var pay  = intakeOcrPay_(text);
   var cash = intakeOcrCash_(text);
-  for (i = 0; i < out.length; i++) {
-    out[i].pay  = out[i].pay || pay;
-    out[i].cash = out[i].cash || cash;
+  var out  = [];
+
+  for (i = 0; i < rows.length && out.length < INTAKE_MAX_ITEMS; i++) {
+    var it = rows[i].discount ? null : rows[i].item;
+    if (!it || !(it.baht > 0)) continue;             // ไม่มีราคา = ไม่รู้ว่าจ่ายไปเท่าไหร่
+    if (String(it.raw).length < 2) continue;         // เศษตัวอักษรเดี่ยว ๆ ไม่ใช่ชื่อของ
+    it.pay  = it.pay || pay;
+    it.cash = it.cash || cash;
+    out.push(it);
   }
 
   return out;
