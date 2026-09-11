@@ -1173,16 +1173,27 @@ function intakeLastRaw_() {
          (raw.length > show.length ? '\n…(ยาวกว่านี้)' : '');
 }
 
-/** ยอดรวมที่บิลเขียนไว้เอง — ไม่เจอคืน 0 */
-function intakeOcrTotal_(text) {
+/** บรรทัดยอดรวมของบิล (ถ้ามี) — "Total (10ชิ้น)*****93.00" */
+function intakeOcrTotalLine_(text) {
   var lines = String(text || '').split(/[\n\r]+/);
   var re = /(total|รวมทั้งสิ้น|ยอดรวม|รวมเงิน|ยอดสุทธิ|รวมสุทธิ|จำนวนเงินรวม)/i;
-  for (var i = 0; i < lines.length; i++) {
-    if (!re.test(lines[i])) continue;
-    var m = lines[i].match(/(\d[\d,]*(?:\.\d{1,2})?)\s*$/);
-    if (m) return intakeNum_(m[1]);
-  }
-  return 0;
+  for (var i = 0; i < lines.length; i++) if (re.test(lines[i])) return lines[i];
+  return '';
+}
+
+/** ยอดรวมที่บิลเขียนไว้เอง — ไม่เจอคืน 0 */
+function intakeOcrTotal_(text) {
+  var m = intakeOcrTotalLine_(text).match(/(\d[\d,]*(?:\.\d{1,2})?)\s*$/);
+  return m ? intakeNum_(m[1]) : 0;
+}
+
+/**
+ * จำนวนชิ้นที่บิลเขียนไว้เอง — "Total (10ชิ้น)" · "รวม 12 รายการ"
+ * เป็นตัวทานที่ตรงกว่ายอดเงิน เพราะส่วนลดไม่ทำให้จำนวนชิ้นเพี้ยน
+ */
+function intakeOcrCount_(text) {
+  var m = intakeOcrTotalLine_(text).match(/(\d{1,3})\s*(ชิ้น|รายการ|items?|pcs?)/i);
+  return m ? intakeNum_(m[1]) : 0;
 }
 
 /**
@@ -1193,18 +1204,35 @@ function intakeOcrTotal_(text) {
  */
 function intakeOcrCheckSum_(text, items) {
   var total = intakeOcrTotal_(text);
-  if (!total) return '';
+  var count = intakeOcrCount_(text);
+  if (!total && !count) return '';
 
   var sum = 0;
   for (var i = 0; i < items.length; i++) sum += Number(items[i].baht) || 0;
-  var diff = Math.round((sum - total) * 100) / 100;
-  if (Math.abs(diff) < 1) return '';
+  var diff  = total ? Math.round((sum - total) * 100) / 100 : 0;
+  var short = count ? count - items.length : 0;   // บิลบอกกี่ชิ้น แยกได้กี่ชิ้น
+  if (Math.abs(diff) < 1 && !short) return '';
 
-  return '\n⚠️ รวมรายการได้ ' + intakeMoney_(sum) + ' บาท แต่บิลเขียนยอด ' +
-         intakeMoney_(total) + ' บาท (ต่าง ' + intakeMoney_(Math.abs(diff)) + ')' +
-         (diff > 0 ? '\nน่าจะเป็นเพราะบิลมีส่วนลด — ส่วนลดไม่ใช่ของที่ซื้อ เลยไม่ได้บันทึก'
-                   : '\nน่าจะอ่านตกไปบางบรรทัด') +
-         '\nอยากรู้ว่า OCR อ่านอะไรได้บ้าง พิมพ์ "ดิบ" · จะพิมพ์เองก็พิมพ์ "ลบ" ก่อน';
+  var out = '';
+  // จำนวนชิ้นทานตรงกว่ายอดเงิน เพราะส่วนลดไม่ทำให้จำนวนชิ้นเพี้ยน
+  if (short > 0) {
+    out += '\n⚠️ บิลบอกว่ามี ' + count + ' ชิ้น แต่แยกได้ ' + items.length +
+           ' — อ่านตกไป ' + short + ' รายการ';
+  } else if (short < 0) {
+    out += '\n⚠️ บิลบอกว่ามี ' + count + ' ชิ้น แต่แยกได้ ' + items.length +
+           ' — น่าจะมีบรรทัดที่ไม่ใช่ของปนมา';
+  }
+  if (Math.abs(diff) >= 1) {
+    out += (out ? '\n' : '\n⚠️ ') + 'รวมรายการได้ ' + intakeMoney_(sum) +
+           ' บาท แต่บิลเขียนยอด ' + intakeMoney_(total) +
+           ' บาท (ต่าง ' + intakeMoney_(Math.abs(diff)) + ')';
+    if (!short) {
+      out += diff > 0
+        ? '\nน่าจะเป็นเพราะบิลมีส่วนลด — ส่วนลดไม่ใช่ของที่ซื้อ เลยไม่ได้บันทึก'
+        : '\nน่าจะอ่านตกไปบางบรรทัด';
+    }
+  }
+  return out + '\nอยากรู้ว่า OCR อ่านอะไรได้บ้าง พิมพ์ "ดิบ" · จะพิมพ์เองก็พิมพ์ "ลบ" ก่อน';
 }
 
 /**
