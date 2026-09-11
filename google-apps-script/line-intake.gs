@@ -202,6 +202,7 @@ function intakeOnText_(ev, ctx) {
     case 'card':  intakeReply_(ctx, intakeAccounting_('card'));  return;
     case 'loss':  intakeReply_(ctx, intakeAccounting_('loss'));  return;
     case 'raw':   intakeReply_(ctx, intakeLastRaw_());           return;
+    case 'confirm': intakeReply_(ctx, intakeConfirm_(ctx));        return;
   }
 
   var stripped = intakeStripPrefix_(raw);
@@ -299,8 +300,61 @@ function intakeOnImage_(ev, ctx) {
     return;
   }
 
+  // บิลเขียนจำนวนชิ้นไว้เอง ("Total (10ชิ้น)") แต่แยกได้ไม่ครบ = OCR อ่านตกบรรทัด
+  // ตรงนี้ห้ามบันทึกเด็ดขาด เพราะเวลาอ่านตก ราคาจะเลื่อนไปใส่ของผิดชิ้นแบบเนียน ๆ
+  // (15 บาทไปอยู่กับของที่จริง ๆ 7 บาท) มองไม่ออกว่าผิด แล้วต้นทุนขายจะเพี้ยนยาว
+  // ค้างไว้ให้เจ้าของร้านดูก่อน จะเอาตามนี้ก็พิมพ์ "ยืนยัน"
+  var want = intakeOcrCount_(read.raw);
+  if (want && want !== read.items.length) {
+    intakeHold_(read.items);
+    intakeReply_(ctx, intakeHoldText_(read, want));
+    return;
+  }
+
   var summary = intakeSaveAndSummarize_(read.items, ctx, 'รูป', '');
   intakeReply_(ctx, summary + (read.note ? '\n\n📝 ' + read.note : ''));
+}
+
+/** พักรายการที่อ่านได้ไม่ครบไว้ก่อน รอเจ้าของร้านพิมพ์ "ยืนยัน" */
+function intakeHold_(items) {
+  try {
+    intakeProps_().setProperty('INTAKE_PEND',
+      JSON.stringify({ at: new Date().getTime(), items: items }));
+  } catch (e) {}
+}
+
+function intakeHoldText_(read, want) {
+  var lines = [], i;
+  for (i = 0; i < read.items.length; i++) {
+    lines.push('• ' + read.items[i].raw + ' — ' + intakeMoney_(read.items[i].baht) + ' บาท');
+  }
+  return '⛔ ยังไม่บันทึกให้ครับ — อ่านบิลได้ไม่ครบ\n\n' +
+         'บิลบอกว่ามี ' + want + ' ชิ้น แต่ผมแยกได้ ' + read.items.length + ' ชิ้น\n' +
+         'เวลาอ่านตกบรรทัด ราคาจะเลื่อนไปใส่ของผิดชิ้นโดยที่ดูไม่ออก\n' +
+         'บันทึกไปแล้วต้นทุนจะเพี้ยนแบบหาไม่เจอ เลยขอไม่บันทึกไว้ก่อน\n\n' +
+         'ที่อ่านได้:\n' + lines.join('\n') + '\n\n' +
+         'ทำต่อได้ 3 ทาง\n' +
+         '1. ตรวจแล้วโอเค → พิมพ์ "ยืนยัน" บันทึกตามนี้เลย\n' +
+         '2. พิมพ์รายการเองในไลน์ (บรรทัดละอย่าง)\n' +
+         '3. อยากให้อ่านรูปแม่นกว่านี้ → ตั้ง ANTHROPIC_API_KEY (~1 บาท/รูป)\n\n' +
+         'พิมพ์ "ดิบ" ดูได้ว่า OCR อ่านตัวหนังสืออะไรมาบ้าง';
+}
+
+/** พิมพ์ "ยืนยัน" หลังบอทพักรายการไว้ — บันทึกตามที่อ่านได้ */
+function intakeConfirm_(ctx) {
+  var raw = intakeProp_('INTAKE_PEND', '');
+  var pend = null;
+  try { pend = JSON.parse(raw || 'null'); } catch (e) {}
+  if (!pend || !pend.items || !pend.items.length) {
+    return 'ไม่มีรายการค้างอยู่ครับ — ส่งรูปบิลหรือพิมพ์รายการมาได้เลย';
+  }
+  // ค้างข้ามวันแล้วไม่ควรบันทึก เดี๋ยวไปลงวันผิด
+  if (new Date().getTime() - Number(pend.at || 0) > 6 * 60 * 60 * 1000) {
+    intakeProps_().deleteProperty('INTAKE_PEND');
+    return 'รายการที่ค้างไว้เก่าเกิน 6 ชั่วโมงแล้ว ส่งรูปมาใหม่อีกทีนะครับ';
+  }
+  intakeProps_().deleteProperty('INTAKE_PEND');
+  return intakeSaveAndSummarize_(pend.items, ctx, 'รูป', '');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -416,6 +470,7 @@ function intakeCommandOf_(text) {
   if (/^(บัตร|บัตรเครดิต|รอบบัตร|ยอดบัตร)$/.test(t))           return 'card';
   if (/^(ของหาย|ของขาด|เช็คของหาย|ตรวจของหาย)$/.test(t))       return 'loss';
   if (/^(ดิบ|ข้อความดิบ|อ่านได้ว่า|raw|ocr)$/.test(t))          return 'raw';
+  if (/^(ยืนยัน|ยืนยันเลย|บันทึกเลย|เอาตามนี้|confirm)$/.test(t)) return 'confirm';
   if (/^(ช่วย|ช่วยด้วย|วิธีใช้|help|\?)$/.test(t))             return 'help';
   return '';
 }
@@ -462,7 +517,8 @@ function intakeHelpText_() {
          '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
          '   งบ          สรุปรายรับรายจ่ายเดือนนี้\n' +
          '   บัตร        ยอดบัตรเครดิตที่ต้องจ่าย\n' +
-         '   ดิบ         ข้อความที่ OCR อ่านได้จากรูปล่าสุด';
+         '   ดิบ         ข้อความที่ OCR อ่านได้จากรูปล่าสุด\n' +
+         '   ยืนยัน       บันทึกรายการที่บอทพักไว้ (ตอนอ่านบิลได้ไม่ครบ)';
 }
 
 // ══════════════════════════════════════════════════════════════
