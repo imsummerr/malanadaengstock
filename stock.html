@@ -348,6 +348,14 @@ const itemOf = n => D.items.find(i => i.name === n) || null;
    เว้นว่าง = ใช้ได้ทั้งสองที่ */
 const SCOPE_CENTRAL = 'ครัวกลาง', SCOPE_SHOP = 'ร้าน';
 
+/* ชนิดสินค้า — ของไหลผ่าน 3 ชั้น
+     วัตถุดิบ ซื้อเป็นโล เข้าครัวกลาง → ของแพ็ค นับเป็นแพ็ค → ส่งร้าน */
+const KIND_RAW = 'วัตถุดิบ';
+const isRaw    = i => i.kind === KIND_RAW;
+const rawItems = () => D.items.filter(isRaw);
+/** ของที่ส่งร้าน/ขายได้ — ไม่รวมวัตถุดิบ เพราะยังแพ็คไม่ได้ ขายไม่ได้ */
+const packedItems = loc => itemsFor(loc).filter(i => !isRaw(i));
+
 /** สินค้าที่ลงได้ที่สถานที่นี้ */
 function itemsFor(loc) {
   const want = (loc === D.central) ? SCOPE_CENTRAL : SCOPE_SHOP;
@@ -391,6 +399,7 @@ function balOf(loc, name) {
 const TABS = [
   { id: 'stock',   label: '📦 สต็อกคงเหลือ',  who: 'owner'   },
   { id: 'in',      label: '📥 ของเข้าครัวกลาง', who: 'central' },
+  { id: 'pack',    label: '🔪 แพ็คของ',        who: 'central' },
   { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
   { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
   { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    }
@@ -420,6 +429,7 @@ function render() {
   }
   if (tab === 'stock')  return viewStock(v);
   if (tab === 'in')     return viewMove(v, 'in');
+  if (tab === 'pack')   return viewPack(v);
   if (tab === 'toshop') return viewMove(v, 'toshop');
   if (tab === 'waste')  return viewMove(v, 'waste');
   if (tab === 'count')  return viewCount(v);
@@ -519,7 +529,8 @@ function fillItems() {
   const locEl = document.getElementById('f-loc');
   const loc = locEl ? locEl.value : D.central;
   const keep = sel.value;
-  const list = itemsFor(loc);
+  // ของเข้าร้าน/ของเสีย เลือกได้แต่ของที่แพ็คแล้ว วัตถุดิบอยู่แค่ในแท็บแพ็คของ
+  const list = (tab === 'in') ? itemsFor(loc) : packedItems(loc);
   sel.innerHTML = list.length
     ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
     : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
@@ -599,6 +610,127 @@ async function submitMove(kind) {
   }
   btn.disabled = false;
   btn.innerHTML = c.btn;
+}
+
+/* ── แพ็คของ — ตัดวัตถุดิบ เพิ่มของแพ็ค ── */
+
+/** ของแพ็คที่ครัวกลางทำได้ */
+const packOutputs = () => packedItems(D.central);
+
+function viewPack(v) {
+  const outs = packOutputs(), raws = rawItems();
+
+  v.innerHTML = `<div class="card">
+    <h2>🔪 แพ็คของ</h2>
+    <p class="lead">เอาวัตถุดิบมาเสียบไม้หรือใส่ถุง ระบบตัดของดิบแล้วเพิ่มของแพ็คให้</p>
+
+    <label class="fld">แพ็คเป็นอะไร</label>
+    <select id="k-out" onchange="syncPack()">${outs.map(i =>
+      `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}</select>
+
+    <div class="row2">
+      <div><label class="fld">แพ็ค</label>
+        <input id="k-packs" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()"></div>
+      <div><label class="fld" id="k-lbl-rem">เศษ</label>
+        <input id="k-rem" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()"></div>
+    </div>
+
+    <label class="fld">ใช้วัตถุดิบอะไร <span class="note">(เว้นว่างได้ ถ้าซื้อมาแพ็คแล้ว)</span></label>
+    <select id="k-raw" onchange="syncPack()">
+      <option value="">— ไม่ได้ตัดจากของดิบ —</option>
+      ${raws.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
+    </select>
+
+    <label class="fld" id="k-lbl-raw">ใช้ไปเท่าไหร่</label>
+    <input id="k-rawqty" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()">
+
+    <label class="fld">หมายเหตุ</label>
+    <input id="k-note" placeholder="เช่น ถุงละ 30 กรัม">
+
+    <div class="calcbox" id="k-calc"></div>
+    <button class="key btn-red submit" id="k-btn" onclick="submitPack()">บันทึกการแพ็ค</button>
+    ${outs.length ? '' : '<p class="note">— ยังไม่มีรายการให้แพ็ค —</p>'}
+  </div>`;
+
+  syncPack();
+}
+
+function syncPack() {
+  const it = itemOf(document.getElementById('k-out').value);
+  if (it) {
+    document.getElementById('k-lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
+    const pk = document.getElementById('k-packs');
+    if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
+    // ของส่วนใหญ่ผูกวัตถุดิบไว้แล้วในชีต เลือกให้อัตโนมัติ จะได้ไม่ต้องหาเอง
+    const sel = document.getElementById('k-raw');
+    if (it.raw && !sel.value && [...sel.options].some(o => o.value === it.raw)) sel.value = it.raw;
+  }
+  const raw = itemOf(document.getElementById('k-raw').value);
+  document.getElementById('k-lbl-raw').textContent =
+    raw ? `ใช้ ${raw.name} ไปเท่าไหร่ (${raw.subUnit})` : 'ใช้ไปเท่าไหร่';
+  document.getElementById('k-rawqty').disabled = !raw;
+  calcPack();
+}
+
+function calcPack() {
+  const box = document.getElementById('k-calc');
+  if (!box) return;
+  const it = itemOf(document.getElementById('k-out').value);
+  if (!it) { box.innerHTML = ''; return; }
+
+  const made = toBase(document.getElementById('k-packs').value,
+                      document.getElementById('k-rem').value, it.perPack);
+  const raw = itemOf(document.getElementById('k-raw').value);
+  const used = Number(document.getElementById('k-rawqty').value) || 0;
+
+  if (!(made > 0)) { box.innerHTML = '<div class="sub">กรอกจำนวนที่แพ็คได้</div>'; return; }
+
+  let html = `<div class="big">${esc(fmtPack(made, it))}</div>`;
+  if (it.perPack > 1) {
+    html += `<div class="sub">= ${made} ${esc(it.subUnit)} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)})</div>`;
+  }
+  // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน พนักงานเห็นแค่ผลแปลงหน่วยของที่ตัวเองกรอก
+  if (raw && used > 0 && isOwner()) {
+    const have = balOf(D.central, raw.name);
+    const left = have - used;
+    html += `<div class="sub">${esc(raw.name)} ${esc(fmtPack(have, raw))} → เหลือ <b>${esc(fmtPack(left, raw))}</b>` +
+            (left < 0 ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
+  } else if (raw && used > 0) {
+    html += `<div class="sub">ตัด ${esc(raw.name)} ออก ${used} ${esc(raw.subUnit)}</div>`;
+  }
+  box.innerHTML = html;
+}
+
+async function submitPack() {
+  const it = itemOf(document.getElementById('k-out').value);
+  if (!it) return toast('เลือกของที่จะแพ็คก่อน');
+  const packs = document.getElementById('k-packs').value;
+  const rem   = document.getElementById('k-rem').value;
+  if (!(toBase(packs, rem, it.perPack) > 0)) return toast('กรอกจำนวนที่แพ็คได้ก่อน');
+
+  const rawName = document.getElementById('k-raw').value;
+  const rawQty  = document.getElementById('k-rawqty').value;
+  if (rawName && !(Number(rawQty) > 0)) return toast('กรอกว่าใช้วัตถุดิบไปเท่าไหร่');
+
+  const btn = document.getElementById('k-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
+  try {
+    const r = await apiPost({ action: 'stockPack', item: it.name, packs, rem,
+                              raw: rawName, rawQty, note: document.getElementById('k-note').value });
+    toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
+          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
+    document.getElementById('k-packs').value = '';
+    document.getElementById('k-rem').value = '';
+    document.getElementById('k-rawqty').value = '';
+    document.getElementById('k-note').value = '';
+    await loadData();
+    calcPack();
+  } catch (e) {
+    toast('❌ ' + esc(e.message), 6000);
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'บันทึกการแพ็ค';
 }
 
 /* ── เช็คสต็อกรายสัปดาห์ — บังคับนับให้ครบ ── */

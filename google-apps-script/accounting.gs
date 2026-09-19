@@ -275,8 +275,15 @@ function accFromOrders_(year) {
  * ยอดโอนจริงกับค่าคอมมิชชั่น ให้กรอกในชีตบัญชี_รายการเพิ่ม
  */
 function accFromDelivery_(year) {
+  // ราคาดึงจากแคตตาล็อกใน pos-backend.gs ถ้าไม่มีก็ใช้ราคาส่วนใหญ่
+  var table = {};
+  if (typeof itemCatalogue_ === 'function') {
+    try {
+      itemCatalogue_().forEach(function (it) { if (it.price) table[it.name] = it.price; });
+    } catch (e) { Logger.log('accFromDelivery_ อ่านแคตตาล็อกไม่ได้: ' + e.message); }
+  }
   var priceOf = function (name) {
-    if (typeof PRICE_LIST === 'object' && PRICE_LIST && PRICE_LIST[name] !== undefined) return PRICE_LIST[name];
+    if (table[name] !== undefined) return table[name];
     return (typeof PRICE_DEFAULT === 'number') ? PRICE_DEFAULT : 10;
   };
 

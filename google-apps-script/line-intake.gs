@@ -717,8 +717,15 @@ function intakeItemNames_() {
  * คืน null ถ้าเดาไม่ได้ — ยอมไม่ลงดีกว่าลงตัวเลขมั่ว เพราะชีตนี้เอาไปคิด
  * ยอดคงเหลือ ลงผิดทีเดียวยอดเพี้ยนยาวจนกว่าจะนับสต็อกใหม่
  */
-function intakeStockQty_(item, counts) {
-  if (!item || !counts || !counts.length) return null;
+function intakeStockQty_(item, counts, gram) {
+  if (!item) return null;
+
+  // วัตถุดิบซื้อเป็นโล — น้ำหนักที่พิมพ์มาคือจำนวนที่เข้าครัวกลางเลย
+  // ไม่ต้องรอให้บอกเป็นไม้/ถุง เพราะของดิบยังไม่ได้แพ็ค
+  if (item.kind === 'วัตถุดิบ' && gram > 0) {
+    return { base: Math.round(gram / 1000 * 1000) / 1000, packs: 0, per: 1 };
+  }
+  if (!counts || !counts.length) return null;
 
   var sub = intakeNorm_(item.subUnit), pack = intakeNorm_(item.packUnit);
   var base = 0, packs = 0, i, u;
@@ -1118,6 +1125,17 @@ function intakeParseJson_(text) {
 //  บันทึกลงชีต
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * ชื่อสั้นของวัตถุดิบ — "สันคอ (โล)" → "สันคอ"
+ * คืนค่าว่างถ้าไม่ใช่วัตถุดิบ หรือชื่อไม่ได้ลงท้ายแบบนั้น
+ */
+function intakeRawBase_(item) {
+  if (!item || item.kind !== 'วัตถุดิบ') return '';
+  var suffix = (typeof RAW_SUFFIX === 'string') ? RAW_SUFFIX : ' (โล)';
+  var n = String(item.name || '');
+  return n.slice(-suffix.length) === suffix ? n.slice(0, -suffix.length).trim() : '';
+}
+
 /** ชีตปลายทาง — สร้างให้ถ้ายังไม่มี และเติมหัวตารางถ้าชีตยังว่าง */
 function intakeSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1229,9 +1247,15 @@ function intakePayTag_(pay) {
  */
 function intakeSaveAndSummarize_(items, ctx, source, rawText) {
   var stockItems = intakeStockItems_();
-  var names = stockItems.map(function (x) { return x.name; });
-  var byName = {};
-  stockItems.forEach(function (x) { byName[x.name] = x; });
+  var names = [], byName = {};
+  stockItems.forEach(function (x) {
+    names.push(x.name);
+    byName[x.name] = x;
+    // วัตถุดิบในชีตชื่อ "สันคอ (โล)" แต่ในไลน์คนพิมพ์ว่า "สันคอ" เฉย ๆ
+    // ใส่ชื่อสั้นเป็นตัวช่วยจับคู่ด้วย แล้วค่อยแปลงกลับเป็นชื่อจริงตอนบันทึก
+    var base = intakeRawBase_(x);
+    if (base && !byName[base]) { names.push(base); byName[base] = x; }
+  });
 
   var buyLines = [], expLines = [], stockLines = [], rndLines = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
@@ -1271,6 +1295,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
         if (!buySheet) { buySheet = intakeSheet_(); buySeq = intakeSeqOf_(buySheet, date); }
         buySeq++;
         var hit   = intakeMatchItem_(it.raw, names);
+        // จับได้ด้วยชื่อสั้นของวัตถุดิบ — เก็บชื่อจริงลงชีต จะได้ตรงกับรายการสินค้า
+        if (hit.matched && byName[hit.name]) hit.name = byName[hit.name].name;
         var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
         var kind  = it.rnd ? INTAKE_KIND_RND : INTAKE_KIND_STOCK;
         buyRows.push([
@@ -1295,7 +1321,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText) {
 
         // บอกจำนวนหน่วยย่อยมาด้วย ("ได้ 26 ไม้") → ลงของเข้าครัวกลางให้เลย
         // ยอดสต็อกคงเหลือจะขยับตาม และบอทของเข้าจะแจ้งวันหมดอายุให้เอง
-        var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts) : null;
+        var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts, it.gram) : null;
         if (q && q.base > 0) {
           var srow = intakeAddStockIn_(byName[hit.name], q, ctx);
           if (srow) {

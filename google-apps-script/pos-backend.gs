@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-10 · กราฟช่วงเวลา + ค่าใช้จ่าย + พนักงานหลายสถานที่';
+var BACKEND_VERSION = '2026-09-19 · วัตถุดิบ → แพ็คของ → ส่งร้าน';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -184,6 +184,7 @@ function doPost(e) {
       case 'stockToShop': return json_(handleStockToShop_(body));
       case 'stockWaste':  return json_(handleStockWaste_(body));
       case 'stockCount':  return json_(handleStockCount_(body));
+      case 'stockPack':   return json_(handleStockPack_(body));
       default:         return json_({ success: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -222,7 +223,7 @@ function handleVersion_() {
     version: BACKEND_VERSION,
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockBootstrap'],
+              'stockPack', 'stockBootstrap'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -1111,6 +1112,7 @@ var SHEET_ITEMS    = 'รายการสินค้า';
 var SHEET_INCOMING = 'จำนวนของเข้า';
 var SHEET_COUNT    = 'เช็คสต็อกรายสัปดาห์';
 var SHEET_WASTE    = 'ของเสีย';
+var SHEET_PACK     = 'แพ็คของ';      // ครัวกลางเอาวัตถุดิบมาแพ็ค — ตัดของดิบ เพิ่มของแพ็ค
 
 var CENTRAL = 'ครัวกลาง';
 
@@ -1118,7 +1120,15 @@ var CENTRAL = 'ครัวกลาง';
 // (สาขาเก็บของน้อยกว่าครัวกลางมาก ปกติควรตั้งให้ต่ำกว่า)
 var ITEM_COLS = ['สินค้า', 'หน่วยย่อย', 'หน่วยแพ็ค', 'หน่วยย่อยต่อแพ็ค',
                  'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)',
-                 'เตือนสาขาเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'หมายเหตุ'];
+                 'เตือนสาขาเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'ชนิด', 'วัตถุดิบ', 'หมายเหตุ'];
+
+// ค่าที่ใส่ได้ในคอลัมน์ "ชนิด"
+//   วัตถุดิบ = ซื้อมาเป็นโล ยังแพ็คไม่ได้ มีเฉพาะครัวกลาง
+//   ของแพ็ค = แพ็คเสร็จแล้ว นับเป็นแพ็ค ส่งร้านได้
+//   ของใช้   = ช้อน ถุง ผงปรุง ไม่ได้ขายเป็นชิ้น
+var KIND_RAW    = 'วัตถุดิบ';
+var KIND_PACKED = 'ของแพ็ค';
+var KIND_SUPPLY = 'ของใช้';
 
 // ค่าที่ใส่ได้ในคอลัมน์ "ใช้ที่" — เว้นว่าง = ใช้ทุกที่
 //   ครัวกลาง = ของที่มีเฉพาะครัวกลาง เช่น วัตถุดิบดิบ ผงปรุง ของใช้
@@ -1129,6 +1139,15 @@ var SCOPE_SHOP    = 'ร้าน';
 // คอลัมน์ที่ทุกชีตประวัติต้องมี — ของเดิม 7 ตัวแรก ที่เพิ่มคือ 4 ตัวหลัง
 var MOVE_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ตรวจ', 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ',
                  'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค', 'ประเภท'];
+
+// ชีต "แพ็คของ" — 1 แถวกระทบ 2 รายการพร้อมกัน จึงมีช่องวัตถุดิบเพิ่มมา
+//   ตัดวัตถุดิบออกเท่า "จำนวนวัตถุดิบ" แล้วเพิ่มของแพ็คเข้าเท่า "จำนวน"
+// แยกชีตไว้ต่างหาก ไม่ปนกับ "จำนวนของเข้า" เพราะบอทแจ้งของเข้า/วันหมดอายุ
+// อ่านชีตนั้นอยู่ ถ้าเอาแถวติดลบไปใส่ มันจะไปแจ้งว่า "ของเข้าใหม่ -0.9 กก."
+var PACK_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ตรวจ',
+                 'วัตถุดิบ', 'จำนวนวัตถุดิบ', 'หน่วยวัตถุดิบ',
+                 'รายการ', 'จำนวน', 'หน่วย', 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค',
+                 'หมายเหตุ', 'ประเภท'];
 
 /**
  * หาคอลัมน์ตามชื่อหัวตาราง ถ้าไม่มีก็ต่อท้ายให้ — ไม่แตะคอลัมน์เดิม ไม่สลับลำดับ
@@ -1260,6 +1279,8 @@ function getStockItemsRaw_() {
       perPack:  per > 0 ? per : 1,
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
+      kind:     String(v[i][map['ชนิด']] || '').trim(),
+      raw:      String(v[i][map['วัตถุดิบ']] || '').trim(),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim()
     });
@@ -1301,6 +1322,33 @@ function readMovesRaw_(sheetName) {
       item: name,
       qty:  Number(v[i][map['จำนวน']]) || 0,
       kind: String(v[i][map['ประเภท']] || '').trim()
+    });
+  }
+  return out;
+}
+
+/** อ่านชีตแพ็คของ */
+function readPacks_() {
+  return cached_('packs', readPacksRaw_);
+}
+
+function readPacksRaw_() {
+  var sh = sheet_(SHEET_PACK);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var map = ensureCols_(sh, PACK_COLS);
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var item = String(v[i][map['รายการ']] || '').trim();
+    var raw  = String(v[i][map['วัตถุดิบ']] || '').trim();
+    if (!item && !raw) continue;
+    out.push({
+      when:   v[i][map['วันที่เวลา']],
+      loc:    String(v[i][map['สาขา']] || '').trim(),
+      item:   item,
+      qty:    Number(v[i][map['จำนวน']]) || 0,
+      raw:    raw,
+      rawQty: Number(v[i][map['จำนวนวัตถุดิบ']]) || 0
     });
   }
   return out;
@@ -1370,6 +1418,13 @@ function stockBalancesRaw_() {
   // 3) ของเสีย / แถมฟรี
   readMoves_(SHEET_WASTE).forEach(function (m) {
     if (after(m.loc, m.item, m.when)) add(m.loc, m.item, -m.qty);
+  });
+
+  // 4) แพ็คของ — 1 แถวตัดวัตถุดิบ แล้วเพิ่มของแพ็คที่ครัวกลาง
+  //    สองรายการคนละตัว จึงต้องเช็ควันนับของแต่ละตัวแยกกัน
+  readPacks_().forEach(function (m) {
+    if (m.raw && after(m.loc, m.raw, m.when))   add(m.loc, m.raw, -m.rawQty);
+    if (m.item && after(m.loc, m.item, m.when)) add(m.loc, m.item, m.qty);
   });
 
   return bal;
@@ -1541,6 +1596,61 @@ function stockAllow_(session, need) {
 function stockCanUseLoc_(session, loc) {
   if (stockRoleOf_(session) === 'owner') return true;
   return sessionLocs_(session).indexOf(String(loc || '').trim()) !== -1;
+}
+
+/**
+ * แพ็คของ — ครัวกลางเอาวัตถุดิบมาแพ็คเป็นไม้/ถุง
+ *
+ * 1 แถวทำ 2 อย่างพร้อมกัน ตัดวัตถุดิบออก แล้วเพิ่มของแพ็คเข้า
+ * ที่เหลือของวัตถุดิบไม่ต้องคำนวณ ระบบหักให้เอง เช่น ซื้อมา 1 โล
+ * แพ็คไป 0.9 โล ยอดคงเหลือของดิบจะเหลือ 0.1 โล ให้เห็นเลย
+ */
+function handleStockPack_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (!stockAllow_(session, 'central')) {
+    return { success: false, code: 403, message: 'แพ็คของได้เฉพาะครัวกลาง' };
+  }
+
+  var out = findStockItem_(String(body.item || '').trim());
+  if (!out) return { success: false, message: 'ไม่พบสินค้า "' + body.item + '" ในชีตรายการสินค้า' };
+  var packs = toBase_(body.packs, body.rem, out.perPack);
+  if (!(packs > 0)) return { success: false, message: 'กรุณากรอกจำนวนที่แพ็คได้' };
+
+  // วัตถุดิบเว้นว่างได้ — ของบางอย่างซื้อมาแพ็คแล้ว ไม่ได้ตัดจากของดิบ
+  var rawName = String(body.raw || '').trim();
+  var rawQty  = Number(body.rawQty) || 0;
+  var raw = null;
+  if (rawName) {
+    raw = findStockItem_(rawName);
+    if (!raw) return { success: false, message: 'ไม่พบวัตถุดิบ "' + rawName + '" ในชีตรายการสินค้า' };
+    if (!(rawQty > 0)) return { success: false, message: 'กรุณากรอกว่าใช้วัตถุดิบไปเท่าไหร่' };
+  }
+
+  var sh = sheet_(SHEET_PACK);
+  if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_PACK + '" — รัน setupStock ก่อน' };
+  var map = ensureCols_(sh, PACK_COLS);
+
+  var now = new Date();
+  appendByCols_(sh, map, {
+    'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': session.name,
+    'วัตถุดิบ': raw ? raw.name : '', 'จำนวนวัตถุดิบ': raw ? rawQty : '',
+    'หน่วยวัตถุดิบ': raw ? raw.subUnit : '',
+    'รายการ': out.name, 'จำนวน': packs, 'หน่วย': out.subUnit,
+    'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
+    'ไม้ต่อแพ็ค': out.perPack, 'ประเภท': 'แพ็คของ',
+    'หมายเหตุ': String(body.note || '')
+  });
+
+  var msg = '📦 แพ็คของ — ' + CENTRAL + '\n\n' +
+            (raw ? 'ใช้ ' + raw.name + ' ' + rawQty + ' ' + raw.subUnit + '\n' : '') +
+            'ได้ ' + out.name + ' ' + fmtPack_(packs, out) + '\n' +
+            'โดย ' + session.name + ' · ' + Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm');
+  var line = stockNotify_(CENTRAL, msg);
+
+  checkLowStock_([out.name]);
+  return { success: true, text: fmtPack_(packs, out),
+           lineSent: line.sent, lineMsg: line.message };
 }
 
 /** ตรวจ token + สิทธิ์ + แปลงจำนวนแพ็ค/เศษ เป็นหน่วยย่อย — ใช้ร่วมกันทุก action */
@@ -1791,80 +1901,16 @@ function handleStockBootstrap_(p) {
 /* ───────────────────────── ติดตั้งชีตรายการสินค้า ───────────────────────── */
 
 /**
- * รายชื่อสินค้าตั้งต้น + หน่วยย่อย
- * ตัวเลขที่เจ้าของร้านให้ไว้ (กรัมต่อไม้ / ชิ้นต่อไม้) ใส่ไว้ในช่องหมายเหตุ
- * ไม่ได้เอาไปใส่ช่อง "หน่วยย่อยต่อแพ็ค" เพราะคนละค่ากัน:
- *   หน่วยย่อยต่อแพ็ค = 1 แพ็คมีกี่ไม้   (เช่น ไส้กรอกหนังกรอบ แพ็คละ 7 ไม้)
- *   ตัวเลขในหมายเหตุ  = 1 ไม้ใช้ของเท่าไหร่ (เช่น สันคอ 30 กรัมต่อไม้)
- * → ช่อง "หน่วยย่อยต่อแพ็ค" กับ "ราคาขาย" เว้นว่างไว้ ต้องกรอกเองก่อนใช้งานจริง
- */
-var STOCK_ITEM_SEED = [
-  ['สันคอสไลด์', 'ไม้', '30 กรัมต่อไม้'],
-  ['สามชั้นสไลด์', 'ไม้', '30 กรัมต่อไม้'],
-  ['เนื้อแดง', 'ไม้', '30 กรัมต่อไม้'],
-  ['หมึก', 'ไม้', '35 กรัมต่อไม้'],
-  ['ปลาดอลลี่', 'ไม้', '35 กรัมต่อไม้'],
-  ['ปลาหมึกกรอบ', 'ไม้', '35 กรัมต่อไม้'],
-  ['แมงกะพรุน', 'ไม้', '35 กรัมต่อไม้'],
-  ['รากบัว', 'ไม้', '50 กรัมต่อไม้'],
-  ['ปูอัด', 'ไม้', '2 อันต่อไม้'],
-  ['ต็อก', 'ไม้', '5 อันต่อไม้'],
-  ['เต้าหู้หลอด', 'ไม้', '1 อันต่อไม้'],
-  ['ปูอัดชีส', 'ไม้', '1 อันต่อไม้'],
-  ['ปูอัดยาว', 'ไม้', '1 อันต่อไม้'],
-  ['เต้าหู้ปลาแผ่น', 'ไม้', '1 อันต่อไม้'],
-  ['เต้าหู้ชีส', 'ไม้', '2 อันต่อไม้'],
-  ['ชีสหลายสี', 'ไม้', '2 อันต่อไม้'],
-  ['เต้าหู้หมู', 'ไม้', '3 อันต่อไม้'],
-  ['ไส้กรอกพันเบคอน', 'ไม้', '3 อันต่อไม้'],
-  ['ฟองเต้าหู้สามเหลี่ยม', 'ไม้', '3 อันต่อไม้'],
-  ['ไส้กรอกหนังกรอบ', 'ไม้', '1 อันต่อไม้'],
-  ['ไส้กรอกชมพู', 'ไม้', '1 อันต่อไม้'],
-  ['วุ้นเส้นหม่าล่า', 'ไม้', '1 อันต่อไม้'],
-  ['ฟองเต้าหู้', 'ไม้', '1 อันต่อไม้'],
-  ['ควิซ', 'ไม้', '1 อันต่อไม้'],
-  ['มาม่า', 'ไม้', '1 อันต่อไม้'],
-  ['เห็ดออรินจิ', 'ไม้', '1 ไม้'],
-  ['เส้นมันเทศ', 'กรัม', '55 กรัม'],
-  ['เส้นอุด้ง', 'กรัม', '50 กรัม'],
-  ['เส้นแก้ว', 'กรัม', '50 กรัม'],
-  ['สาหร่าย', 'กระปุก', '1 แพ็ค 10 กระปุก · ตักที่ละ 5 กรัม'],
-  ['ผักกาดขาว', 'กรัม', '100 กรัม'],
-  ['เห็ดเข็ม', 'ถุง', 'จัดเซ็ตใส่ถุง · ถุงละ 50 กรัม'],
-  ['เห็ดชิเมจิ', 'กรัม', '50 กรัม'],
-  ['กวางตุ้ง', 'กรัม', '50 กรัม'],
-  ['ผักบุ้ง', 'กรัม', '100 กรัม'],
-  ['ข้าวโพด', 'ท่อน', '1 ฝักแบ่ง 2 ท่อน · ท่อนละ 25 กรัม'],
-  ['กะหล่ำ', 'กรัม', '100 กรัม']
-];
-
-/**
- * รันครั้งเดียวเพื่อสร้างชีต "รายการสินค้า" และเติมคอลัมน์ใหม่ให้ชีตประวัติ
- * รันซ้ำได้ ไม่ลบข้อมูลเดิม — สินค้าที่มีอยู่แล้วจะข้ามไป
+ * สร้างชีตที่ระบบสต็อกต้องใช้ แล้วเขียนแคตตาล็อกลงไป
+ * รายชื่อสินค้าอยู่ที่ itemCatalogue_() ที่เดียว ไม่มีลิสต์ตั้งต้นซ้ำอีกชุด
+ * รันซ้ำได้ ไม่ลบข้อมูลเดิม
  */
 function setupStock() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var items = ss.getSheetByName(SHEET_ITEMS);
-  if (!items) items = ss.insertSheet(SHEET_ITEMS);
-  var map = ensureCols_(items, ITEM_COLS);
-
-  var have = {};
-  if (items.getLastRow() > 1) {
-    items.getRange(2, map['สินค้า'] + 1, items.getLastRow() - 1, 1).getValues()
-      .forEach(function (r) { have[String(r[0]).trim()] = true; });
-  }
-  var added = 0;
-  STOCK_ITEM_SEED.forEach(function (s) {
-    if (have[s[0]]) return;
-    var row = {};
-    row['สินค้า'] = s[0];
-    row['หน่วยย่อย'] = s[1];
-    row['หน่วยแพ็ค'] = 'แพ็ค';
-    row['หมายเหตุ'] = s[2];
-    appendByCols_(items, map, row);   // หน่วยย่อยต่อแพ็ค / ราคา ให้ fixItemList เติม
-    added++;
-  });
+  if (!ss.getSheetByName(SHEET_ITEMS)) ss.insertSheet(SHEET_ITEMS);
+  cacheClear_();
+  ensureCols_(sheet_(SHEET_ITEMS), ITEM_COLS);
 
   // เติมคอลัมน์ แพ็ค / เศษ / ไม้ต่อแพ็ค / ประเภท ให้ชีตประวัติ (ต่อท้าย ไม่แตะของเดิม)
   [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
@@ -1872,12 +1918,15 @@ function setupStock() {
     if (!sh) sh = ss.insertSheet(name);
     ensureCols_(sh, MOVE_COLS);
   });
+  if (!ss.getSheetByName(SHEET_PACK)) ss.insertSheet(SHEET_PACK);
+  cacheClear_();
+  ensureCols_(sheet_(SHEET_PACK), PACK_COLS);
 
   // ปลดกฎที่ล็อกหน่วยไว้แค่ ไม้/กรัม/ชิ้น — ตอนนี้มี ถุง มัด ใบ ขวด กก. ด้วย
   clearStockValidation_();
 
-  Logger.log('ติดตั้งเรียบร้อย — เพิ่มสินค้าใหม่ ' + added + ' รายการ\n' +
-             'รัน fixItemList ต่อ จะใส่ราคา หน่วย และ 1 แพ็ค = 10 ไม้ ให้เอง\n' +
+  Logger.log('ติดตั้งเรียบร้อย — สร้างชีตครบแล้ว\n' +
+             'รัน fixItemList ต่อ จะเขียนรายการสินค้า หน่วย ราคา และ 1 แพ็ค = 10 ให้เอง\n' +
              'เหลือที่ต้องกรอกเองในชีต "' + SHEET_ITEMS + '":\n' +
              '  • เตือนเมื่อเหลือ(แพ็ค) = ครัวกลางเหลือกี่แพ็คให้เตือนไลน์ (เว้นว่าง = ไม่เตือน)\n' +
              '  • เตือนสาขาเมื่อเหลือ(แพ็ค) = จุดเตือนของสาขา (เว้นว่าง = ใช้ตัวเดียวกับครัวกลาง)\n' +
@@ -2052,138 +2101,216 @@ function resetIncomingSheet() {
              '   ไม่งั้นบอทแจ้งของเข้าจะนับแถวเพี้ยน');
 }
 
-/* ───────────────── ใส่ราคาขายลงชีตรายการสินค้า ───────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   แคตตาล็อกสินค้า — ของไหลผ่าน 3 ชั้น
 
-/**
- * ราคาขายต่อไม้/ต่อที่ ตามที่เจ้าของร้านให้มา
- * ส่วนใหญ่ 10 บาท ยกเว้นที่ระบุไว้
- * รายการที่ราคายังไม่นิ่ง (มาม่า) เว้นเป็น 0 ไว้ ให้ไปกรอกเองในชีต
- */
+     1) วัตถุดิบ   ซื้อมาเป็นโล เข้าครัวกลาง        (หน่วย กก.)
+     2) ของแพ็ค    ครัวกลางเอาวัตถุดิบมาแพ็ค        (1 แพ็ค = 10 ไม้/ถุง)
+     3) ส่งร้าน     ส่งเฉพาะของที่แพ็คแล้ว           (นับเป็นแพ็ค)
+
+   ชีต "รายการสินค้า" เป็นที่เก็บจริง ตารางข้างล่างคือค่าตั้งต้น
+   รัน fixItemList() แล้วมันจะเขียนลงชีตให้ รันซ้ำได้
+   ═══════════════════════════════════════════════════════════════ */
+
+/** 1 แพ็ค = กี่ไม้ / กี่ถุง — เท่ากันหมดทุกรายการ */
+var PACK_SIZE = 10;
+
+/** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
 var PRICE_DEFAULT = 10;
-var PRICE_LIST = {
-  'สันคอสไลด์': 10,
-  'สามชั้นสไลด์': 10,
-  'หมูห่อชีส': 15,
-  'ชีสใส่แก้ว': 15,
-  'ดอลลี่': 10,
-  'ปลาหมึกกรอบ': 10,
-  'แมงกะพรุน': 10,
-  'รากบัว': 10,
-  'สามชั้นพันเห็ดเข็มทอง': 10,
-  'สามชั้นพันสาหร่าย': 10,
-  'ผักกาดขาว': 10,
-  'ผักบุ้ง': 10,
-  'กวางตุ้ง': 10,
-  'เห็ดเข็มทอง': 10,
-  'เห็ดออเร็นจิ': 10,
-  'กระเจี๊ยบ': 10,
-  'สาหร่ายกระปุก': 10,
-  'สาหร่ายแผ่น': 20,
-  // 3 ตัวนี้เจ้าของบอกว่ายังขายอยู่ แต่ไม่ได้อยู่ในรายการราคาที่ให้มา
-  // ตั้ง 10 ไว้ก่อนตามราคาส่วนใหญ่ ถ้าไม่ใช่ให้แก้ในชีตได้เลย
-  'ฟองเต้าหู้ม้วน': 10,
-  'เห็ดชิเมจิ': 10,
-  'เส้นมันเทศ': 10,
-  'เส้นอุด้ง': 10,
-  'เส้นแก้ว': 10,
-  'วุ้นเส้น': 10,
-  'วุ้นเส้นเกาหลี': 10,
-  'เส้นแก้ว': 10,
-  // 'มาม่า' ไม่อยู่ในนี้ — แยกเป็น มาม่า 10/15/20/35/45 ที่ splitMamaItems แทน
-  'เต้าหู้ชีส': 10,
-  'ชีสหลายสี': 10,
-  'ฟองเต้าหู้สามเหลี่ยม': 10,
-  'เบคอนพันไส้กรอก': 10,
-  'เต้าหู้หลอด': 10,
-  'ปูอัด': 10,
-  'ปูอัดยาว': 10,
-  'ปูอัดชีส': 10,
-  'เต้าหู้หมู': 10,
-  'เต้าหู้ปลาสี่เหลี่ยม': 10,
-  'เต้าหู้ปลาแผ่น': 10,
-  'ไส้กรอกหนังกรอบ': 10,
-  'ไส้กรอกชีส': 10,
-  'ไส้กรอกชมพู': 10,
-  'ปลาหมึกหลอด': 10,
-  'ไส้กรอกอันเล็ก': 10,
-  // ── เพิ่มใหม่ ── ราคายังไม่ได้ระบุมา ตั้ง 10 ไว้ก่อนตามราคาส่วนใหญ่
-  'หัวไหล่หมูสไลด์': 10,
-  'สันนอก': 10,
-  'ข้าวโพดถุง': 10,
-  'ข้าวโพดฝัก': 10,
-  'ข้าวโพดอ่อน': 10,
-  'มันญี่ปุ่น': 10,
-  'เห็ดหูหนูขาว': 10,
-  'เห็ดหอม': 10,
-  'ไส้กรอกแวมไพร์': 10,
-  'สามชั้นพันปูอัด': 10,
-  'มาม่า(เส้นเปล่า)': 10,
 
-};
+/** วัตถุดิบใช้ชื่อเดียวกับของแพ็คได้ เลยต่อท้ายให้ต่างกัน */
+var RAW_SUFFIX = ' (โล)';
+function rawName_(base) { return String(base || '').trim() + RAW_SUFFIX; }
 
 /**
- * ใส่ราคาลงชีตรายการสินค้าตาม PRICE_LIST
- *   • สินค้าที่มีอยู่แล้ว → อัปเดตราคา (ไม่แตะช่องอื่น)
- *   • สินค้าที่ยังไม่มี   → เพิ่มแถวใหม่ หน่วยย่อย "ไม้" ไว้ก่อน
- *   • สินค้าในชีตที่ไม่มีในรายการราคา → แค่รายงาน ไม่ลบให้
- * รันซ้ำได้
+ * ของที่ส่งร้านได้ — [ชื่อ, วัตถุดิบที่ใช้แพ็ค, หมายเหตุ]
+ * วัตถุดิบเว้นว่าง = ซื้อมาแพ็คแล้ว ไม่ได้ตัดจากของดิบ
+ * ราคาเว้นไว้ = PRICE_DEFAULT (แก้ในชีตได้)
  */
-function applyPriceList() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(SHEET_ITEMS);
-  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '" — รัน setupStock ก่อน'); return; }
-  var map = ensureCols_(sh, ITEM_COLS);
 
-  var cName  = map['สินค้า'];
-  var cPrice = map['ราคาขาย/หน่วยย่อย'];
-  var last   = sh.getLastRow();
+// ── แบบเสียบไม้ · 1 แพ็ค = 10 ไม้ ──
+var STICK_ITEMS = [
+  ['หมูพันเห็ดเข็มทอง',   'หมูสามชั้น', ''],
+  ['หมูพันสาหร่าย',       'หมูสามชั้น', ''],
+  ['หมูพันเห็ดชิเมจิ',     'หมูสามชั้น', ''],
+  ['สันนอกสไลด์',         'สันนอก',     ''],
+  ['หัวไหล่หมูสไลด์ (ไม้)', 'หัวไหล่หมู', 'ของเดียวกับแบบถุง แต่คนละวิธีแพ็ค นับแยกกัน'],
+  ['ดอลลี่',              '',           ''],
+  ['แมงกะพรุน',           '',           ''],
+  ['ปลาหมึกกรอบ',         '',           ''],
+  ['พันผักกาดขาว',        'หมูสามชั้น', ''],
+  ['เต้าชีส',             '',           'ของแพง คนกินเยอะ'],
+  ['หลายสี',              '',           'ของแพง'],
+  ['เบคอนพันไส้กรอก',     '',           'ของแพง'],
+  ['ฟองเต้าหู้สามเหลี่ยม', '',           'ของแพง'],
+  ['ข้าวโพดฝัก',          '',           ''],
+  ['เห็ดออเร็นจิ',         '',           ''],
+  ['เห็ดหูหนู',           '',           ''],
+  ['ปูอัดยาว',            '',           'ของแพง'],
+  ['ไส้กรอกชีส',          '',           'ของแพง'],
+  ['เต้าหู้หลอด',         '',           'ของแพง'],
+  ['ไส้กรอกอันเล็ก',      '',           ''],
+  ['เต้าหู้หมู',          '',           ''],
+  ['เต้าหู้ปลา',          '',           ''],
+  ['รากบัว',              '',           ''],
+  ['มันฝรั่ง',            '',           ''],
+  ['ฟักทอง',              '',           ''],
+  // เจ้าของยืนยันว่ายังขายอยู่ ถึงไม่ได้อยู่ในลิสต์ที่ส่งมารอบล่าสุด
+  ['กระเจี๊ยบ',           '',           ''],
+  ['เห็ดหอม',             '',           '']
+];
 
-  var rowOf = {};
-  if (last > 1) {
-    sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues().forEach(function (r, i) {
-      var n = String(r[cName] || '').trim();
-      if (n) rowOf[n] = i + 2;
+// ── แบบใส่ถุง · 1 แพ็ค = 10 ถุง ──
+var BAG_ITEMS = [
+  ['สันคอสไลด์',           'สันคอ',      ''],
+  ['หัวไหล่หมูสไลด์ (ถุง)', 'หัวไหล่หมู', 'ของเดียวกับแบบไม้ แต่คนละวิธีแพ็ค นับแยกกัน'],
+  ['ผักกาดขาว',            'ผักกาดขาว',  ''],
+  ['ผักบุ้ง',               'ผักบุ้ง',     ''],
+  ['กวางตุ้ง',              'กวางตุ้ง',    ''],
+  ['เห็ดเข็ม',              'เห็ดเข็ม',    ''],
+  ['ราเมง',                '',           ''],
+  ['มาม่า',                '',           ''],
+  ['อุด้ง',                '',           ''],
+  ['ต็อกแท่งเล็ก',          '',           ''],
+  ['มันเทศ',               '',           ''],
+  ['วุ้นเส้นหม่าล่า',        '',           ''],
+  ['ชีส',                  '',           ''],
+  ['วุ้นเส้นเกาหลี',         '',           '']
+];
+
+/** ราคาที่ไม่ใช่ 10 บาท — ใส่เฉพาะตัวที่ต่าง */
+var PRICE_EXCEPTION = {};
+
+/**
+ * แคตตาล็อกทั้งหมดเป็น object เดียว — ทั้งของแพ็คและวัตถุดิบที่มันใช้
+ * วัตถุดิบไม่ได้พิมพ์ไว้เป็นลิสต์แยก แต่งอกจากคอลัมน์วัตถุดิบของของแพ็ค
+ * จะได้ไม่มีวัตถุดิบลอย ๆ ที่ไม่มีใครใช้ค้างอยู่ในชีต
+ */
+function itemCatalogue_() {
+  var out = [], rawSeen = {};
+
+  function addPacked(row, subUnit) {
+    var name = row[0], rawBase = row[1], note = row[2];
+    out.push({
+      name: name, kind: KIND_PACKED,
+      subUnit: subUnit, packUnit: 'แพ็ค', perPack: PACK_SIZE,
+      price: PRICE_EXCEPTION[name] || PRICE_DEFAULT,
+      scope: '', raw: rawBase ? rawName_(rawBase) : '', note: note
     });
+    if (rawBase && !rawSeen[rawBase]) rawSeen[rawBase] = true;
   }
 
-  // มาม่าแยกราคา ราคาอยู่ในชื่ออยู่แล้ว รวมเข้ามาด้วย
-  // ไม่งั้นจะขึ้นเตือนว่า "อยู่ในชีตแต่ไม่มีในรายการราคา" ทั้งที่ตั้งใจให้มี
-  var prices = {};
-  Object.keys(PRICE_LIST).forEach(function (k) { prices[k] = PRICE_LIST[k]; });
-  STOCK_MAMA_PRICES.forEach(function (p) { prices['มาม่า ' + p] = p; });
+  STICK_ITEMS.forEach(function (r) { addPacked(r, 'ไม้'); });
+  BAG_ITEMS.forEach(function (r) { addPacked(r, 'ถุง'); });
 
-  var updated = [], added = [], blank = [];
-  Object.keys(prices).forEach(function (name) {
-    var price = prices[name];
-    if (!price) blank.push(name);
-
-    if (rowOf[name]) {
-      sh.getRange(rowOf[name], cPrice + 1).setValue(price || '');
-      updated.push(name);
-    } else {
-      var row = {};
-      row['สินค้า'] = name;
-      row['หน่วยย่อย'] = 'ไม้';
-      row['หน่วยแพ็ค'] = 'แพ็ค';
-      row['ราคาขาย/หน่วยย่อย'] = price || '';
-      appendByCols_(sh, map, row);
-      added.push(name);
-    }
+  // วัตถุดิบ — ซื้อเป็นโล อยู่แค่ครัวกลาง ไม่มีราคาขาย เพราะยังขายไม่ได้
+  // ถ้าใส่ราคา มันจะไปโผล่เป็นยอด "ควรได้" ในแท็บคำนวณของหาย ทั้งที่ยังไม่ได้ขาย
+  Object.keys(rawSeen).forEach(function (base) {
+    out.push({
+      name: rawName_(base), kind: KIND_RAW,
+      subUnit: 'กก.', packUnit: 'กก.', perPack: 1,
+      price: 0, scope: SCOPE_CENTRAL, raw: '',
+      note: 'ซื้อเป็นโล เข้าครัวกลาง แพ็คแล้วจะตัดออกเอง'
+    });
   });
 
-  // สินค้าในชีตที่ไม่มีในรายการราคา — อาจเลิกขายแล้ว หรือชื่อไม่ตรงกัน
-  var extra = Object.keys(rowOf).filter(function (n) { return !(n in prices); });
+  return out;
+}
 
-  Logger.log('อัปเดตราคา ' + updated.length + ' รายการ');
+/**
+ * เขียนแคตตาล็อกลงชีตรายการสินค้า
+ *   • ยังไม่มี  → เพิ่มแถวใหม่
+ *   • มีอยู่แล้ว → เขียนทับหน่วย ราคา ชนิด วัตถุดิบ (ช่องเตือนไม่แตะ เจ้าของตั้งเอง)
+ * รันซ้ำได้ รอบสองไม่มีอะไรเปลี่ยน
+ */
+function applyItemCatalogue() {
+  var sh = sheet_(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '" — รัน setupStock ก่อน'); return; }
+  clearStockValidation_();
+  var map = ensureCols_(sh, ITEM_COLS);
+
+  var rowOf = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, map['สินค้า'] + 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r, i) {
+        var n = String(r[0] || '').trim();
+        if (n && !rowOf[n]) rowOf[n] = i + 2;
+      });
+  }
+
+  var added = [], updated = [], news = [];
+  itemCatalogue_().forEach(function (it) {
+    var vals = {};
+    vals['สินค้า'] = it.name;
+    vals['หน่วยย่อย'] = it.subUnit;
+    vals['หน่วยแพ็ค'] = it.packUnit;
+    vals['หน่วยย่อยต่อแพ็ค'] = it.perPack;
+    vals['ราคาขาย/หน่วยย่อย'] = it.price || '';
+    vals['ใช้ที่'] = it.scope;
+    vals['ชนิด'] = it.kind;
+    vals['วัตถุดิบ'] = it.raw;
+
+    var row = rowOf[it.name];
+    if (!row) {
+      vals['หมายเหตุ'] = it.note;
+      news.push(vals);
+      added.push(it.name);
+      return;
+    }
+    Object.keys(vals).forEach(function (k) {
+      if (k === 'สินค้า') return;
+      sh.getRange(row, map[k] + 1).setValue(vals[k]);
+    });
+    if (it.note) sh.getRange(row, map['หมายเหตุ'] + 1).setValue(it.note);
+    updated.push(it.name);
+  });
+  appendRows_(sh, map, news);
+
   Logger.log('เพิ่มใหม่ ' + added.length + ' รายการ' + (added.length ? ':\n  ' + added.join('\n  ') : ''));
-  if (blank.length) {
-    Logger.log('⚠️ ยังไม่ได้ใส่ราคา ' + blank.length + ' รายการ (ราคาไม่นิ่ง ต้องกรอกเองในชีต):\n  ' + blank.join('\n  '));
+  Logger.log('อัปเดตของเดิม ' + updated.length + ' รายการ');
+  Logger.log('\nเหลือที่ต้องกรอกเองในชีต: เตือนเมื่อเหลือ(แพ็ค) — เหลือกี่แพ็คให้เตือนไลน์');
+}
+
+/**
+ * ลบของที่ไม่อยู่ในแคตตาล็อกแล้ว
+ * ไม่แตะชีตประวัติ ของเก่าที่เคยลงไว้ยังอยู่ครบ ไว้ดูย้อนหลังได้
+ */
+function removeDiscontinuedItems() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = sheet_(SHEET_ITEMS);
+  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+  var last = sh.getLastRow();
+  if (last < 2) return;
+
+  // ของที่ต้องเหลือไว้ = แคตตาล็อก + ของใช้/บรรจุภัณฑ์
+  var keep = {};
+  itemCatalogue_().forEach(function (it) { keep[it.name] = true; });
+  SUPPLY_ITEMS.forEach(function (it) { keep[it[0]] = true; });
+
+  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  var drop = [], names = [];
+  vals.forEach(function (r, i) {
+    var n = String(r[map['สินค้า']] || '').trim();
+    if (n && !keep[n]) { drop.push(i + 2); names.push(n); }
+  });
+  drop.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+  cacheClear_();
+
+  // เตือนถ้าของที่ลบยังมียอดค้างอยู่ — ต้องล้างยอดก่อน ไม่งั้นค้างในระบบตลอดไป
+  var bal = stockBalances_(), stuck = [];
+  Object.keys(bal).forEach(function (loc) {
+    Object.keys(bal[loc]).forEach(function (item) {
+      if (!keep[item] && Number(bal[loc][item])) stuck.push(loc + ' · ' + item + ' = ' + bal[loc][item]);
+    });
+  });
+
+  Logger.log('ลบของที่ไม่ได้ใช้แล้ว ' + names.length + ' รายการ' +
+             (names.length ? ':\n  ' + names.join('\n  ') : ''));
+  if (stuck.length) {
+    Logger.log('\n⚠️ ของที่ลบไปยังมียอดค้างอยู่ ' + stuck.length + ' รายการ:\n  ' + stuck.join('\n  ') +
+               '\n  รัน zeroOutAllStock() ถ้าจะล้างให้เป็น 0');
   }
-  if (extra.length) {
-    Logger.log('⚠️ อยู่ในชีตแต่ไม่มีในรายการราคา ' + extra.length + ' รายการ\n' +
-               '   อาจเลิกขายแล้ว หรือชื่อสะกดไม่ตรงกัน — ไม่ได้ลบให้ ตรวจเองก่อน:\n  ' + extra.join('\n  '));
-  }
-  Logger.log('\n(ช่อง "หน่วยย่อยต่อแพ็ค" applyPerPack ตั้งให้อัตโนมัติ — ของที่นับเป็นไม้ แพ็คละ 10)');
 }
 
 /* ───────────── รวมชื่อสินค้าที่เรียกไม่ตรงกันให้เป็นชื่อเดียว ───────────── */
@@ -2193,34 +2320,37 @@ function applyPriceList() {
  * ของเดียวกันแต่เรียกคนละชื่อ ถ้าปล่อยไว้ยอดคงเหลือจะแตกเป็นสองแถว
  */
 var ITEM_RENAME = {
-  'ปลาดอลลี่':          'ดอลลี่',
-  'เห็ดเข็ม':            'เห็ดเข็มทอง',
-  'เห็ดออรินจิ':         'เห็ดออเร็นจิ',
-  'สาหร่าย':            'สาหร่ายกระปุก',
-  'วุ้นเส้นหม่าล่า':      'วุ้นเส้น',
-  'ไส้กรอกพันเบคอน':    'เบคอนพันไส้กรอก',
-  'ฟองเต้าหู้':          'ฟองเต้าหู้ม้วน',
-  'หัวไหล่สไลด์':        'หัวไหล่หมูสไลด์',
-  'สามชั้นพันเห็ดเข็ม':   'สามชั้นพันเห็ดเข็มทอง',
-  'สันนอกห่อชีส':        'หมูห่อชีส',
-  // ข้าวโพดแยกเป็น 3 แบบ ชื่อเดิมแมปเข้าแบบที่ใกล้ที่สุด
-  'ข้าวโพด':            'ข้าวโพดฝัก',
-  'ข้าวโพดฝักใหญ่':      'ข้าวโพดฝัก',
-  'ข้าวโพดเล็ก':         'ข้าวโพดอ่อน',
-  'ข้าวโพดเม็ดใส่แก้ว':   'ข้าวโพดถุง',
-  // เก็บแถวมาม่าเดิมไว้ เปลี่ยนชื่อให้รู้ว่าเป็นเส้นเปล่า
-  'มาม่า':              'มาม่า(เส้นเปล่า)',
-  'มาม่า (ทุกชนิด)':      'มาม่า(เส้นเปล่า)',
-  'เต้าหู้ปลา':          'เต้าหู้ปลาสี่เหลี่ยม'
+  'ปลาดอลลี่':           'ดอลลี่',
+  'เห็ดออรินจิ':          'เห็ดออเร็นจิ',
+  'สาหร่าย':             'สาหร่ายกระปุก',
+  'ไส้กรอกพันเบคอน':     'เบคอนพันไส้กรอก',
+  'ฟองเต้าหู้':           'ฟองเต้าหู้ม้วน',
+  // ── ปรับตามรายการที่ส่งร้านจริง ──
+  'สามชั้นพันเห็ดเข็ม':    'หมูพันเห็ดเข็มทอง',
+  'สามชั้นพันเห็ดเข็มทอง': 'หมูพันเห็ดเข็มทอง',
+  'สามชั้นพันสาหร่าย':    'หมูพันสาหร่าย',
+  'สามชั้นสไลด์':         'หมูพันเห็ดเข็มทอง',
+  'เต้าหู้ชีส':           'เต้าชีส',
+  'ชีสหลายสี':           'หลายสี',
+  'เห็ดหูหนูขาว':         'เห็ดหูหนู',
+  'เห็ดเข็มทอง':          'เห็ดเข็ม',
+  'เส้นมันเทศ':          'มันเทศ',
+  'เส้นอุด้ง':            'อุด้ง',
+  'วุ้นเส้น':             'วุ้นเส้นหม่าล่า',
+  'มาม่า(เส้นเปล่า)':      'มาม่า',
+  'เต้าหู้ปลาสี่เหลี่ยม':    'เต้าหู้ปลา',
+  'สันนอก':              'สันนอกสไลด์',
+  'ข้าวโพด':             'ข้าวโพดฝัก',
+  'ข้าวโพดฝักใหญ่':       'ข้าวโพดฝัก',
+  'มันญี่ปุ่น':            'มันฝรั่ง',
+  'ต็อก (แป้งต็อก)':       'ต็อกแท่งเล็ก'
+  // หมายเหตุ: "หัวไหล่หมูสไลด์" เดิม ไม่ได้แมปอัตโนมัติ
+  // เพราะตอนนี้แยกเป็น (ไม้) กับ (ถุง) ระบบเดาแทนไม่ได้ว่าของเก่าเป็นแบบไหน
+  // removeDiscontinuedItems จะเตือนถ้ายังมียอดค้างอยู่
 };
 
-/** มาม่ามีหลายแบบ ราคาต่างกัน ต้องแยกเป็นคนละรายการถึงจะคิดของหายได้ */
-// ตั้งชื่อไม่ให้ชนกับ MAMA_PRICES ของฝั่ง POS ข้างบน (ที่มี 45 ด้วย)
-// ถ้าใช้ชื่อซ้ำ ตัวล่างจะทับตัวบน แล้วคอลัมน์มาม่า 45 ในชีตออเดอร์จะหายไป
-var STOCK_MAMA_PRICES = [10, 15, 20, 35];
-
 /** ชีตที่เก็บชื่อสินค้าไว้ในคอลัมน์ "รายการ" */
-function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE]; }
+function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SHEET_PACK]; }
 
 /**
  * เปลี่ยนชื่อสินค้าตาม ITEM_RENAME ทั้งในชีตรายการสินค้าและชีตประวัติ
@@ -2300,45 +2430,6 @@ function mergeItemNames() {
 }
 
 /**
- * แยกมาม่าเป็นรายการย่อยตามราคา — มาม่า 10 / 15 / 20 / 35 / 45
- * ของเดิมชื่อ "มาม่า" เฉย ๆ ไม่ได้แตะ เพราะไม่มีทางรู้ว่าแถวเก่าเป็นแบบไหน
- * ตรวจในชีตแล้วค่อยลบหรือแก้เอง
- */
-function splitMamaItems() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(SHEET_ITEMS);
-  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
-  var map = ensureCols_(sh, ITEM_COLS);
-
-  var have = {};
-  if (sh.getLastRow() > 1) {
-    sh.getRange(2, map['สินค้า'] + 1, sh.getLastRow() - 1, 1).getValues()
-      .forEach(function (r) { have[String(r[0]).trim()] = true; });
-  }
-
-  var added = [];
-  STOCK_MAMA_PRICES.forEach(function (p) {
-    var name = 'มาม่า ' + p;
-    if (have[name]) return;
-    var row = {};
-    row['สินค้า'] = name;
-    row['หน่วยย่อย'] = 'ห่อ';
-    row['หน่วยแพ็ค'] = 'แพ็ค';
-    row['ราคาขาย/หน่วยย่อย'] = p;
-    row['หมายเหตุ'] = 'แยกจาก "มาม่า" ตามราคา';
-    appendByCols_(sh, map, row);
-    added.push(name);
-  });
-
-  Logger.log('เพิ่มมาม่าแยกราคา ' + added.length + ' รายการ' + (added.length ? ': ' + added.join(', ') : ''));
-  if (have['มาม่า']) {
-    Logger.log('\n⚠️ ยังมีแถวชื่อ "มาม่า" เฉย ๆ อยู่ในชีต\n' +
-               '   ระบบไม่รู้ว่าของเก่าที่ลงไว้เป็นมาม่าแบบไหน จึงไม่แตะให้\n' +
-               '   ถ้าไม่ได้ใช้แล้วลบแถวนั้นทิ้งได้เลย');
-  }
-}
-
-/**
  * ล้างกฎ "ตรวจสอบข้อมูล" (dropdown) ที่ติดมากับชีตของระบบเก่า
  *
  * ชีตรายการสินค้าเดิมล็อกช่อง "หน่วยย่อย" ไว้ให้ใส่ได้แค่ ไม้ / กรัม / ชิ้น
@@ -2350,7 +2441,7 @@ function splitMamaItems() {
  */
 function clearStockValidation_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  [SHEET_ITEMS, SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+  [SHEET_ITEMS, SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SHEET_PACK].forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (!sh) return;
     sh.getRange(1, 1, Math.max(sh.getMaxRows(), 1), Math.max(sh.getMaxColumns(), 1))
@@ -2366,187 +2457,13 @@ function clearStockValidation() {
 }
 
 /** รันทีเดียวจบ: รวมชื่อ → แยกมาม่า → ใส่ราคา */
+/** รันทีเดียวจบ: รวมชื่อเก่า → เขียนแคตตาล็อก → ของใช้ → ลบของที่เลิกใช้ */
 function fixItemList() {
-  clearStockValidation_();     // ปลดล็อกช่องหน่วยก่อน ไม่งั้นเขียน ถุง/ใบ/ขวด ไม่ได้
-  mergeItemNames();            // รวมชื่อที่เรียกไม่ตรงกัน
-  removeDiscontinuedItems();   // ลบของที่เลิกขาย
-  splitMamaItems();            // แยกมาม่าตามราคา
-  applyPriceList();            // ใส่ราคา
-  applyItemUnits();            // ตั้งหน่วยขาย — ต้องมาหลังใส่ราคา
-  addSupplyItems();            // ของใช้/วัตถุดิบ + ตั้งว่าใช้ที่ไหน
-  applyPerPack();              // 1 แพ็ค = กี่ไม้ — ต้องมาท้ายสุด หลังหน่วยนิ่งแล้ว
-}
-
-/* ───────────── 1 แพ็คมีกี่ไม้ ───────────── */
-
-/** ของที่ขายเป็นไม้ แพ็คละ 10 ไม้เท่ากันหมด */
-var STICKS_PER_PACK = 10;
-
-/**
- * เติมช่อง "หน่วยย่อยต่อแพ็ค" ให้ของที่นับเป็นไม้
- *
- * ต้องมีค่านี้ถึงจะแปลง "3 แพ็ค 5 ไม้" ↔ จำนวนไม้ได้ ถ้าเว้นว่างไว้
- * หน้าเว็บจะให้กรอกได้แต่ช่องเศษ กรอกเป็นแพ็คไม่ได้เลย
- *
- * แตะเฉพาะแถวที่หน่วยย่อยเป็น "ไม้" ของที่ขายเป็นถุง/มัด/ที่/ใบ/ขวด
- * ไม่เกี่ยว และข้าวโพดฝัก (1 ฝัก = 2 อัน) applyItemUnits ตั้งไว้แล้ว
- * รันซ้ำได้
- */
-function applyPerPack() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
-  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
-  clearStockValidation_();
-  var map = ensureCols_(sh, ITEM_COLS);
-  var last = sh.getLastRow();
-  if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
-
-  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var done = [], skipped = [];
-  vals.forEach(function (r, i) {
-    var name = String(r[map['สินค้า']] || '').trim();
-    if (!name) return;
-    var sub = String(r[map['หน่วยย่อย']] || '').trim();
-    if (sub !== 'ไม้') { skipped.push(name + ' (' + (sub || 'ยังไม่ได้ตั้งหน่วย') + ')'); return; }
-    if (Number(r[map['หน่วยย่อยต่อแพ็ค']]) === STICKS_PER_PACK) return;   // ถูกอยู่แล้ว
-    sh.getRange(i + 2, map['หน่วยย่อยต่อแพ็ค'] + 1).setValue(STICKS_PER_PACK);
-    sh.getRange(i + 2, map['หน่วยแพ็ค'] + 1).setValue('แพ็ค');
-    done.push(name);
-  });
-
-  Logger.log('ตั้ง 1 แพ็ค = ' + STICKS_PER_PACK + ' ไม้ ให้ ' + done.length + ' รายการ' +
-             (done.length ? ':\n  ' + done.join('\n  ') : ''));
-  if (skipped.length) {
-    Logger.log('\nไม่ได้แตะ ' + skipped.length + ' รายการ (ไม่ได้นับเป็นไม้):\n  ' + skipped.join('\n  '));
-  }
-}
-
-/* ───────────── ตั้งหน่วยขายให้ตรงกับที่ขายจริง ───────────── */
-
-/**
- * ของที่ไม่ได้ขายเป็นไม้ ต้องตั้งหน่วยให้ตรงกับที่ขายจริง
- * ไม่งั้นราคาจะคูณผิดตอนคิดของหาย เช่น ตั้งหน่วยเป็นกรัมแล้วใส่ราคา 10
- * ระบบจะคิดเป็น 10 บาทต่อกรัม → ผักกาดขาว 1 ถุง (100 กรัม) = 1,000 บาท
- *
- * perPack = หน่วยย่อยต่อ 1 แพ็ค  (ปกติ 1 คือไม่ได้แพ็ครวม)
- */
-var ITEM_UNITS = {
-  // ผักจัดเซ็ตใส่ถุง ขายถุงละ 10 · แพ็คส่งสาขา 10 ถุง
-  'ผักกาดขาว':     { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'ผักบุ้ง':        { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'กวางตุ้ง':       { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-  'เห็ดเข็มทอง':    { sub: 'ถุง', pack: 'แพ็ค', perPack: 10, note: 'จัดเซ็ตใส่ถุง ถุงละ 10 บาท' },
-
-  // เส้นมัดขาย มัดละ 10 · แพ็คส่งสาขา 10 มัด
-  'เส้นมันเทศ':     { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
-  'เส้นอุด้ง':      { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
-  'เส้นแก้ว':       { sub: 'มัด', pack: 'แพ็ค', perPack: 10, note: 'มัดละ 10 บาท' },
-
-  // ขายเป็นกระปุก · แพ็คส่งสาขา 10 กระปุก
-  'สาหร่ายกระปุก':  { sub: 'กระปุก', pack: 'แพ็ค', perPack: 10, note: '1 แพ็ค 10 กระปุก · กระปุกละ 10 บาท' },
-
-  // 1 ฝักผ่าได้ 2 ท่อน ขายท่อนละ 10 (เจ้าของร้านยืนยันคำว่า "ท่อน")
-  'ข้าวโพดฝัก':     { sub: 'ท่อน', pack: 'ฝัก',  perPack: 2, note: '1 ฝักแบ่ง 2 ท่อน · ท่อนละ 10 บาท' }
-};
-
-/**
- * ชื่อในชีตกับชื่อใน PRICE_LIST / ITEM_UNITS ไม่ตรงกัน — seed ใช้ชื่อสั้นกว่า
- * ไม่มีตัวนี้ ITEM_UNITS กับราคาจะหาไม่เจอแล้วเงียบไป ของพวกนี้เลยไม่เคยได้หน่วยที่ถูก
- */
-var ITEM_ALIAS = {
-  'สาหร่าย':  'สาหร่ายกระปุก',
-  'เห็ดเข็ม':  'เห็ดเข็มทอง',
-  'ข้าวโพด':  'ข้าวโพดฝัก'
-};
-
-/** ชื่อที่ใช้เปิดตาราง ITEM_UNITS / PRICE_LIST */
-function itemKey_(name) {
-  var n = String(name || '').trim();
-  return ITEM_ALIAS[n] || n;
-}
-
-/** ของที่เลิกขายแล้ว — ลบออกจากชีตรายการสินค้า */
-var ITEM_DISCONTINUED = ['เนื้อแดง', 'หมึก', 'รากบัว', 'กะหล่ำ',
-                         'กุ้งพันสาหร่าย', 'ควิซ', 'ต็อก', 'ต็อก (แป้งต็อก)',
-                         'มาม่า 45'];
-
-/**
- * ตั้งหน่วยขายตาม ITEM_UNITS
- * เขียนทับช่องหน่วยเดิม เพราะของเดิมตั้งเป็นกรัมไว้ซึ่งทำให้ราคาเพี้ยน
- * ช่องหมายเหตุจะเขียนทับเฉพาะตอนที่ยังว่างหรือเป็นข้อความน้ำหนักเดิม
- */
-function applyItemUnits() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
-  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
-  clearStockValidation_();          // ชีตเดิมล็อกหน่วยไว้แค่ ไม้/กรัม/ชิ้น
-  var map = ensureCols_(sh, ITEM_COLS);
-  var last = sh.getLastRow();
-  if (last < 2) { Logger.log('ยังไม่มีสินค้าในชีต'); return; }
-
-  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var done = [], missing = [];
-
-  Object.keys(ITEM_UNITS).forEach(function (name) {
-    var u = ITEM_UNITS[name];
-    // ชีตอาจใช้ชื่อสั้น (สาหร่าย / ข้าวโพด / เห็ดเข็ม) ต้องยอมรับทั้งสองแบบ
-    var idx = -1;
-    for (var i = 0; i < vals.length; i++) {
-      var got = String(vals[i][map['สินค้า']] || '').trim();
-      if (got === name || itemKey_(got) === name) { idx = i; break; }
-    }
-    if (idx === -1) { missing.push(name); return; }
-
-    var row = idx + 2;
-    sh.getRange(row, map['หน่วยย่อย'] + 1).setValue(u.sub);
-    sh.getRange(row, map['หน่วยแพ็ค'] + 1).setValue(u.pack);
-    sh.getRange(row, map['หน่วยย่อยต่อแพ็ค'] + 1).setValue(u.perPack);
-    var oldNote = String(vals[idx][map['หมายเหตุ']] || '').trim();
-    if (!oldNote || /กรัม|ต่อไม้/.test(oldNote)) {
-      sh.getRange(row, map['หมายเหตุ'] + 1).setValue(u.note);
-    }
-    done.push(name + ' → ' + u.sub + (u.perPack > 1 ? ' (1 ' + u.pack + ' = ' + u.perPack + ' ' + u.sub + ')' : ''));
-  });
-
-  Logger.log('ตั้งหน่วยแล้ว ' + done.length + ' รายการ:\n  ' + done.join('\n  '));
-  if (missing.length) Logger.log('ไม่เจอในชีต: ' + missing.join(', '));
-}
-
-/**
- * ลบสินค้าที่เลิกขายออกจากชีตรายการสินค้า
- * ไม่แตะชีตประวัติ ของเก่าที่เคยลงไว้ยังอยู่ครบ ไว้ดูย้อนหลังได้
- */
-function removeDiscontinuedItems() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(SHEET_ITEMS);
-  if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
-  var map = ensureCols_(sh, ITEM_COLS);
-  var last = sh.getLastRow();
-  if (last < 2) return;
-
-  var vals = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var drop = [], names = [];
-  vals.forEach(function (r, i) {
-    var n = String(r[map['สินค้า']] || '').trim();
-    if (ITEM_DISCONTINUED.indexOf(n) !== -1) { drop.push(i + 2); names.push(n); }
-  });
-  drop.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
-
-  // เตือนถ้าของที่ลบยังมีประวัติค้างอยู่
-  var withHistory = [];
-  historySheets_().forEach(function (sname) {
-    var h = ss.getSheetByName(sname);
-    if (!h || h.getLastRow() < 2) return;
-    var hmap = ensureCols_(h, MOVE_COLS);
-    h.getRange(2, hmap['รายการ'] + 1, h.getLastRow() - 1, 1).getValues().forEach(function (r) {
-      var n = String(r[0] || '').trim();
-      if (ITEM_DISCONTINUED.indexOf(n) !== -1 && withHistory.indexOf(n) === -1) withHistory.push(n);
-    });
-  });
-
-  Logger.log('ลบสินค้าที่เลิกขาย ' + names.length + ' รายการ' + (names.length ? ': ' + names.join(', ') : ''));
-  if (withHistory.length) {
-    Logger.log('หมายเหตุ: ' + withHistory.join(', ') + ' ยังมีประวัติเก่าค้างในชีตประวัติ\n' +
-               '  ไม่ได้ลบให้ เก็บไว้ดูย้อนหลังได้ และไม่กระทบยอดคงเหลือ');
-  }
+  clearStockValidation_();     // ปลดล็อกช่องหน่วยก่อน ไม่งั้นเขียน กก./ถุง/ใบ ไม่ได้
+  mergeItemNames();            // ชื่อเก่าที่เรียกไม่ตรงกัน รวมเป็นชื่อเดียว
+  applyItemCatalogue();        // ของแพ็ค + วัตถุดิบ พร้อมหน่วยและราคา
+  addSupplyItems();            // ช้อน ถุง ผงปรุง
+  removeDiscontinuedItems();   // ที่เหลือคือของที่เลิกใช้ ลบทิ้ง
 }
 
 /* ───────────── ล้างยอดคงเหลือให้เป็นศูนย์ ───────────── */
@@ -2563,10 +2480,10 @@ function allStockLocations_() {
   var out = [CENTRAL];
   function put(l) { l = String(l || '').trim(); if (l && out.indexOf(l) === -1) out.push(l); }
   Object.keys(stockLineGroups_()).forEach(put);
-  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SHEET_PACK].forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (!sh || sh.getLastRow() < 2) return;
-    var map = ensureCols_(sh, MOVE_COLS);
+    var map = ensureCols_(sh, name === SHEET_PACK ? PACK_COLS : MOVE_COLS);
     sh.getRange(2, map['สาขา'] + 1, sh.getLastRow() - 1, 1).getValues()
       .forEach(function (r) { put(r[0]); });
   });
@@ -2607,13 +2524,15 @@ function zeroStockAt_(locs) {
   // หน่วยของแต่ละสินค้า — เอาจากรายการสินค้าก่อน ถ้าไม่มีค่อยดูจากประวัติ
   var unitOf = {};
   getStockItems_().forEach(function (i) { unitOf[i.name] = i.subUnit; });
-  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE].forEach(function (name) {
+  [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SHEET_PACK].forEach(function (name) {
     var h = ss.getSheetByName(name);
     if (!h || h.getLastRow() < 2) return;
-    var hmap = ensureCols_(h, MOVE_COLS);
+    var hmap = ensureCols_(h, name === SHEET_PACK ? PACK_COLS : MOVE_COLS);
     h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).getValues().forEach(function (r) {
       var n = String(r[hmap['รายการ']] || '').trim();
       if (n && unitOf[n] === undefined) unitOf[n] = String(r[hmap['หน่วย']] || 'ไม้').trim();
+      var raw = hmap['วัตถุดิบ'] !== undefined ? String(r[hmap['วัตถุดิบ']] || '').trim() : '';
+      if (raw && unitOf[raw] === undefined) unitOf[raw] = String(r[hmap['หน่วยวัตถุดิบ']] || 'กก.').trim();
     });
   });
 
@@ -2668,10 +2587,10 @@ function showStockSource() {
   });
 
   Logger.log('\n───── แถวที่ทำให้เกิดยอดพวกนี้ ─────');
-  [SHEET_COUNT, SHEET_INCOMING, SHEET_WASTE].forEach(function (name) {
+  [SHEET_COUNT, SHEET_INCOMING, SHEET_WASTE, SHEET_PACK].forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (!sh || sh.getLastRow() < 2) return;
-    var map = ensureCols_(sh, MOVE_COLS);
+    var map = ensureCols_(sh, name === SHEET_PACK ? PACK_COLS : MOVE_COLS);
     var hit = [];
     sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r, i) {
       var item = String(r[map['รายการ']] || '').trim();
@@ -2679,7 +2598,10 @@ function showStockSource() {
       if (!item) return;
       // ของเข้าร้าน 1 แถวกระทบครัวกลางด้วย เลยต้องเช็คทั้งสองฝั่ง
       var kind = String(r[map['ประเภท']] || '').trim();
+      // แถวเดียวกระทบได้หลายที่ ของเข้าร้านตัดครัวกลางด้วย แพ็คของก็ตัดวัตถุดิบด้วย
+      var raw = map['วัตถุดิบ'] !== undefined ? String(r[map['วัตถุดิบ']] || '').trim() : '';
       var touches = (want[loc + '\u0000' + item] !== undefined) ||
+                    (raw && want[loc + '\u0000' + raw] !== undefined) ||
                     (kind === 'ของเข้าร้าน' && want[CENTRAL + '\u0000' + item] !== undefined);
       if (!touches) return;
       hit.push('    แถว ' + (i + 2) + ' · ' + loc + ' · ' + item + ' · ' +
