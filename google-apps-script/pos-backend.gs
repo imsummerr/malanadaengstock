@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-19 · วัตถุดิบ → แพ็คของ → ส่งร้าน (2)';
+var BACKEND_VERSION = '2026-09-20 · เพิ่มอกไก่ แพ็คละ 20 ไม้';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2112,8 +2112,13 @@ function resetIncomingSheet() {
    รัน fixItemList() แล้วมันจะเขียนลงชีตให้ รันซ้ำได้
    ═══════════════════════════════════════════════════════════════ */
 
-/** 1 แพ็ค = กี่ไม้ / กี่ถุง — เท่ากันหมดทุกรายการ */
+/** 1 แพ็ค = กี่ไม้ / กี่ถุง */
 var PACK_SIZE = 10;
+
+/** ของที่แพ็คไม่เท่า 10 — ใส่เฉพาะตัวที่ต่าง */
+var PACK_SIZE_EXCEPTION = {
+  'อกไก่': 20
+};
 
 /** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
 var PRICE_DEFAULT = 10;
@@ -2155,6 +2160,7 @@ var STICK_ITEMS = [
   ['รากบัว',              '',           ''],
   ['มันฝรั่ง',            '',           ''],
   ['ฟักทอง',              '',           ''],
+  ['อกไก่',               'อกไก่',       ''],
   // เจ้าของยืนยันว่ายังขายอยู่ ถึงไม่ได้อยู่ในลิสต์ที่ส่งมารอบล่าสุด
   ['กระเจี๊ยบ',           '',           ''],
   ['เห็ดหอม',             '',           '']
@@ -2191,9 +2197,12 @@ function itemCatalogue_() {
 
   function addPacked(row, subUnit) {
     var name = row[0], rawBase = row[1], note = row[2];
+    var per = PACK_SIZE_EXCEPTION[name] || PACK_SIZE;
+    // ตัวที่แพ็คไม่เท่าชาวบ้าน เขียนบอกไว้ในชีตเลย จะได้ไม่ต้องจำ
+    if (!note && per !== PACK_SIZE) note = 'แพ็คละ ' + per + ' ' + subUnit;
     out.push({
       name: name, kind: KIND_PACKED,
-      subUnit: subUnit, packUnit: 'แพ็ค', perPack: PACK_SIZE,
+      subUnit: subUnit, packUnit: 'แพ็ค', perPack: per,
       price: PRICE_EXCEPTION[name] || PRICE_DEFAULT,
       scope: '', raw: rawBase ? rawName_(rawBase) : '', note: note
     });
