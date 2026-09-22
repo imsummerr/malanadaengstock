@@ -215,7 +215,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-22c';
+const PAGE_BUILD = '2026-09-22d';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -252,6 +252,15 @@ const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 let toastTimer = null;
+/** error แบบ URL เก่า — ขึ้นปุ่มให้กดรีเซ็ตเลย ไม่ต้องไปหาเมนูตั้งค่า */
+function toastApiError(msg) {
+  const extra = usingSavedUrl()
+    ? '<br><button class="key" style="margin-top:10px;background:#fff;color:#111"' +
+      ' onclick="resetApiUrl()">ใช้ URL ที่มากับไฟล์</button>'
+    : '';
+  toast(esc(msg).replace(/\n/g, '<br>') + extra, 15000);
+}
+
 function toast(html, ms) {
   const old = document.querySelector('.toast');
   if (old) old.remove();
@@ -647,7 +656,8 @@ async function submitMove(kind) {
     await loadData();
     recalc();
   } catch (e) {
-    toast('❌ ' + esc(e.message), 6000);
+    if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 6000);
   }
   btn.disabled = false;
   btn.innerHTML = c.btn;
@@ -794,7 +804,8 @@ async function submitPack() {
     await loadData();
     calcPack();
   } catch (e) {
-    toast('❌ ' + esc(e.message), 6000);
+    if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 6000);
   }
   btn.disabled = false;
   btn.innerHTML = 'บันทึกการแพ็ค';
@@ -934,7 +945,8 @@ async function submitCount() {
     await loadData();
     go('stock');
   } catch (e) {
-    toast('❌ ' + esc(e.message), 6000);
+    if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 6000);
     btn.disabled = false;
     btn.innerHTML = 'บันทึกผลนับ';
     paintProgress();          // เผื่อมีช่องว่างอยู่ ปุ่มจะได้ปิดกลับ
@@ -969,8 +981,13 @@ async function showApp() {
     await loadData();
     render();
   } catch (e) {
+    // ขึ้นปุ่มรีเซ็ต URL ให้เลยถ้าสาเหตุคือ URL เก่าที่เคยตั้งเองไว้
+    const btn = (/เวอร์ชันเก่า/.test(e.message) && usingSavedUrl())
+      ? '<button class="key btn-red" style="margin-top:12px" onclick="resetApiUrl()">' +
+        'ใช้ URL ที่มากับไฟล์</button>'
+      : '';
     document.getElementById('view').innerHTML =
-      `<div class="card"><div class="warnbox" style="margin:0">❌ ${esc(e.message)}</div></div>`;
+      `<div class="card"><div class="warnbox" style="margin:0">❌ ${esc(e.message).replace(/\n/g, '<br>')}</div>${btn}</div>`;
   }
 }
 
