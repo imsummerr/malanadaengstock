@@ -678,6 +678,7 @@ function render() {
     ['น้ำจิ้มที่ให้ไป', Number(stats.sauceCups || 0).toLocaleString('th-TH'), 'ถ้วย', '🥣', ''],
     ['ออเดอร์เดลิเวอรี่', Number(stats.deliveryOrders || 0).toLocaleString('th-TH'), 'ออเดอร์', '🛵', ''],
     ['ของเพิ่มที่ลูกค้าแอด', Number(stats.deliveryAddons || 0).toLocaleString('th-TH'), 'อย่าง', '➕', ''],
+    ['แต้มที่ลูกค้าใช้', Number(stats.redeemSticks || 0).toLocaleString('th-TH'), 'ไม้', '🎁', ''],
     ['ค่าใช้จ่าย', baht(stats.expenseTotal || 0), 'บาท', '💸', ''],
     ['เงินสดคงเหลือ', baht(stats.netCash !== undefined ? stats.netCash : stats.revenue), 'บาท', '🧮', '']
   ].map(([label, value, unit, icon, extra]) => `
@@ -1085,6 +1086,8 @@ function demoStats() {
       }
       return out;
     })(),
+    redeemSticks: Math.round(orders * 0.12),
+    redeemAmount: Math.round(orders * 0.12) * 10,
     expenseTotal: Math.round(revenue * 0.09),
     expenseCount: Math.round(orders * 0.02),
     expenseByType: share({ 'ค่าที่': .40, 'ค่าไม้เสียบ': .20, 'ค่าของสด': .18,

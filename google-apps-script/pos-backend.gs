@@ -57,7 +57,8 @@ var ORDER_HEADERS = [
   'น้ำซุป', 'ความเผ็ด', 'น้ำจิ้ม', 'จำนวนน้ำจิ้ม',
   'วิธีชำระเงิน', 'order_id',
   // ต่อท้ายไว้ ไม่แทรกกลาง เพื่อไม่ให้คอลัมน์ของข้อมูลเก่าเลื่อนความหมาย
-  'ของอื่น', 'รวมของอื่น', 'ยอดของอื่น'
+  'ของอื่น', 'รวมของอื่น', 'ยอดของอื่น',
+  'ใช้แต้ม (ไม้)', 'ส่วนลดแต้ม'
 ];
 
 /**
@@ -485,6 +486,8 @@ function handleOrder_(body) {
     row.push(o.soup || '', o.spice || '', o.sauce || '', Number(o.sauceCount) || 0,
              o.method || '', o.orderId || '');
     row.push(extraText.join(', '), extraCount, extraAmount);
+    // ลูกค้าเอาแต้มมาแลกไม้ฟรี — เก็บทั้งจำนวนไม้และเงินที่หักไป
+    row.push(Number(o.redeemSticks) || 0, Number(o.redeemAmount) || 0);
 
     var orderNo = nextOrderNo_(sheet, row[0]);
     row[2] = orderNo;
@@ -658,6 +661,8 @@ function handleStats_(p) {
     stats.revenue  += total;
     stats.discount += discount;
     stats.sticks   += num_(r[idx['รวมไม้']]);
+    stats.redeemSticks += num_(r[idx['ใช้แต้ม (ไม้)']]);
+    stats.redeemAmount += num_(r[idx['ส่วนลดแต้ม']]);
     stats.mama     += num_(r[idx['รวมมาม่า']]);
 
     bump_(stats.soup,   r[idx['น้ำซุป']]);
@@ -876,6 +881,8 @@ function handleBills_(p) {
       subtotal:   num_(r[idx['ยอดรวม']]),
       discount:   num_(r[idx['ส่วนลด']]),
       total:      num_(r[idx['ยอดสุทธิ']]),
+      redeemSticks: num_(r[idx['ใช้แต้ม (ไม้)']]),
+      redeemAmount: num_(r[idx['ส่วนลดแต้ม']]),
       extras:     r[idx['ของอื่น']] || '',
       extraCount: num_(r[idx['รวมของอื่น']]),
       extraAmount:num_(r[idx['ยอดของอื่น']]),
@@ -967,6 +974,7 @@ function emptyStats_() {
     orders: 0, revenue: 0, discount: 0, sticks: 0, mama: 0, sauceCups: 0, avgTicket: 0,
     deliveryOrders: 0, deliveryItemCount: 0, deliveryAddons: 0, deliveryItems: {},
     expenseTotal: 0, expenseCount: 0, expenseByType: {}, netCash: 0,
+    redeemSticks: 0, redeemAmount: 0,
     expenseCash: 0, expenseOther: 0, expenseByPay: {},
     byHour: emptyHours_(),
     soup: {}, spice: {}, sauce: {}, method: {}, methodRevenue: {}, branch: {},

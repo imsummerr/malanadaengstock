@@ -310,6 +310,20 @@
       <div class="grid-2" id="stick-grid"></div>
       <div id="discount-hint" class="hidden"></div>
 
+      <div class="qty-card" id="card-redeem" style="margin-top:10px;">
+        <div class="qty-top">
+          <div class="qty-name">🎁 ใช้แต้มแถมไม้ <span>ไม้ละ 10฿</span></div>
+          <div class="qty-sub digits" id="sub-redeem">0 ฿</div>
+        </div>
+        <div class="qty-row">
+          <button class="key qty-btn qty-minus" onclick="bumpRedeem(-1)" aria-label="ลด">−</button>
+          <input class="qty-input digits" id="qty-redeem" type="number" min="0" step="1" inputmode="numeric"
+                 value="0" aria-label="ใช้แต้มแถมไม้"
+                 oninput="typeRedeem(this.value)" onfocus="this.select()" onblur="normalizeRedeem()">
+          <button class="key qty-btn qty-plus" onclick="bumpRedeem(1)" aria-label="เพิ่ม">+</button>
+        </div>
+      </div>
+
       <div class="sec-head" style="margin-top:20px;">
         <h2>🍜 มาม่า</h2>
         <div class="note">รวม <b id="mama-count" class="digits">0</b> ห่อ</div>
@@ -337,6 +351,9 @@
         <div class="sum-line"><span>ยอดรวม</span><span class="digits" id="sum-subtotal">0 ฿</span></div>
         <div class="sum-line discount hidden" id="sum-discount-row">
           <span id="sum-discount-label">ส่วนลด</span><span class="digits" id="sum-discount">-0 ฿</span>
+        </div>
+        <div class="sum-line discount hidden" id="sum-redeem-row">
+          <span id="sum-redeem-label">ใช้แต้ม</span><span class="digits" id="sum-redeem">-0 ฿</span>
         </div>
         <p id="pay-need" class="pay-need hidden"></p>
         <button onclick="holdOrder()" id="btn-hold" class="key btn-ghost hidden"
@@ -1031,6 +1048,9 @@ const EXTRAS = [
 
 // ส่วนลด: ครบทุก ๆ 10 ไม้ ลด 5 บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
 const DISCOUNT = { perSticks: 10, baht: 5 };
+// ลูกค้าเอาแต้มมาแลกไม้ฟรี — คิดที่ราคาไม้ 10฿ ต่อไม้
+// ระบบไม่ได้เก็บแต้มคงเหลือของลูกค้า แค่บันทึกว่าบิลนี้แลกไปกี่ไม้
+const REDEEM_PRICE = 10;
 
 const SOUPS  = ['น้ำใส', 'กระดูกหมู', 'ดั้งเดิม', 'กระดูกหมูหม่าล่า', 'หม่าล่านม', 'น้ำดำ', 'น้ำดำหม่าล่า', 'ผัดแห้ง', 'ย่าง', 'ไม่เอาซุป'];
 const SPICES = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดกลาง', 'เผ็ดมาก', 'เผ็ดพิเศษ'];
@@ -1063,7 +1083,7 @@ function apiUrl() { return (settings.apiUrl || '').trim(); }
    ════════════════════════════════════════════════════════════ */
 // น้ำซุป · ความเผ็ด · น้ำจิ้ม เริ่มต้นเป็นค่าว่าง — บังคับให้พนักงานกดเลือกทุกบิล
 const order = {
-  sticks: {}, mama: {}, extras: {},
+  sticks: {}, mama: {}, extras: {}, redeem: 0,
   soup: '', spice: '', sauce: '', method: ''
 };
 STICK_PRICES.forEach(p => order.sticks[p] = 0);
@@ -1082,9 +1102,16 @@ function totals() {
   const discountUnits = Math.floor(stickCount / DISCOUNT.perSticks);
   const discount = discountUnits * DISCOUNT.baht;
   const subtotal = stickAmount + mamaAmount + extraAmount;
+
+  // แลกได้ไม่เกินจำนวนไม้ที่สั่งจริง — กันกรณีลดจำนวนไม้ทีหลังแล้วแต้มค้างเกิน
+  const redeemSticks = Math.min(Math.max(0, order.redeem || 0), stickCount);
+  const redeemAmount = redeemSticks * REDEEM_PRICE;
+
   return {
     stickCount, stickAmount, mamaCount, mamaAmount, sauceCount, extraCount, extraAmount,
-    subtotal, discountUnits, discount, total: Math.max(0, subtotal - discount)
+    redeemSticks, redeemAmount,
+    subtotal, discountUnits, discount,
+    total: Math.max(0, subtotal - discount - redeemAmount)
   };
 }
 
@@ -1121,6 +1148,23 @@ function renderExtraGrid() {
   document.getElementById('extra-grid').innerHTML =
     EXTRAS.map((e, i) => qtyCard('extra', i, `${e.name} <span>${e.price}฿</span>`, '0 ฿')).join('');
 }
+/* ── ใช้แต้มแถมไม้ ── */
+function bumpRedeem(delta) {
+  order.redeem = Math.max(0, (order.redeem || 0) + delta);
+  document.getElementById('qty-redeem').value = order.redeem;
+  refresh();
+}
+
+function typeRedeem(raw) {
+  const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+  order.redeem = isNaN(n) ? 0 : Math.min(n, 9999);
+  refresh();
+}
+
+function normalizeRedeem() {
+  document.getElementById('qty-redeem').value = order.redeem;
+}
+
 function store(kind) {
   if (kind === 'stick') return order.sticks;
   if (kind === 'extra') return order.extras;
@@ -1194,6 +1238,19 @@ function refresh() {
   document.getElementById('sum-subtotal').textContent = t.subtotal.toLocaleString('th-TH') + ' ฿';
   document.getElementById('sum-total').innerHTML = t.total.toLocaleString('th-TH') + '<small> ฿</small>';
 
+  // การ์ดใช้แต้ม
+  document.getElementById('sub-redeem').textContent =
+    (t.redeemAmount ? '-' : '') + t.redeemAmount.toLocaleString('th-TH') + ' ฿';
+  document.getElementById('qty-redeem').classList.toggle('has', t.redeemSticks > 0);
+  document.getElementById('card-redeem').classList.toggle('on', t.redeemSticks > 0);
+
+  const rRow = document.getElementById('sum-redeem-row');
+  rRow.classList.toggle('hidden', t.redeemAmount <= 0);
+  if (t.redeemAmount > 0) {
+    document.getElementById('sum-redeem-label').textContent = 'ใช้แต้ม ' + t.redeemSticks + ' ไม้';
+    document.getElementById('sum-redeem').textContent = '-' + t.redeemAmount.toLocaleString('th-TH') + ' ฿';
+  }
+
   const dRow = document.getElementById('sum-discount-row');
   dRow.classList.toggle('hidden', t.discount <= 0);
   if (t.discount > 0) {
@@ -1226,12 +1283,29 @@ function refresh() {
   document.getElementById('btn-pay').disabled = t.total <= 0 || missing.length > 0;
   // พักบิลได้ตั้งแต่เลือกของแล้ว ไม่ต้องรอเลือกน้ำซุป/ความเผ็ด/น้ำจิ้มครบ
   document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0);
+  fitBottomPad();
 }
+
+/**
+ * เว้นที่ท้ายหน้าให้พอดีกับความสูงจริงของแถบยอดเงินที่ลอยอยู่ด้านล่าง
+ * แถบนี้สูงไม่เท่ากัน แล้วแต่ว่ามีบรรทัดส่วนลด / ใช้แต้ม / ปุ่มพักบิล /
+ * คำเตือน "ยังไม่ได้เลือก..." โผล่มากี่อัน
+ * ถ้าเว้นตายตัว พอแถบสูงขึ้นมันจะบังชิปน้ำจิ้มแถวล่างสุดจนกดไม่ได้
+ */
+function fitBottomPad() {
+  const bar = document.querySelector('.bottombar');
+  const wrap = document.querySelector('#screen-cart .wrap');
+  if (!bar || !wrap) return;
+  wrap.style.paddingBottom = (bar.offsetHeight + 28) + 'px';
+}
+
+window.addEventListener('resize', fitBottomPad);
 
 function clearOrder() {
   STICK_PRICES.forEach(p => { order.sticks[p] = 0; document.getElementById('qty-stick-' + p).value = 0; });
   MAMA_PRICES.forEach(p => { order.mama[p] = 0; document.getElementById('qty-mama-' + p).value = 0; });
   EXTRAS.forEach((e, i) => { order.extras[i] = 0; document.getElementById('qty-extra-' + i).value = 0; });
+  order.redeem = 0; document.getElementById('qty-redeem').value = 0;
   refresh();
 }
 
@@ -1345,6 +1419,7 @@ function pendingBillsOf(date) {
       mamaCount: r.mamaCount, mamaAmount: r.mamaAmount,
       extras: (r.extras || []).filter(x => x.qty > 0).map(x => x.name + ' x' + x.qty).join(', '),
       extraCount: r.extraCount, extraAmount: r.extraAmount,
+      redeemSticks: r.redeemSticks, redeemAmount: r.redeemAmount,
       subtotal: r.subtotal, discount: r.discount, total: r.total,
       soup: r.soup, spice: r.spice, sauce: r.sauce, method: r.method,
       pending: true
@@ -1410,6 +1485,10 @@ function renderBills(bills, date, cash) {
     lines.push(row('ยอดรวม', (Number(b.subtotal) || 0).toLocaleString('th-TH') + ' ฿'));
     if (Number(b.discount) > 0) {
       lines.push(row('ส่วนลด', '-' + Number(b.discount).toLocaleString('th-TH') + ' ฿', 'disc'));
+    }
+    if (Number(b.redeemAmount) > 0) {
+      lines.push(row('ใช้แต้ม ' + Number(b.redeemSticks) + ' ไม้',
+                     '-' + Number(b.redeemAmount).toLocaleString('th-TH') + ' ฿', 'disc'));
     }
     lines.push(row('ยอดสุทธิ', (Number(b.total) || 0).toLocaleString('th-TH') + ' ฿', 'tot'));
 
@@ -1964,6 +2043,7 @@ function snapshotOrder() {
     sticks: Object.assign({}, order.sticks),
     mama: Object.assign({}, order.mama),
     extras: Object.assign({}, order.extras),
+    redeem: order.redeem || 0,
     soup: order.soup, spice: order.spice, sauce: order.sauce,
     stickCount: t.stickCount, mamaCount: t.mamaCount, extraCount: t.extraCount,
     total: t.total
@@ -2052,6 +2132,8 @@ function resumeHeld(id) {
   STICK_PRICES.forEach(p => { document.getElementById('qty-stick-' + p).value = order.sticks[p]; });
   MAMA_PRICES.forEach(p => { document.getElementById('qty-mama-' + p).value = order.mama[p]; });
   EXTRAS.forEach((e, i) => { document.getElementById('qty-extra-' + i).value = order.extras[i]; });
+  order.redeem = Number(h.redeem) || 0;
+  document.getElementById('qty-redeem').value = order.redeem;
 
   order.soup = h.soup || ''; order.spice = h.spice || ''; order.sauce = h.sauce || '';
   order.method = '';
@@ -2103,6 +2185,7 @@ function confirmPaid() {
     mamaCount: t.mamaCount, mamaAmount: t.mamaAmount,
     extras: EXTRAS.map((e, i) => ({ name: e.name, price: e.price, qty: order.extras[i] })),
     extraCount: t.extraCount, extraAmount: t.extraAmount,
+    redeemSticks: t.redeemSticks, redeemAmount: t.redeemAmount,
     subtotal: t.subtotal, discount: t.discount, total: t.total,
     soup: order.soup, spice: order.spice, method: order.method,
     sauce: order.sauce, sauceCount: t.sauceCount
