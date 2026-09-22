@@ -212,6 +212,11 @@ function apiUrl() {
   return (s.apiUrl || DEFAULT_API_URL || '').trim();
 }
 
+/* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
+   ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
+   แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
+const PAGE_BUILD = '2026-09-22c';
+
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
 /* ช่อง "สาขา" ในชีตผู้ใช้งาน อาจมีหลายที่
@@ -948,7 +953,8 @@ async function loadData() {
   }
   const where = myLocs().join(' + ');
   document.getElementById('hdr-sub').textContent =
-    auth.name + (where ? ' • ' + where : '') + (isOwner() ? ' • เจ้าของร้าน' : '');
+    auth.name + (where ? ' • ' + where : '') + (isOwner() ? ' • เจ้าของร้าน' : '') +
+    ' • v' + PAGE_BUILD;
 }
 
 async function showApp() {
