@@ -215,7 +215,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-22d';
+const PAGE_BUILD = '2026-09-22e';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -686,7 +686,7 @@ function viewPack(v) {
       `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}</select>
 
     <div class="row2">
-      <div><label class="fld">ได้กี่แพ็ค</label>
+      <div><label class="fld" id="k-lbl-packs">ได้กี่แพ็ค</label>
         <input id="k-packs" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()"></div>
       <div><label class="fld" id="k-lbl-rem">เศษ</label>
         <input id="k-rem" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()"></div>
@@ -695,6 +695,7 @@ function viewPack(v) {
       <label class="fld" id="k-lbl-pieces">เศษ (ชิ้น)</label>
       <input id="k-pieces" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()">
     </div>
+    <p class="note hidden" id="k-no-pieces"></p>
 
     <div id="k-raws"></div>
 
@@ -713,12 +714,28 @@ function syncPack() {
   const it = itemOf(document.getElementById('k-out').value);
   if (!it) return;
 
-  document.getElementById('k-lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
+  // บอกให้ชัดว่าแพ็คนึงกี่ไม้ และเศษแต่ละแบบหมายถึงอะไร
+  document.getElementById('k-lbl-packs').textContent =
+    'ได้กี่แพ็ค (แพ็คละ ' + it.perPack + ' ' + it.subUnit + ')';
+  document.getElementById('k-lbl-rem').textContent =
+    'เศษ (' + it.subUnit + ') — ครบ' + it.subUnit + ' แต่ไม่ครบแพ็ค';
+
   const kp = document.getElementById('k-wrap-pieces');
+  const kn = document.getElementById('k-no-pieces');
   kp.classList.toggle('hidden', !hasPieces(it));
-  if (!hasPieces(it)) document.getElementById('k-pieces').value = '';
-  else document.getElementById('k-lbl-pieces').textContent =
-         'เศษ (ชิ้น) — ยังไม่ครบไม้ · ' + perStickOf(it) + ' ชิ้น = 1 ' + it.subUnit;
+  if (hasPieces(it)) {
+    document.getElementById('k-lbl-pieces').textContent =
+      'เศษ (ชิ้น) — ไม่ครบ' + it.subUnit + ' · ' + perStickOf(it) + ' ชิ้น = 1 ' + it.subUnit;
+    kn.classList.add('hidden');
+  } else {
+    document.getElementById('k-pieces').value = '';
+    // ไม่มีช่องชิ้นเพราะไม่รู้ว่าไม้ละกี่ชิ้น ต้องบอก ไม่ใช่หายไปเฉย ๆ
+    kn.innerHTML = 'ไม่มีช่อง "เศษ (ชิ้น)" เพราะ <b>' + esc(it.name) +
+      '</b> ยังไม่ได้ตั้งว่าไม้ละกี่ชิ้น<br>' +
+      'ถ้าเสียบไม้ละหลายชิ้น ให้ใส่เลขในคอลัมน์ <b>ชิ้นต่อไม้</b> ' +
+      'ของชีต "รายการสินค้า" แล้วรีเฟรชหน้านี้';
+    kn.classList.remove('hidden');
+  }
   const pk = document.getElementById('k-packs');
   if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
 
