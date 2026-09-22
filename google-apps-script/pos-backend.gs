@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-22 · ของดิบ → แพ็ค · แก้บัตรลามข้ามบรรทัด';
+var BACKEND_VERSION = '2026-09-22 · หน่วย 3 ชั้น แพ็ค→ไม้→ชิ้น';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1128,7 +1128,8 @@ var CENTRAL = 'ครัวกลาง';
 // (สาขาเก็บของน้อยกว่าครัวกลางมาก ปกติควรตั้งให้ต่ำกว่า)
 var ITEM_COLS = ['สินค้า', 'หน่วยย่อย', 'หน่วยแพ็ค', 'หน่วยย่อยต่อแพ็ค',
                  'ราคาขาย/หน่วยย่อย', 'เตือนเมื่อเหลือ(แพ็ค)',
-                 'เตือนสาขาเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'ชนิด', 'วัตถุดิบ', 'หมายเหตุ'];
+                 'เตือนสาขาเมื่อเหลือ(แพ็ค)', 'ใช้ที่', 'ชนิด', 'วัตถุดิบ',
+                 'ชิ้นต่อไม้', 'หมายเหตุ'];
 
 // ค่าที่ใส่ได้ในคอลัมน์ "ชนิด"
 //   วัตถุดิบ = ซื้อมาเป็นโล ยังแพ็คไม่ได้ มีเฉพาะครัวกลาง
@@ -1146,7 +1147,7 @@ var SCOPE_SHOP    = 'ร้าน';
 
 // คอลัมน์ที่ทุกชีตประวัติต้องมี — ของเดิม 7 ตัวแรก ที่เพิ่มคือ 4 ตัวหลัง
 var MOVE_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ตรวจ', 'รายการ', 'จำนวน', 'หน่วย', 'หมายเหตุ',
-                 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค', 'ประเภท'];
+                 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค', 'ประเภท', 'เศษ(ชิ้น)', 'ชิ้นต่อไม้'];
 
 // ชีต "แพ็คของ" — 1 แถวกระทบ 2 รายการพร้อมกัน จึงมีช่องวัตถุดิบเพิ่มมา
 //   ตัดวัตถุดิบออกเท่า "จำนวนวัตถุดิบ" แล้วเพิ่มของแพ็คเข้าเท่า "จำนวน"
@@ -1157,7 +1158,7 @@ var PACK_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ต
                  'วัตถุดิบ2', 'จำนวนวัตถุดิบ2', 'หน่วยวัตถุดิบ2',
                  'วัตถุดิบ3', 'จำนวนวัตถุดิบ3', 'หน่วยวัตถุดิบ3',
                  'รายการ', 'จำนวน', 'หน่วย', 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค',
-                 'หมายเหตุ', 'ประเภท'];
+                 'หมายเหตุ', 'ประเภท', 'เศษ(ชิ้น)', 'ชิ้นต่อไม้'];
 
 /** ของที่พันใช้วัตถุดิบหลายอย่าง เผื่อช่องไว้ 3 — พอสำหรับหมู + ไส้ + เผื่ออีกตัว */
 var PACK_RAW_SLOTS = 3;
@@ -1241,31 +1242,63 @@ function appendRows_(sheet, map, list) {
 
 /* ───────────────────────── แปลงหน่วย 2 ระดับ ───────────────────────── */
 
-/** แพ็ค + เศษ → หน่วยย่อยรวม  (3 แพ็ค 5 ไม้ ที่ 7 ไม้/แพ็ค = 26 ไม้) */
-function toBase_(packs, rem, perPack) {
-  packs = Number(packs) || 0;
-  rem   = Number(rem) || 0;
-  perPack = Number(perPack) > 0 ? Number(perPack) : 1;
-  return round_(packs * perPack + rem);
+/* ───────────── หน่วย 3 ชั้น: แพ็ค → ไม้ → ชิ้น ─────────────
+   ลูกชิ้นเสียบไม้ละหลายชิ้น เศษเลยมี 2 แบบ
+     1) ครบไม้ แต่ไม่ครบ 10 ไม้   → นับเป็นไม้
+     2) ไม่ครบไม้ เหลือเป็นลูก ๆ  → นับเป็นชิ้น
+   ของที่ไม่ได้เสียบหลายชิ้น (ชิ้นต่อไม้ = 1) ก็เหลือ 2 ชั้นเหมือนเดิม
+
+   ยอดคงเหลือเก็บเป็น "หน่วยเล็กสุด" เสมอ — ชิ้น ถ้าเสียบหลายชิ้น
+   ไม่งั้นต้องเก็บไม้เป็นทศนิยม (ครึ่งไม้) ซึ่งนับของจริงไม่ได้ */
+
+/** ชิ้นต่อไม้ — ไม่ได้ตั้งไว้ถือว่า 1 (ไม้ละชิ้น) */
+function perStickOf_(item) {
+  var n = Number(item && item.perStick) || 1;
+  return n > 0 ? n : 1;
 }
 
-/** หน่วยย่อยรวม → แพ็ค + เศษ  (26 ไม้ ที่ 7 ไม้/แพ็ค = 3 แพ็ค เศษ 5) */
-function splitPack_(base, perPack) {
+/** หน่วยเล็กสุดที่ใช้เก็บยอด */
+function baseUnitOf_(item) {
+  return perStickOf_(item) > 1 ? 'ชิ้น' : (item ? item.subUnit : 'ไม้');
+}
+
+/** แพ็ค + ไม้ + ชิ้น → หน่วยเล็กสุดรวม */
+function toBase_(packs, sticks, pieces, item) {
+  var perStick = perStickOf_(item);
+  var perPack  = Number(item && item.perPack) > 0 ? Number(item.perPack) : 1;
+  return round_((Number(packs) || 0) * perPack * perStick +
+                (Number(sticks) || 0) * perStick +
+                (Number(pieces) || 0));
+}
+
+/** หน่วยเล็กสุดรวม → แพ็ค + ไม้ + ชิ้น */
+function splitUnits_(base, item) {
   base = Number(base) || 0;
-  perPack = Number(perPack) || 0;
-  if (perPack <= 0) return { packs: 0, rem: base };
+  var perStick = perStickOf_(item);
+  var perPack  = Number(item && item.perPack) > 0 ? Number(item.perPack) : 1;
   var neg = base < 0, a = Math.abs(base);
-  var p = Math.floor(a / perPack), r = round_(a - p * perPack);
-  return { packs: neg ? -p : p, rem: neg ? -r : r };
+
+  var perPackBase = perPack * perStick;
+  var packs  = perPackBase > 1 ? Math.floor(a / perPackBase) : 0;
+  var left   = round_(a - packs * perPackBase);
+  var sticks = perStick > 1 ? Math.floor(left / perStick) : left;
+  var pieces = perStick > 1 ? round_(left - sticks * perStick) : 0;
+
+  var sign = neg ? -1 : 1;
+  return { packs: sign * packs, sticks: sign * sticks, pieces: sign * pieces };
 }
 
-/** ข้อความอ่านง่าย เช่น "3 แพ็ค 5 ไม้" */
+/** ข้อความอ่านง่าย เช่น "3 แพ็ค 5 ไม้ 1 ชิ้น" */
 function fmtPack_(base, item) {
-  var s = splitPack_(base, item.perPack);
-  if (item.perPack <= 1) return round_(base) + ' ' + item.subUnit;
+  var perStick = perStickOf_(item);
+  var perPack  = Number(item && item.perPack) > 0 ? Number(item.perPack) : 1;
+  if (perPack <= 1 && perStick <= 1) return round_(base) + ' ' + item.subUnit;
+
+  var s = splitUnits_(base, item);
   var out = [];
-  if (s.packs) out.push(s.packs + ' ' + item.packUnit);
-  if (s.rem)   out.push(s.rem + ' ' + item.subUnit);
+  if (s.packs)  out.push(s.packs + ' ' + item.packUnit);
+  if (s.sticks) out.push(s.sticks + ' ' + item.subUnit);
+  if (s.pieces) out.push(s.pieces + ' ชิ้น');
   return out.length ? out.join(' ') : '0 ' + item.packUnit;
 }
 
@@ -1294,6 +1327,7 @@ function getStockItemsRaw_() {
       subUnit:  String(v[i][map['หน่วยย่อย']] || 'ไม้').trim(),
       packUnit: String(v[i][map['หน่วยแพ็ค']] || 'แพ็ค').trim(),
       perPack:  per > 0 ? per : 1,
+      perStick: Number(v[i][map['ชิ้นต่อไม้']]) > 0 ? Number(v[i][map['ชิ้นต่อไม้']]) : 1,
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
       kind:     String(v[i][map['ชนิด']] || '').trim(),
@@ -1546,7 +1580,7 @@ function checkLowStock_(itemNames, location) {
     if (!it) return;
     var lowPacks = lowPacksFor_(it, loc);
     if (!(lowPacks > 0)) return;
-    var limit = lowPacks * it.perPack;
+    var limit = lowPacks * it.perPack * perStickOf_(it);
     var have  = Number(bal[name]) || 0;
     var key   = 'LOWSTOCK_' + loc + '_' + name;
     var wasLow = props.getProperty(key) === '1';
@@ -1639,7 +1673,7 @@ function handleStockPack_(body) {
 
   var out = findStockItem_(String(body.item || '').trim());
   if (!out) return { success: false, message: 'ไม่พบสินค้า "' + body.item + '" ในชีตรายการสินค้า' };
-  var made = toBase_(body.packs, body.rem, out.perPack);
+  var made = toBase_(body.packs, body.rem, body.pieces, out);
   if (!(made > 0)) return { success: false, message: 'กรุณากรอกจำนวนที่แพ็คได้' };
 
   // วัตถุดิบมาจากหน้าเว็บเป็น list — ของที่พันมีหลายตัว ของที่แค่เสียบมีตัวเดียว
@@ -1671,8 +1705,9 @@ function handleStockPack_(body) {
   var now = new Date();
   var row = {
     'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': session.name,
-    'รายการ': out.name, 'จำนวน': made, 'หน่วย': out.subUnit,
+    'รายการ': out.name, 'จำนวน': made, 'หน่วย': baseUnitOf_(out),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
+    'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(out),
     'ไม้ต่อแพ็ค': out.perPack, 'ประเภท': 'แพ็คของ',
     'หมายเหตุ': String(body.note || '')
   };
@@ -1709,7 +1744,7 @@ function stockPrepare_(body, need) {
   var it = findStockItem_(name);
   if (!it) throw new Error('ไม่พบสินค้า "' + name + '" ในชีตรายการสินค้า');
 
-  var total = toBase_(body.packs, body.rem, it.perPack);
+  var total = toBase_(body.packs, body.rem, body.pieces, it);
   if (!(total > 0)) throw new Error('กรุณากรอกจำนวน');
 
   return { session: session, item: it, total: total };
@@ -1732,8 +1767,9 @@ function handleStockIn_(body) {
   var now = new Date();
   appendByCols_(sh, map, {
     'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': p.session.name,
-    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': p.item.subUnit,
+    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
+    'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าครัวกลาง',
     'หมายเหตุ': String(body.note || '')
   });
@@ -1767,8 +1803,9 @@ function handleStockToShop_(body) {
   var now = new Date();
   appendByCols_(sh, map, {
     'วันที่เวลา': now, 'สาขา': branch, 'ผู้ตรวจ': p.session.name,
-    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': p.item.subUnit,
+    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
+    'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าร้าน',
     'หมายเหตุ': String(body.note || '')
   });
@@ -1803,8 +1840,9 @@ function handleStockWaste_(body) {
   var now = new Date();
   appendByCols_(sh, map, {
     'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': p.session.name,
-    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': p.item.subUnit,
+    'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
+    'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': reason,
     'หมายเหตุ': String(body.note || '')
   });
@@ -1841,7 +1879,9 @@ function handleStockCount_(body) {
   rows.forEach(function (r) { got[String(r.item || '').trim()] = r; });
   var missing = items.filter(function (it) {
     var r = got[it.name];
-    return !r || (r.packs === '' && r.rem === '') || (r.packs == null && r.rem == null);
+    if (!r) return true;
+    var blank = function (v) { return v === '' || v == null; };
+    return blank(r.packs) && blank(r.rem) && blank(r.pieces);
   }).map(function (it) { return it.name; });
   if (missing.length) {
     return { success: false, message: 'ต้องนับให้ครบทุกรายการ ยังขาด ' + missing.length + ' รายการ: ' +
@@ -1859,19 +1899,20 @@ function handleStockCount_(body) {
 
   items.forEach(function (it) {
     var r = got[it.name];
-    var counted = toBase_(r.packs, r.rem, it.perPack);
+    var counted = toBase_(r.packs, r.rem, r.pieces, it);
     var sys = Number(before[it.name]) || 0;
     var diff = round_(counted - sys);
     counts.push({ item: it, counted: counted, sys: sys, diff: diff });
     out.push({
       'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name,
-      'รายการ': it.name, 'จำนวน': counted, 'หน่วย': it.subUnit,
+      'รายการ': it.name, 'จำนวน': counted, 'หน่วย': baseUnitOf_(it),
       'แพ็ค': Number(r.packs) || 0, 'เศษ': Number(r.rem) || 0,
+      'เศษ(ชิ้น)': Number(r.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(it),
       'ไม้ต่อแพ็ค': it.perPack, 'ประเภท': 'เช็คสต็อก',
-      'หมายเหตุ': 'ยอดระบบ ' + sys + ' ' + it.subUnit + ' ต่าง ' + (diff > 0 ? '+' : '') + diff
+      'หมายเหตุ': 'ยอดระบบ ' + sys + ' ' + baseUnitOf_(it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff
     });
     if (diff !== 0) diffs.push('• ' + it.name + '  นับได้ ' + fmtPack_(counted, it) +
-                               '  (ระบบ ' + fmtPack_(sys, it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff + ' ' + it.subUnit + ')');
+                               '  (ระบบ ' + fmtPack_(sys, it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff + ' ' + baseUnitOf_(it) + ')');
   });
   appendRows_(sh, map, out);          // เขียนทีเดียว ไม่ใช่แถวละครั้ง
 
@@ -1930,7 +1971,7 @@ function handleStockBootstrap_(p) {
       rows: items.filter(function (it) { return m[it.name]; }).map(function (it) {
         var have = Number(m[it.name]) || 0;
         var lowPacks = lowPacksFor_(it, loc);
-        var limit = lowPacks > 0 ? lowPacks * it.perPack : 0;
+        var limit = lowPacks > 0 ? lowPacks * it.perPack * perStickOf_(it) : 0;
         return { item: it.name, base: have, text: fmtPack_(have, it),
                  low: limit > 0 && have <= limit };
       })
@@ -2043,7 +2084,7 @@ function migrateOldStockSheets() {
       var per   = perPackOf[name] || 0;
       var tot   = cTot !== -1 ? Number(row[cTot]) || 0 : 0;
       // ไม่มียอดรวมมาให้ ก็คำนวณจากแพ็ค+เศษ
-      if (!tot && per > 0) tot = toBase_(packs, rem, per);
+      if (!tot && per > 0) tot = toBase_(packs, rem, 0, { perPack: per, perStick: 1 });
       // ไม่รู้ว่ากี่ไม้ต่อแพ็ค ก็ถอดกลับจากยอดรวมที่มี
       if (!per && packs > 0 && tot > rem) per = Math.round((tot - rem) / packs);
 
@@ -2161,9 +2202,19 @@ function resetIncomingSheet() {
 /** 1 แพ็ค = กี่ไม้ / กี่ถุง */
 var PACK_SIZE = 10;
 
-/** ของที่แพ็คไม่เท่า 10 — ใส่เฉพาะตัวที่ต่าง */
+/** ของที่แพ็คไม่เท่า 10 ไม้ — ใส่เฉพาะตัวที่ต่าง */
 var PACK_SIZE_EXCEPTION = {
   'อกไก่': 20
+};
+
+/**
+ * ลูกชิ้นที่เสียบไม้ละหลายชิ้น — ใส่เฉพาะตัวที่ไม่ใช่ไม้ละชิ้น
+ * ของพวกนี้เศษมี 2 แบบ ครบไม้แต่ไม่ครบแพ็ค (นับเป็นไม้)
+ * กับไม่ครบไม้ (นับเป็นชิ้น) ยอดคงเหลือเลยเก็บเป็นชิ้น
+ * ตัวไหนยังไม่รู้ว่าไม้ละกี่ชิ้น เว้นไว้ก่อน แล้วกรอกในชีตทีหลังได้
+ */
+var PIECES_PER_STICK = {
+  'เต้าชีส': 2
 };
 
 /** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
@@ -2279,6 +2330,7 @@ function itemCatalogue_() {
     out.push({
       name: name, kind: KIND_PACKED,
       subUnit: subUnit, packUnit: 'แพ็ค', perPack: per,
+      perStick: PIECES_PER_STICK[name] || 1,
       price: PRICE_EXCEPTION[name] || PRICE_DEFAULT,
       scope: '', raws: bases.map(rawName_), note: note
     });
@@ -2293,7 +2345,7 @@ function itemCatalogue_() {
     var u = rawUnitOf_(base);
     out.push({
       name: rawName_(base), kind: KIND_RAW,
-      subUnit: u, packUnit: u, perPack: 1,
+      subUnit: u, packUnit: u, perPack: 1, perStick: 1,
       price: 0, scope: SCOPE_CENTRAL, raws: [],
       note: 'ซื้อเป็น' + u + ' เข้าครัวกลาง แพ็คแล้วระบบตัดออกให้เอง'
     });
@@ -2330,6 +2382,9 @@ function applyItemCatalogue() {
     vals['หน่วยย่อย'] = it.subUnit;
     vals['หน่วยแพ็ค'] = it.packUnit;
     vals['หน่วยย่อยต่อแพ็ค'] = it.perPack;
+    // ชิ้นต่อไม้เขียนเฉพาะตัวที่รู้ค่าแล้ว ที่เหลือปล่อยว่างให้เจ้าของกรอกเอง
+    // ถ้าเขียนทับด้วยค่าว่างทุกรอบ ที่กรอกไว้จะหายทุกครั้งที่รัน fixItemList
+    if (it.perStick && it.perStick > 1) vals['ชิ้นต่อไม้'] = it.perStick;
     vals['ราคาขาย/หน่วยย่อย'] = it.price || '';
     vals['ใช้ที่'] = it.scope;
     vals['ชนิด'] = it.kind;
