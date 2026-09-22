@@ -215,7 +215,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-22e';
+const PAGE_BUILD = '2026-09-22f';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -981,9 +981,12 @@ async function loadData() {
     try { sessionStorage.setItem('pos_branches', D.branches.join(', ')); } catch (e) {}
   }
   const where = myLocs().join(' + ');
+  // โชว์รุ่นของทั้งสองฝั่ง — หน้าเว็บกับหลังบ้านที่กำลังคุยด้วยจริง ๆ
+  // ถ้าหลังบ้านขึ้นว่า "เก่า" แปลว่ายิงไป deployment ผิดตัว ไม่ใช่โค้ดผิด
+  const be = D.version ? String(D.version).split('·')[0].trim() : 'เก่า (ไม่บอกรุ่น)';
   document.getElementById('hdr-sub').textContent =
     auth.name + (where ? ' • ' + where : '') + (isOwner() ? ' • เจ้าของร้าน' : '') +
-    ' • v' + PAGE_BUILD;
+    ' • v' + PAGE_BUILD + ' · หลังบ้าน ' + be;
 }
 
 async function showApp() {

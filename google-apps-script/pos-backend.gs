@@ -1979,6 +1979,9 @@ function handleStockBootstrap_(p) {
   });
 
   return { success: true, data: {
+    // ส่งรุ่นของหลังบ้านไปด้วย หน้าเว็บจะได้โชว์ให้เห็นว่ากำลังคุยกับตัวไหนอยู่
+    // เวลาเจอ "ทำไมไม่ขึ้น" จะได้แยกออกว่าเป็นเพราะยิงไป deployment เก่า
+    version: BACKEND_VERSION,
     role: session.role, stockRole: stockRoleOf_(session),
     name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock
