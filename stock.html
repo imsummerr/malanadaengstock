@@ -612,37 +612,36 @@ async function submitMove(kind) {
   btn.innerHTML = c.btn;
 }
 
-/* ── แพ็คของ — ตัดวัตถุดิบ เพิ่มของแพ็ค ── */
+/* ── แพ็คของ — ตัดของดิบ เพิ่มของที่แพ็คแล้ว ── */
 
 /** ของแพ็คที่ครัวกลางทำได้ */
 const packOutputs = () => packedItems(D.central);
 
+/** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
+function rawsOf(it) {
+  if (!it || !it.raws) return [];
+  return it.raws.map(n => itemOf(n)).filter(Boolean);
+}
+
 function viewPack(v) {
-  const outs = packOutputs(), raws = rawItems();
+  const outs = packOutputs();
 
   v.innerHTML = `<div class="card">
     <h2>🔪 แพ็คของ</h2>
-    <p class="lead">เอาวัตถุดิบมาเสียบไม้หรือใส่ถุง ระบบตัดของดิบแล้วเพิ่มของแพ็คให้</p>
+    <p class="lead">เอาของดิบมาเสียบไม้หรือจัดใส่ถุง ระบบตัดของดิบแล้วเพิ่มของที่แพ็คแล้วให้</p>
 
     <label class="fld">แพ็คเป็นอะไร</label>
     <select id="k-out" onchange="syncPack()">${outs.map(i =>
       `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}</select>
 
     <div class="row2">
-      <div><label class="fld">แพ็ค</label>
+      <div><label class="fld">ได้กี่แพ็ค</label>
         <input id="k-packs" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()"></div>
       <div><label class="fld" id="k-lbl-rem">เศษ</label>
         <input id="k-rem" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()"></div>
     </div>
 
-    <label class="fld">ใช้วัตถุดิบอะไร <span class="note">(เว้นว่างได้ ถ้าซื้อมาแพ็คแล้ว)</span></label>
-    <select id="k-raw" onchange="syncPack()">
-      <option value="">— ไม่ได้ตัดจากของดิบ —</option>
-      ${raws.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}
-    </select>
-
-    <label class="fld" id="k-lbl-raw">ใช้ไปเท่าไหร่</label>
-    <input id="k-rawqty" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()">
+    <div id="k-raws"></div>
 
     <label class="fld">หมายเหตุ</label>
     <input id="k-note" placeholder="เช่น ถุงละ 30 กรัม">
@@ -657,18 +656,24 @@ function viewPack(v) {
 
 function syncPack() {
   const it = itemOf(document.getElementById('k-out').value);
-  if (it) {
-    document.getElementById('k-lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
-    const pk = document.getElementById('k-packs');
-    if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
-    // ของส่วนใหญ่ผูกวัตถุดิบไว้แล้วในชีต เลือกให้อัตโนมัติ จะได้ไม่ต้องหาเอง
-    const sel = document.getElementById('k-raw');
-    if (it.raw && !sel.value && [...sel.options].some(o => o.value === it.raw)) sel.value = it.raw;
-  }
-  const raw = itemOf(document.getElementById('k-raw').value);
-  document.getElementById('k-lbl-raw').textContent =
-    raw ? `ใช้ ${raw.name} ไปเท่าไหร่ (${raw.subUnit})` : 'ใช้ไปเท่าไหร่';
-  document.getElementById('k-rawqty').disabled = !raw;
+  if (!it) return;
+
+  document.getElementById('k-lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
+  const pk = document.getElementById('k-packs');
+  if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
+
+  // ช่องกรอกของดิบสร้างใหม่ตามของที่เลือก — ของที่พันมีหลายช่อง ของที่แค่เสียบมีช่องเดียว
+  // ไม่ต้องให้เลือกเองว่าใช้อะไร เพราะสูตรตั้งไว้ในชีตแล้ว (คอลัมน์ "วัตถุดิบ")
+  const raws = rawsOf(it);
+  document.getElementById('k-raws').innerHTML = raws.length
+    ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => `
+        <div class="row2" style="align-items:end">
+          <div class="note" style="padding-bottom:10px">${esc(r.name)}</div>
+          <input id="k-rq-${i}" type="number" inputmode="decimal" min="0" step="any"
+                 placeholder="${esc(r.subUnit)}" oninput="calcPack()">
+        </div>`).join('')
+    : '<p class="note">รายการนี้ยังไม่ได้ตั้งของดิบไว้ในชีต — บันทึกได้ แต่จะไม่มีอะไรถูกตัดออก</p>';
+
   calcPack();
 }
 
@@ -680,24 +685,26 @@ function calcPack() {
 
   const made = toBase(document.getElementById('k-packs').value,
                       document.getElementById('k-rem').value, it.perPack);
-  const raw = itemOf(document.getElementById('k-raw').value);
-  const used = Number(document.getElementById('k-rawqty').value) || 0;
-
   if (!(made > 0)) { box.innerHTML = '<div class="sub">กรอกจำนวนที่แพ็คได้</div>'; return; }
 
   let html = `<div class="big">${esc(fmtPack(made, it))}</div>`;
   if (it.perPack > 1) {
     html += `<div class="sub">= ${made} ${esc(it.subUnit)} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)})</div>`;
   }
-  // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน พนักงานเห็นแค่ผลแปลงหน่วยของที่ตัวเองกรอก
-  if (raw && used > 0 && isOwner()) {
-    const have = balOf(D.central, raw.name);
-    const left = have - used;
-    html += `<div class="sub">${esc(raw.name)} ${esc(fmtPack(have, raw))} → เหลือ <b>${esc(fmtPack(left, raw))}</b>` +
-            (left < 0 ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
-  } else if (raw && used > 0) {
-    html += `<div class="sub">ตัด ${esc(raw.name)} ออก ${used} ${esc(raw.subUnit)}</div>`;
-  }
+
+  rawsOf(it).forEach((r, i) => {
+    const el = document.getElementById('k-rq-' + i);
+    const used = el ? Number(el.value) || 0 : 0;
+    if (!(used > 0)) return;
+    // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน พนักงานเห็นแค่ผลแปลงหน่วยของที่ตัวเองกรอก
+    if (isOwner()) {
+      const have = balOf(D.central, r.name), left = have - used;
+      html += `<div class="sub">${esc(r.name)} ${esc(fmtPack(have, r))} → เหลือ <b>${esc(fmtPack(left, r))}</b>` +
+              (left < 0 ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
+    } else {
+      html += `<div class="sub">ตัด ${esc(r.name)} ออก ${used} ${esc(r.subUnit)}</div>`;
+    }
+  });
   box.innerHTML = html;
 }
 
@@ -708,22 +715,28 @@ async function submitPack() {
   const rem   = document.getElementById('k-rem').value;
   if (!(toBase(packs, rem, it.perPack) > 0)) return toast('กรอกจำนวนที่แพ็คได้ก่อน');
 
-  const rawName = document.getElementById('k-raw').value;
-  const rawQty  = document.getElementById('k-rawqty').value;
-  if (rawName && !(Number(rawQty) > 0)) return toast('กรอกว่าใช้วัตถุดิบไปเท่าไหร่');
+  const raws = [];
+  const list = rawsOf(it);
+  for (let i = 0; i < list.length; i++) {
+    const el = document.getElementById('k-rq-' + i);
+    const q = el ? el.value : '';
+    // ตัดของดิบไม่ครบ ยอดจะเพี้ยนแบบเงียบ ๆ เลยบังคับกรอกให้ครบทุกช่อง
+    if (!(Number(q) > 0)) return toast('กรอกว่าใช้ ' + esc(list[i].name) + ' ไปเท่าไหร่');
+    raws.push({ name: list[i].name, qty: q });
+  }
 
   const btn = document.getElementById('k-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
   try {
-    const r = await apiPost({ action: 'stockPack', item: it.name, packs, rem,
-                              raw: rawName, rawQty, note: document.getElementById('k-note').value });
+    const r = await apiPost({ action: 'stockPack', item: it.name, packs, rem, raws,
+                              note: document.getElementById('k-note').value });
     toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
           esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
     document.getElementById('k-packs').value = '';
     document.getElementById('k-rem').value = '';
-    document.getElementById('k-rawqty').value = '';
     document.getElementById('k-note').value = '';
+    list.forEach((_, i) => { const el = document.getElementById('k-rq-' + i); if (el) el.value = ''; });
     await loadData();
     calcPack();
   } catch (e) {

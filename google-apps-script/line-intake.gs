@@ -739,10 +739,16 @@ function intakeItemNames_() {
 function intakeStockQty_(item, counts, gram) {
   if (!item) return null;
 
-  // วัตถุดิบซื้อเป็นโล — น้ำหนักที่พิมพ์มาคือจำนวนที่เข้าครัวกลางเลย
-  // ไม่ต้องรอให้บอกเป็นไม้/ถุง เพราะของดิบยังไม่ได้แพ็ค
-  if (item.kind === 'วัตถุดิบ' && gram > 0) {
-    return { base: Math.round(gram / 1000 * 1000) / 1000, packs: 0, per: 1 };
+  // ของดิบ — เข้าสต็อกตามที่ซื้อมาเลย ไม่ต้องรอให้บอกเป็นไม้
+  // ชั่งเป็นโล/กรัม ก็แปลงเป็น กก. ส่วนที่ซื้อเป็นถุง/แพ็ค ก็นับตามนั้น
+  if (item.kind === 'วัตถุดิบ') {
+    if (gram > 0) return { base: Math.round(gram) / 1000, packs: 0, per: 1 };
+    if (counts && counts.length) {
+      // หน่วยที่พิมพ์มาไม่ต้องตรงเป๊ะกับในชีต เพราะของดิบนับเป็นชิ้น ๆ อยู่แล้ว
+      // ("เต้าหู้ชีส 2 แพ็ค" กับชีตที่ตั้งไว้ว่า "ถุง" คือของกองเดียวกัน)
+      return { base: counts[0].n, packs: 0, per: 1 };
+    }
+    return null;
   }
   if (!counts || !counts.length) return null;
 
@@ -1150,7 +1156,7 @@ function intakeParseJson_(text) {
  */
 function intakeRawBase_(item) {
   if (!item || item.kind !== 'วัตถุดิบ') return '';
-  var suffix = (typeof RAW_SUFFIX === 'string') ? RAW_SUFFIX : ' (โล)';
+  var suffix = (typeof RAW_SUFFIX === 'string') ? RAW_SUFFIX : ' (ดิบ)';
   var n = String(item.name || '');
   return n.slice(-suffix.length) === suffix ? n.slice(0, -suffix.length).trim() : '';
 }
@@ -1316,12 +1322,15 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         var hit   = intakeMatchItem_(it.raw, names);
         // จับได้ด้วยชื่อสั้นของวัตถุดิบ — เก็บชื่อจริงลงชีต จะได้ตรงกับรายการสินค้า
         if (hit.matched && byName[hit.name]) hit.name = byName[hit.name].name;
-        // หน่วยเป็นตัวบอกชั้นของของ: ซื้อเป็นโล/กรัม = ของดิบที่ยังไม่ได้แพ็ค
-        // "เห็ดเข็มทอง 2 โล" ต้องเข้าเป็น "เห็ดเข็ม (โล)" ไม่ใช่เห็ดเข็มที่แพ็คแล้ว
-        // ไม่งั้นยอดของแพ็คจะเกินจริง แล้วตอนเช็คสต็อกจะกลายเป็นของหาย
-        if (it.gram > 0 && byName[hit.name] && byName[hit.name].kind !== 'วัตถุดิบ') {
-          var rawOf = byName[hit.name].raw;
-          if (rawOf && byName[rawOf]) hit.name = rawOf;
+        // ของที่ซื้อมาเข้าเป็น "ของดิบ" เสมอ ไม่ว่าซื้อเป็นโลหรือเป็นแพ็ค
+        // แพ็คที่ซื้อมาไม่ใช่แพ็คที่ส่งร้าน — เต้าหู้ชีส 1 แพ็คซื้อได้ราว 13 ไม้
+        // ส่วนแพ็คส่งร้านคือ 10 ไม้ที่พนักงานแพ็คเอง จำนวนจริงรู้ตอนแพ็ค
+        // ถ้าเอาของที่ซื้อไปลงช่องของแพ็คเลย ยอดจะเกินจริงแล้วกลายเป็นของหาย
+        if (byName[hit.name] && byName[hit.name].kind !== 'วัตถุดิบ') {
+          var opts = byName[hit.name].raws || [];
+          // ของที่พันใช้หลายวัตถุดิบ ระบบเดาแทนไม่ได้ว่าซื้อตัวไหนมา
+          // เลยแปลงให้เฉพาะตัวที่มีวัตถุดิบเดียว ที่เหลือลงเป็นค่าใช้จ่ายอย่างเดียว
+          if (opts.length === 1 && byName[opts[0]]) hit.name = opts[0];
         }
         var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
         var kind  = it.rnd ? INTAKE_KIND_RND : INTAKE_KIND_STOCK;

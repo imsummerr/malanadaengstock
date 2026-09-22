@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-20 · เพิ่มอกไก่ แพ็คละ 20 ไม้';
+var BACKEND_VERSION = '2026-09-22 · ของดิบ → แพ็ค · ตัดวัตถุดิบหลายตัว';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1154,8 +1154,17 @@ var MOVE_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ต
 // อ่านชีตนั้นอยู่ ถ้าเอาแถวติดลบไปใส่ มันจะไปแจ้งว่า "ของเข้าใหม่ -0.9 กก."
 var PACK_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ตรวจ',
                  'วัตถุดิบ', 'จำนวนวัตถุดิบ', 'หน่วยวัตถุดิบ',
+                 'วัตถุดิบ2', 'จำนวนวัตถุดิบ2', 'หน่วยวัตถุดิบ2',
+                 'วัตถุดิบ3', 'จำนวนวัตถุดิบ3', 'หน่วยวัตถุดิบ3',
                  'รายการ', 'จำนวน', 'หน่วย', 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค',
                  'หมายเหตุ', 'ประเภท'];
+
+/** ของที่พันใช้วัตถุดิบหลายอย่าง เผื่อช่องไว้ 3 — พอสำหรับหมู + ไส้ + เผื่ออีกตัว */
+var PACK_RAW_SLOTS = 3;
+function packRawCols_(i) {
+  var n = i === 0 ? '' : String(i + 1);
+  return { name: 'วัตถุดิบ' + n, qty: 'จำนวนวัตถุดิบ' + n, unit: 'หน่วยวัตถุดิบ' + n };
+}
 
 /**
  * หาคอลัมน์ตามชื่อหัวตาราง ถ้าไม่มีก็ต่อท้ายให้ — ไม่แตะคอลัมน์เดิม ไม่สลับลำดับ
@@ -1288,7 +1297,7 @@ function getStockItemsRaw_() {
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
       kind:     String(v[i][map['ชนิด']] || '').trim(),
-      raw:      String(v[i][map['วัตถุดิบ']] || '').trim(),
+      raws:     splitLocs_(v[i][map['วัตถุดิบ']]),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim()
     });
@@ -1348,15 +1357,21 @@ function readPacksRaw_() {
   var out = [];
   for (var i = 0; i < v.length; i++) {
     var item = String(v[i][map['รายการ']] || '').trim();
-    var raw  = String(v[i][map['วัตถุดิบ']] || '').trim();
-    if (!item && !raw) continue;
+    var raws = [];
+    for (var k = 0; k < PACK_RAW_SLOTS; k++) {
+      var c = packRawCols_(k);
+      if (map[c.name] === undefined) continue;
+      var rn = String(v[i][map[c.name]] || '').trim();
+      if (!rn) continue;
+      raws.push({ name: rn, qty: Number(v[i][map[c.qty]]) || 0 });
+    }
+    if (!item && !raws.length) continue;
     out.push({
-      when:   v[i][map['วันที่เวลา']],
-      loc:    String(v[i][map['สาขา']] || '').trim(),
-      item:   item,
-      qty:    Number(v[i][map['จำนวน']]) || 0,
-      raw:    raw,
-      rawQty: Number(v[i][map['จำนวนวัตถุดิบ']]) || 0
+      when: v[i][map['วันที่เวลา']],
+      loc:  String(v[i][map['สาขา']] || '').trim(),
+      item: item,
+      qty:  Number(v[i][map['จำนวน']]) || 0,
+      raws: raws
     });
   }
   return out;
@@ -1431,7 +1446,9 @@ function stockBalancesRaw_() {
   // 4) แพ็คของ — 1 แถวตัดวัตถุดิบ แล้วเพิ่มของแพ็คที่ครัวกลาง
   //    สองรายการคนละตัว จึงต้องเช็ควันนับของแต่ละตัวแยกกัน
   readPacks_().forEach(function (m) {
-    if (m.raw && after(m.loc, m.raw, m.when))   add(m.loc, m.raw, -m.rawQty);
+    m.raws.forEach(function (r) {
+      if (r.name && after(m.loc, r.name, m.when)) add(m.loc, r.name, -r.qty);
+    });
     if (m.item && after(m.loc, m.item, m.when)) add(m.loc, m.item, m.qty);
   });
 
@@ -1622,17 +1639,29 @@ function handleStockPack_(body) {
 
   var out = findStockItem_(String(body.item || '').trim());
   if (!out) return { success: false, message: 'ไม่พบสินค้า "' + body.item + '" ในชีตรายการสินค้า' };
-  var packs = toBase_(body.packs, body.rem, out.perPack);
-  if (!(packs > 0)) return { success: false, message: 'กรุณากรอกจำนวนที่แพ็คได้' };
+  var made = toBase_(body.packs, body.rem, out.perPack);
+  if (!(made > 0)) return { success: false, message: 'กรุณากรอกจำนวนที่แพ็คได้' };
 
-  // วัตถุดิบเว้นว่างได้ — ของบางอย่างซื้อมาแพ็คแล้ว ไม่ได้ตัดจากของดิบ
-  var rawName = String(body.raw || '').trim();
-  var rawQty  = Number(body.rawQty) || 0;
-  var raw = null;
-  if (rawName) {
-    raw = findStockItem_(rawName);
-    if (!raw) return { success: false, message: 'ไม่พบวัตถุดิบ "' + rawName + '" ในชีตรายการสินค้า' };
-    if (!(rawQty > 0)) return { success: false, message: 'กรุณากรอกว่าใช้วัตถุดิบไปเท่าไหร่' };
+  // วัตถุดิบมาจากหน้าเว็บเป็น list — ของที่พันมีหลายตัว ของที่แค่เสียบมีตัวเดียว
+  var want = body.raws;
+  if (!want && body.raw) want = [{ name: body.raw, qty: body.rawQty }];   // รูปแบบเดิม
+  want = want || [];
+
+  var used = [], seen = {};
+  for (var i = 0; i < want.length; i++) {
+    var nm = String(want[i] && want[i].name || '').trim();
+    if (!nm) continue;
+    if (seen[nm]) return { success: false, message: 'ใส่ "' + nm + '" มาซ้ำสองครั้ง' };
+    seen[nm] = true;
+
+    var it = findStockItem_(nm);
+    if (!it) return { success: false, message: 'ไม่พบวัตถุดิบ "' + nm + '" ในชีตรายการสินค้า' };
+    var q = Number(want[i].qty) || 0;
+    if (!(q > 0)) return { success: false, message: 'กรอกว่าใช้ "' + nm + '" ไปเท่าไหร่' };
+    used.push({ item: it, qty: q });
+  }
+  if (used.length > PACK_RAW_SLOTS) {
+    return { success: false, message: 'ใส่วัตถุดิบได้ไม่เกิน ' + PACK_RAW_SLOTS + ' อย่างต่อครั้ง' };
   }
 
   var sh = sheet_(SHEET_PACK);
@@ -1640,24 +1669,33 @@ function handleStockPack_(body) {
   var map = ensureCols_(sh, PACK_COLS);
 
   var now = new Date();
-  appendByCols_(sh, map, {
+  var row = {
     'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': session.name,
-    'วัตถุดิบ': raw ? raw.name : '', 'จำนวนวัตถุดิบ': raw ? rawQty : '',
-    'หน่วยวัตถุดิบ': raw ? raw.subUnit : '',
-    'รายการ': out.name, 'จำนวน': packs, 'หน่วย': out.subUnit,
+    'รายการ': out.name, 'จำนวน': made, 'หน่วย': out.subUnit,
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'ไม้ต่อแพ็ค': out.perPack, 'ประเภท': 'แพ็คของ',
     'หมายเหตุ': String(body.note || '')
+  };
+  used.forEach(function (u, k) {
+    var c = packRawCols_(k);
+    row[c.name] = u.item.name;
+    row[c.qty]  = u.qty;
+    row[c.unit] = u.item.subUnit;
   });
+  appendByCols_(sh, map, row);
 
   var msg = '📦 แพ็คของ — ' + CENTRAL + '\n\n' +
-            (raw ? 'ใช้ ' + raw.name + ' ' + rawQty + ' ' + raw.subUnit + '\n' : '') +
-            'ได้ ' + out.name + ' ' + fmtPack_(packs, out) + '\n' +
+            (used.length
+              ? 'ใช้ ' + used.map(function (u) {
+                  return u.item.name + ' ' + u.qty + ' ' + u.item.subUnit;
+                }).join('\n    ') + '\n'
+              : '') +
+            'ได้ ' + out.name + ' ' + fmtPack_(made, out) + '\n' +
             'โดย ' + session.name + ' · ' + Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm');
   var line = stockNotify_(CENTRAL, msg);
 
   checkLowStock_([out.name]);
-  return { success: true, text: fmtPack_(packs, out),
+  return { success: true, text: fmtPack_(made, out),
            lineSent: line.sent, lineMsg: line.message };
 }
 
@@ -2131,103 +2169,128 @@ var PACK_SIZE_EXCEPTION = {
 /** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
 var PRICE_DEFAULT = 10;
 
-/** วัตถุดิบใช้ชื่อเดียวกับของแพ็คได้ เลยต่อท้ายให้ต่างกัน */
-var RAW_SUFFIX = ' (โล)';
+/** ของดิบใช้ชื่อเดียวกับของแพ็ค เลยต่อท้ายให้ต่างกัน */
+var RAW_SUFFIX = ' (ดิบ)';
 function rawName_(base) { return String(base || '').trim() + RAW_SUFFIX; }
 
 /**
- * ของที่ส่งร้านได้ — [ชื่อ, วัตถุดิบที่ใช้แพ็ค, หมายเหตุ]
- * วัตถุดิบเว้นว่าง = ซื้อมาแพ็คแล้ว ไม่ได้ตัดจากของดิบ
+ * ของดิบที่ซื้อมาชั่งเป็นโล — ที่เหลือซื้อมาเป็นถุง/แพ็ค
+ * หน่วยนี้คือ "หน่วยที่ซื้อ" ไม่ใช่หน่วยที่ขาย แก้ในชีตได้ถ้าเจ้าประจำเปลี่ยน
+ */
+var RAW_KG = [
+  'หมูสามชั้น', 'สันคอ', 'สันนอก', 'หัวไหล่หมู', 'อกไก่',
+  'ผักกาดขาว', 'ผักบุ้ง', 'กวางตุ้ง', 'มันฝรั่ง', 'ฟักทอง', 'มันเทศ', 'รากบัว',
+  'กระเจี๊ยบ', 'ข้าวโพดฝัก',
+  'เห็ดเข็ม', 'เห็ดชิเมจิ', 'เห็ดออเร็นจิ', 'เห็ดหูหนู', 'เห็ดหอม',
+  'สาหร่าย', 'ดอลลี่', 'แมงกะพรุน', 'ปลาหมึกกรอบ'
+];
+function rawUnitOf_(base) { return RAW_KG.indexOf(base) !== -1 ? 'กก.' : 'ถุง'; }
+
+/**
+ * ของที่ส่งร้านได้ — [ชื่อ, วัตถุดิบ, หมายเหตุ]
+ *
+ * วัตถุดิบ
+ *   ''        ของที่แค่เอามาเสียบไม้/จัดใส่ถุง ตัดจากของดิบชื่อเดียวกันเอง
+ *             (เต้าหู้ชีส 1 ถุงดิบ → เต้าหู้ชีส 1 แพ็ค เศษ 3 ไม้)
+ *   [a, b]    ของที่พัน ต้องใช้หลายอย่าง ตัดออกทุกตัวตอนแพ็ค
+ *             (หมูพันเห็ดชิเมจิ ตัดทั้งหมูสามชั้นและเห็ดชิเมจิ)
+ *
  * ราคาเว้นไว้ = PRICE_DEFAULT (แก้ในชีตได้)
  */
 
-// ── แบบเสียบไม้ · 1 แพ็ค = 10 ไม้ ──
+// ── แบบเสียบไม้ · 1 แพ็คส่งร้าน = 10 ไม้ ──
 var STICK_ITEMS = [
-  ['หมูพันเห็ดเข็มทอง',   'หมูสามชั้น', ''],
-  ['หมูพันสาหร่าย',       'หมูสามชั้น', ''],
-  ['หมูพันเห็ดชิเมจิ',     'หมูสามชั้น', ''],
-  ['สันนอกสไลด์',         'สันนอก',     ''],
-  ['หัวไหล่หมูสไลด์ (ไม้)', 'หัวไหล่หมู', 'ของเดียวกับแบบถุง แต่คนละวิธีแพ็ค นับแยกกัน'],
-  ['ดอลลี่',              '',           ''],
-  ['แมงกะพรุน',           '',           ''],
-  ['ปลาหมึกกรอบ',         '',           ''],
-  ['พันผักกาดขาว',        'หมูสามชั้น', ''],
-  ['เต้าชีส',             '',           ''],
-  ['หลายสี',              '',           ''],
-  ['เบคอนพันไส้กรอก',     '',           ''],
-  ['ฟองเต้าหู้สามเหลี่ยม', '',           ''],
-  ['ข้าวโพดฝัก',          '',           ''],
-  ['เห็ดออเร็นจิ',         '',           ''],
-  ['เห็ดหูหนู',           '',           ''],
-  ['ปูอัดยาว',            '',           ''],
-  ['ไส้กรอกชีส',          '',           ''],
-  ['เต้าหู้หลอด',         '',           ''],
-  ['ไส้กรอกอันเล็ก',      '',           ''],
-  ['เต้าหู้หมู',          '',           ''],
-  ['เต้าหู้ปลา',          '',           ''],
-  ['รากบัว',              '',           ''],
-  ['มันฝรั่ง',            '',           ''],
-  ['ฟักทอง',              '',           ''],
-  ['อกไก่',               'อกไก่',       ''],
+  ['หมูพันเห็ดเข็มทอง',   ['หมูสามชั้น', 'เห็ดเข็ม'],    ''],
+  ['หมูพันสาหร่าย',       ['หมูสามชั้น', 'สาหร่าย'],     ''],
+  ['หมูพันเห็ดชิเมจิ',     ['หมูสามชั้น', 'เห็ดชิเมจิ'],   ''],
+  ['พันผักกาดขาว',        ['หมูสามชั้น', 'ผักกาดขาว'],   ''],
+  ['สันนอกสไลด์',         ['สันนอก'],    ''],
+  ['หัวไหล่หมูสไลด์ (ไม้)', ['หัวไหล่หมู'], 'ของเดียวกับแบบถุง แต่คนละวิธีแพ็ค นับแยกกัน'],
+  ['อกไก่',               ['อกไก่'],      ''],
+  ['ดอลลี่',              '',            ''],
+  ['แมงกะพรุน',           '',            ''],
+  ['ปลาหมึกกรอบ',         '',            ''],
+  ['เต้าชีส',             '',            ''],
+  ['หลายสี',              '',            ''],
+  ['เบคอนพันไส้กรอก',     '',            'ซื้อมาพันเสร็จแล้ว แค่เสียบไม้'],
+  ['ฟองเต้าหู้สามเหลี่ยม', '',            ''],
+  ['ข้าวโพดฝัก',          '',            ''],
+  ['เห็ดออเร็นจิ',         '',            ''],
+  ['เห็ดหูหนู',           '',            ''],
+  ['ปูอัดยาว',            '',            ''],
+  ['ไส้กรอกชีส',          '',            ''],
+  ['เต้าหู้หลอด',         '',            ''],
+  ['ไส้กรอกอันเล็ก',      '',            ''],
+  ['เต้าหู้หมู',          '',            ''],
+  ['เต้าหู้ปลา',          '',            ''],
+  ['รากบัว',              '',            ''],
+  ['มันฝรั่ง',            '',            ''],
+  ['ฟักทอง',              '',            ''],
   // เจ้าของยืนยันว่ายังขายอยู่ ถึงไม่ได้อยู่ในลิสต์ที่ส่งมารอบล่าสุด
-  ['กระเจี๊ยบ',           '',           ''],
-  ['เห็ดหอม',             '',           '']
+  ['กระเจี๊ยบ',           '',            ''],
+  ['เห็ดหอม',             '',            '']
 ];
 
-// ── แบบใส่ถุง · 1 แพ็ค = 10 ถุง ──
+// ── แบบใส่ถุง · 1 แพ็คส่งร้าน = 10 ถุง ──
 var BAG_ITEMS = [
-  ['สันคอสไลด์',           'สันคอ',      ''],
-  ['หัวไหล่หมูสไลด์ (ถุง)', 'หัวไหล่หมู', 'ของเดียวกับแบบไม้ แต่คนละวิธีแพ็ค นับแยกกัน'],
-  ['ผักกาดขาว',            'ผักกาดขาว',  ''],
-  ['ผักบุ้ง',               'ผักบุ้ง',     ''],
-  ['กวางตุ้ง',              'กวางตุ้ง',    ''],
-  ['เห็ดเข็ม',              'เห็ดเข็ม',    ''],
-  ['ราเมง',                '',           ''],
-  ['มาม่า',                '',           ''],
-  ['อุด้ง',                '',           ''],
-  ['ต็อกแท่งเล็ก',          '',           ''],
-  ['มันเทศ',               '',           ''],
-  ['วุ้นเส้นหม่าล่า',        '',           ''],
-  ['ชีส',                  '',           ''],
-  ['วุ้นเส้นเกาหลี',         '',           '']
+  ['สันคอสไลด์',           ['สันคอ'],      ''],
+  ['หัวไหล่หมูสไลด์ (ถุง)', ['หัวไหล่หมู'], 'ของเดียวกับแบบไม้ แต่คนละวิธีแพ็ค นับแยกกัน'],
+  ['ผักกาดขาว',            '',             ''],
+  ['ผักบุ้ง',               '',             ''],
+  ['กวางตุ้ง',              '',             ''],
+  ['เห็ดเข็ม',              '',             ''],
+  ['ราเมง',                '',             ''],
+  ['มาม่า',                '',             ''],
+  ['อุด้ง',                '',             ''],
+  ['ต็อกแท่งเล็ก',          '',             ''],
+  ['มันเทศ',               '',             ''],
+  ['วุ้นเส้นหม่าล่า',        '',             ''],
+  ['ชีส',                  '',             ''],
+  ['วุ้นเส้นเกาหลี',         '',             '']
 ];
 
 /** ราคาที่ไม่ใช่ 10 บาท — ใส่เฉพาะตัวที่ต่าง */
 var PRICE_EXCEPTION = {};
 
 /**
- * แคตตาล็อกทั้งหมดเป็น object เดียว — ทั้งของแพ็คและวัตถุดิบที่มันใช้
- * วัตถุดิบไม่ได้พิมพ์ไว้เป็นลิสต์แยก แต่งอกจากคอลัมน์วัตถุดิบของของแพ็ค
- * จะได้ไม่มีวัตถุดิบลอย ๆ ที่ไม่มีใครใช้ค้างอยู่ในชีต
+ * แคตตาล็อกทั้งหมด — ของแพ็ค + ของดิบที่มันใช้
+ * ของดิบไม่ได้พิมพ์เป็นลิสต์แยก แต่งอกจากช่องวัตถุดิบของของแพ็ค
+ * จะได้ไม่มีของดิบลอย ๆ ที่ไม่มีใครใช้ค้างอยู่ในชีต
  */
 function itemCatalogue_() {
   var out = [], rawSeen = {};
 
   function addPacked(row, subUnit) {
-    var name = row[0], rawBase = row[1], note = row[2];
+    var name = row[0], spec = row[1], note = row[2];
     var per = PACK_SIZE_EXCEPTION[name] || PACK_SIZE;
     // ตัวที่แพ็คไม่เท่าชาวบ้าน เขียนบอกไว้ในชีตเลย จะได้ไม่ต้องจำ
     if (!note && per !== PACK_SIZE) note = 'แพ็คละ ' + per + ' ' + subUnit;
+
+    // ไม่ได้ระบุวัตถุดิบ = ของที่ซื้อมาแล้วเอามาเสียบ/จัดใส่ถุงเอง
+    // ตัดจากของดิบชื่อเดียวกัน ฟอร์มแพ็คไม่ต้องถามว่าใช้อะไร
+    var bases = (spec && spec.length) ? spec : [name];
+    bases.forEach(function (b) { rawSeen[b] = true; });
+
     out.push({
       name: name, kind: KIND_PACKED,
       subUnit: subUnit, packUnit: 'แพ็ค', perPack: per,
       price: PRICE_EXCEPTION[name] || PRICE_DEFAULT,
-      scope: '', raw: rawBase ? rawName_(rawBase) : '', note: note
+      scope: '', raws: bases.map(rawName_), note: note
     });
-    if (rawBase && !rawSeen[rawBase]) rawSeen[rawBase] = true;
   }
 
   STICK_ITEMS.forEach(function (r) { addPacked(r, 'ไม้'); });
   BAG_ITEMS.forEach(function (r) { addPacked(r, 'ถุง'); });
 
-  // วัตถุดิบ — ซื้อเป็นโล อยู่แค่ครัวกลาง ไม่มีราคาขาย เพราะยังขายไม่ได้
+  // ของดิบ — อยู่แค่ครัวกลาง ไม่มีราคาขาย เพราะยังขายไม่ได้
   // ถ้าใส่ราคา มันจะไปโผล่เป็นยอด "ควรได้" ในแท็บคำนวณของหาย ทั้งที่ยังไม่ได้ขาย
   Object.keys(rawSeen).forEach(function (base) {
+    var u = rawUnitOf_(base);
     out.push({
       name: rawName_(base), kind: KIND_RAW,
-      subUnit: 'กก.', packUnit: 'กก.', perPack: 1,
-      price: 0, scope: SCOPE_CENTRAL, raw: '',
-      note: 'ซื้อเป็นโล เข้าครัวกลาง แพ็คแล้วจะตัดออกเอง'
+      subUnit: u, packUnit: u, perPack: 1,
+      price: 0, scope: SCOPE_CENTRAL, raws: [],
+      note: 'ซื้อเป็น' + u + ' เข้าครัวกลาง แพ็คแล้วระบบตัดออกให้เอง'
     });
   });
 
@@ -2265,7 +2328,7 @@ function applyItemCatalogue() {
     vals['ราคาขาย/หน่วยย่อย'] = it.price || '';
     vals['ใช้ที่'] = it.scope;
     vals['ชนิด'] = it.kind;
-    vals['วัตถุดิบ'] = it.raw;
+    vals['วัตถุดิบ'] = (it.raws || []).join(', ');
 
     var row = rowOf[it.name];
     if (!row) {
@@ -2375,6 +2438,16 @@ var ITEM_RENAME = {
   'ข้าวโพด':             'ข้าวโพดฝัก',
   'ข้าวโพดฝักใหญ่':       'ข้าวโพดฝัก',
   'มันญี่ปุ่น':            'มันฝรั่ง',
+  // รุ่นก่อนตั้งชื่อของดิบว่า "(โล)" แต่ของดิบบางอย่างซื้อเป็นถุง ไม่ใช่โล
+  'สันคอ (โล)':          'สันคอ (ดิบ)',
+  'สันนอก (โล)':         'สันนอก (ดิบ)',
+  'หัวไหล่หมู (โล)':      'หัวไหล่หมู (ดิบ)',
+  'หมูสามชั้น (โล)':      'หมูสามชั้น (ดิบ)',
+  'อกไก่ (โล)':          'อกไก่ (ดิบ)',
+  'ผักกาดขาว (โล)':      'ผักกาดขาว (ดิบ)',
+  'ผักบุ้ง (โล)':         'ผักบุ้ง (ดิบ)',
+  'กวางตุ้ง (โล)':        'กวางตุ้ง (ดิบ)',
+  'เห็ดเข็ม (โล)':        'เห็ดเข็ม (ดิบ)',
   'ต็อก (แป้งต็อก)':       'ต็อกแท่งเล็ก'
   // หมายเหตุ: "หัวไหล่หมูสไลด์" เดิม ไม่ได้แมปอัตโนมัติ
   // เพราะตอนนี้แยกเป็น (ไม้) กับ (ถุง) ระบบเดาแทนไม่ได้ว่าของเก่าเป็นแบบไหน
@@ -2563,8 +2636,12 @@ function zeroStockAt_(locs) {
     h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).getValues().forEach(function (r) {
       var n = String(r[hmap['รายการ']] || '').trim();
       if (n && unitOf[n] === undefined) unitOf[n] = String(r[hmap['หน่วย']] || 'ไม้').trim();
-      var raw = hmap['วัตถุดิบ'] !== undefined ? String(r[hmap['วัตถุดิบ']] || '').trim() : '';
-      if (raw && unitOf[raw] === undefined) unitOf[raw] = String(r[hmap['หน่วยวัตถุดิบ']] || 'กก.').trim();
+      for (var k = 0; k < PACK_RAW_SLOTS; k++) {
+        var pc = packRawCols_(k);
+        if (hmap[pc.name] === undefined) continue;
+        var rn = String(r[hmap[pc.name]] || '').trim();
+        if (rn && unitOf[rn] === undefined) unitOf[rn] = String(r[hmap[pc.unit]] || 'กก.').trim();
+      }
     });
   });
 
@@ -2631,9 +2708,15 @@ function showStockSource() {
       // ของเข้าร้าน 1 แถวกระทบครัวกลางด้วย เลยต้องเช็คทั้งสองฝั่ง
       var kind = String(r[map['ประเภท']] || '').trim();
       // แถวเดียวกระทบได้หลายที่ ของเข้าร้านตัดครัวกลางด้วย แพ็คของก็ตัดวัตถุดิบด้วย
-      var raw = map['วัตถุดิบ'] !== undefined ? String(r[map['วัตถุดิบ']] || '').trim() : '';
+      var raws = [];
+      for (var k = 0; k < PACK_RAW_SLOTS; k++) {
+        var pc = packRawCols_(k);
+        if (map[pc.name] === undefined) continue;
+        var rn = String(r[map[pc.name]] || '').trim();
+        if (rn) raws.push(rn);
+      }
       var touches = (want[loc + '\u0000' + item] !== undefined) ||
-                    (raw && want[loc + '\u0000' + raw] !== undefined) ||
+                    raws.some(function (rn) { return want[loc + '\u0000' + rn] !== undefined; }) ||
                     (kind === 'ของเข้าร้าน' && want[CENTRAL + '\u0000' + item] !== undefined);
       if (!touches) return;
       hit.push('    แถว ' + (i + 2) + ' · ' + loc + ' · ' + item + ' · ' +
