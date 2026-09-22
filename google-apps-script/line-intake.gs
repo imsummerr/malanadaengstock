@@ -425,28 +425,32 @@ function intakeStripPrefix_(text) {
 
 function intakeHelpText_() {
   return '📥 วิธีบันทึกผ่านไลน์\n\n' +
-         '🛒 ซื้อของ — พิมพ์ชื่อของ ตามด้วยราคาและน้ำหนัก\n' +
-         '   ปลาดอลลี่ 68 บาท 800 กรัม\n' +
-         '   หมูสันคอ 2 กก. 350\n' +
-         '   ผักกาดขาว 3 ถุง 60 บาท\n\n' +
+         '🛒 ซื้อของ — ชื่อของ + จำนวน + ราคา\n' +
+         '   สันคอ 1 โล 180 บาท\n' +
+         '   เต้าหู้ชีส 2 แพ็ค 150\n' +
+         '   ผักบุ้ง 0.5 โล 15\n\n' +
+         '   ของที่ซื้อมาเข้าเป็น "ของดิบ" ที่ครัวกลาง\n' +
+         '   ตามหน่วยที่ซื้อจริง ยังไม่นับเป็นไม้\n' +
+         '   จะเป็นไม้ตอนพนักงานกดแพ็คในแอป\n\n' +
          '🧾 ค่าใช้จ่าย — ขึ้นต้นด้วยคำว่า "ค่า"\n' +
          '   ค่าที่ 200\n' +
          '   ค่าแก๊ส 450\n' +
          '   ค่าไม้เสียบ 300\n\n' +
-         '💳 รูดบัตร — เติมคำว่า "บัตร" ต่อท้าย\n' +
+         '💳 รูดบัตร — เติมคำว่า "บัตร" ท้ายบรรทัดนั้น\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
-         '   ปลาดอลลี่ 68 บาท 800 กรัม บัตร\n' +
-         '   (ไม่พิมพ์อะไร = โอน · ทางไลน์มีแค่ 2 อย่างนี้)\n' +
+         '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
+         '   ไม่พิมพ์อะไร = โอน · ทางไลน์มีแค่ 2 อย่างนี้\n' +
          '   จ่ายเงินสดหน้าร้าน ลงในหน้า POS ไม่ใช่ทางนี้\n\n' +
-         '📦 ของเข้าครัวกลาง — บอกจำนวนไม้ต่อท้าย\n' +
-         '   ไส้กรอกหนังกรอบ 1 แพ็ค 90 บาท ได้ 26 ไม้\n' +
-         '   (ยอดสต็อกขยับให้ + แจ้งวันหมดอายุให้เอง)\n\n' +
-         'หลายรายการ พิมพ์บรรทัดละอย่าง หรือคั่นด้วยจุลภาค\n' +
+         '🧪 ของลองสูตร — เติม "ทดลอง" ข้างหน้า\n' +
+         '   ทดลอง ปลากะพง 200\n' +
+         '   (ไม่เข้าสต็อก ไม่นับเป็นต้นทุนขาย)\n\n' +
+         'หลายรายการ พิมพ์บรรทัดละอย่าง\n' +
          'ถ่ายรูปบิลส่งมาก็ได้ บอทอ่านให้เอง\n\n' +
          'พิมพ์ในกลุ่มนี้ได้เลย ไม่ต้องมีคำนำหน้า\n' +
-         'บอทจะเก็บเฉพาะบรรทัดที่เป็นรายการของจริง ๆ\n' +
+         'บอทเก็บเฉพาะบรรทัดที่เป็นรายการของจริง ๆ\n' +
          'คุยกันปกติไม่โดนเก็บ ถ้าบรรทัดไหนบอทไม่รับ\n' +
-         'ให้เติมคำว่า "ซื้อ" ข้างหน้า เช่น  ซื้อ ปลากะพง 500\n\n' +
+         'มันจะบอกท้ายข้อความ ให้เติมคำว่า "ซื้อ" ข้างหน้า\n' +
+         'เช่น  ซื้อ ปลากะพง 500\n\n' +
          'คำสั่งอื่น\n' +
          '   ลบ          ลบรายการล่าสุด\n' +
          '   ยอดวันนี้    ดูยอดซื้อวันนี้\n' +
@@ -476,6 +480,11 @@ function intakeUnitKind_(unit) {
   if (/^ขีด$/.test(u))                                 return 'khit';
   if (/^(บาท|฿|บ\.|thb|baht)$/.test(u))                return 'money';
   return 'count';
+}
+
+/** หน่วยที่ต้องชั่ง — ถ้าชีตตั้งไว้แบบนี้แล้วพิมพ์มาเป็นห่อ ระบบแปลงให้ไม่ได้ */
+function intakeIsWeightUnit_(u) {
+  return /^(กก\.?|กิโล|กิโลกรัม|กรัม|ขีด|kgs?|kg|g)$/.test(String(u || '').trim());
 }
 
 /** "1,250.5" → 1250.5 */
@@ -526,17 +535,26 @@ function intakeExpenseType_(name) {
  */
 function intakeParseText_(text) {
   var clean = String(text || '').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
-  var parts = clean.split(/[\n\r,;]+/);
+  // แยกบรรทัดก่อน แล้วค่อยแยกจุลภาคในบรรทัด — จำไว้ว่าอันไหนมาจากบรรทัดไหน
+  // วิธีจ่ายที่บอกมาจะได้ลามเฉพาะในบรรทัดเดียวกัน ไม่ลามทั้งข้อความ
   var out = [];
-  for (var i = 0; i < parts.length && out.length < INTAKE_MAX_ITEMS; i++) {
-    var one = intakeParseLine_(parts[i]);
-    if (one) out.push(one);
+  var rows = clean.split(/[\n\r]+/);
+  for (var r = 0; r < rows.length && out.length < INTAKE_MAX_ITEMS; r++) {
+    var cols = rows[r].split(/[,;]+/);
+    for (var c = 0; c < cols.length && out.length < INTAKE_MAX_ITEMS; c++) {
+      var one = intakeParseLine_(cols[c]);
+      if (one) { one.line = r; out.push(one); }
+    }
   }
 
-  // บอกวิธีจ่ายไว้บรรทัดเดียว = หมายถึงทั้งข้อความ
+  // บอกวิธีจ่ายไว้ท้ายบรรทัด = หมายถึงทั้งบรรทัดนั้น
   // ("ปลาดอลลี่ 68, ปูอัด 120 บัตร" คือรูดบัตรทั้งคู่ ไม่ใช่เฉพาะปูอัด)
-  var told = '';
-  for (i = 0; i < out.length; i++) if (out[i].pay) { told = out[i].pay; break; }
+  // แต่ไม่ลามไปบรรทัดอื่น ไม่งั้นพิมพ์รายการซื้อของยาว ๆ แล้วมี "บัตร"
+  // อยู่บรรทัดท้ายบรรทัดเดียว ทั้งใบจะถูกมาร์กเป็นรูดบัตรหมด
+  var toldOf = {};
+  for (i = 0; i < out.length; i++) {
+    if (out[i].pay && toldOf[out[i].line] === undefined) toldOf[out[i].line] = out[i].pay;
+  }
 
   // ไม่ได้บอกมา = โอน ทั้งซื้อของและค่าใช้จ่าย
   // ที่จ่ายด้วยเงินสดหน้าร้าน พนักงานลงในหน้า POS อยู่แล้ว
@@ -544,7 +562,7 @@ function intakeParseText_(text) {
   // อยากได้บัตรก็พิมพ์ "บัตร" กำกับ
   var pay = intakeProp_('INTAKE_DEFAULT_PAY', INTAKE_DEFAULT_PAY);
   for (i = 0; i < out.length; i++) {
-    out[i].pay = out[i].pay || told || pay;
+    out[i].pay = out[i].pay || toldOf[out[i].line] || pay;
   }
 
   return out;
@@ -744,9 +762,15 @@ function intakeStockQty_(item, counts, gram) {
   if (item.kind === 'วัตถุดิบ') {
     if (gram > 0) return { base: Math.round(gram) / 1000, packs: 0, per: 1 };
     if (counts && counts.length) {
-      // หน่วยที่พิมพ์มาไม่ต้องตรงเป๊ะกับในชีต เพราะของดิบนับเป็นชิ้น ๆ อยู่แล้ว
-      // ("เต้าหู้ชีส 2 แพ็ค" กับชีตที่ตั้งไว้ว่า "ถุง" คือของกองเดียวกัน)
-      return { base: counts[0].n, packs: 0, per: 1 };
+      // นับเป็นชิ้น ๆ ตามที่พิมพ์มา ("เต้าหู้ชีส 2 แพ็ค" = 2)
+      // แต่ถ้าชีตตั้งหน่วยไว้เป็น กก. แล้วพิมพ์มาเป็นห่อ ระบบไม่รู้ว่าห่อละกี่กรัม
+      // ต้องเตือน ไม่ใช่บันทึก 2 กก. ทั้งที่ซื้อมา 2 ห่อ
+      // ถุง/แพ็ค/ห่อ/กล่อง ถือเป็นอันเดียวกัน เพราะมันคือ "ที่ซื้อมาหนึ่งหน่วย" เหมือนกัน
+      // ที่อันตรายจริงคือชั่งเป็นโลแต่พิมพ์มาเป็นห่อ เพราะไม่มีใครรู้ว่าห่อละกี่กรัม
+      var typed = String(counts[0].unit || '').trim();
+      var want  = String(item.subUnit || '').trim();
+      var warn  = intakeIsWeightUnit_(want) ? typed : '';
+      return { base: counts[0].n, packs: 0, per: 1, unitWarn: warn };
     }
     return null;
   }
@@ -1282,7 +1306,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
     if (base && !byName[base]) { names.push(base); byName[base] = x; }
   });
 
-  var buyLines = [], expLines = [], stockLines = [], rndLines = [];
+  var buyLines = [], expLines = [], stockLines = [], rndLines = [], unitWarns = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
   var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
@@ -1362,7 +1386,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           if (srow) {
             saved.s.push(srow);
             stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + byName[hit.name].subUnit +
-                            (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : ''));
+                            (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : '') +
+                            (q.unitWarn ? '  ⚠️' : ''));
+            if (q.unitWarn) {
+              unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
+                             '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+            }
           }
         }
       }
@@ -1399,6 +1428,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
   if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
+  // หน่วยไม่ตรง = ตัวเลขเข้าสต็อกแล้วแต่คนละมาตรา ต้องบอก ไม่งั้นยอดเพี้ยนเงียบ ๆ
+  if (unitWarns.length) {
+    msg += '\n\n⚠️ หน่วยไม่ตรงกับที่ตั้งไว้ ' + unitWarns.length + ' รายการ\n' +
+           unitWarns.map(function (w) { return '• ' + w; }).join('\n') +
+           '\nบันทึกตัวเลขให้แล้ว แต่แก้หน่วยในชีตรายการสินค้าให้ตรงด้วย';
+  }
   // เงินสดหน้าร้านลงในหน้า POS อยู่แล้ว รับทางไลน์ด้วยยอดจะถูกหักสองรอบ
   if (saidCash) {
     msg += '\n\n⚠️ ทางไลน์รับแค่ "โอน" กับ "บัตร" — บันทึกให้เป็นโอนไปก่อน' +
