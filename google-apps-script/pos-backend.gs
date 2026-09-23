@@ -1158,13 +1158,15 @@ var PACK_COLS = ['วันที่เวลา', 'สาขา', 'ผู้ต
                  'วัตถุดิบ2', 'จำนวนวัตถุดิบ2', 'หน่วยวัตถุดิบ2',
                  'วัตถุดิบ3', 'จำนวนวัตถุดิบ3', 'หน่วยวัตถุดิบ3',
                  'รายการ', 'จำนวน', 'หน่วย', 'แพ็ค', 'เศษ', 'ไม้ต่อแพ็ค',
-                 'หมายเหตุ', 'ประเภท', 'เศษ(ชิ้น)', 'ชิ้นต่อไม้'];
+                 'หมายเหตุ', 'ประเภท', 'เศษ(ชิ้น)', 'ชิ้นต่อไม้',
+                 'เบิกออกมา', 'เบิกออกมา2', 'เบิกออกมา3'];
 
 /** ของที่พันใช้วัตถุดิบหลายอย่าง เผื่อช่องไว้ 3 — พอสำหรับหมู + ไส้ + เผื่ออีกตัว */
 var PACK_RAW_SLOTS = 3;
 function packRawCols_(i) {
   var n = i === 0 ? '' : String(i + 1);
-  return { name: 'วัตถุดิบ' + n, qty: 'จำนวนวัตถุดิบ' + n, unit: 'หน่วยวัตถุดิบ' + n };
+  return { name: 'วัตถุดิบ' + n, qty: 'จำนวนวัตถุดิบ' + n, unit: 'หน่วยวัตถุดิบ' + n,
+           taken: 'เบิกออกมา' + n };
 }
 
 /**
@@ -1692,7 +1694,15 @@ function handleStockPack_(body) {
     if (!it) return { success: false, message: 'ไม่พบวัตถุดิบ "' + nm + '" ในชีตรายการสินค้า' };
     var q = Number(want[i].qty) || 0;
     if (!(q > 0)) return { success: false, message: 'กรอกว่าใช้ "' + nm + '" ไปเท่าไหร่' };
-    used.push({ item: it, qty: q });
+    // ของแช่แข็งเบิกมา 1 โล ละลายแล้วชั่งได้เนื้อ 0.6 โล — ส่วนต่างคือน้ำแข็ง
+    // ไม่กรอกก็ได้ ถือว่าเบิกเท่าไหร่ใช้เท่านั้น
+    var taken = Number(want[i].taken) || 0;
+    if (taken && taken < q) {
+      return { success: false,
+               message: '"' + nm + '" ชั่งได้ ' + q + ' แต่เบิกออกมาแค่ ' + taken +
+                        ' — ชั่งได้จริงต้องไม่เกินที่เบิก' };
+    }
+    used.push({ item: it, qty: q, taken: taken, loss: taken ? round_(taken - q) : 0 });
   }
   if (used.length > PACK_RAW_SLOTS) {
     return { success: false, message: 'ใส่วัตถุดิบได้ไม่เกิน ' + PACK_RAW_SLOTS + ' อย่างต่อครั้ง' };
@@ -1716,13 +1726,35 @@ function handleStockPack_(body) {
     row[c.name] = u.item.name;
     row[c.qty]  = u.qty;
     row[c.unit] = u.item.subUnit;
+    if (u.taken) row[c.taken] = u.taken;
   });
   appendByCols_(sh, map, row);
+
+  // น้ำแข็ง/เศษที่ทิ้ง ลงชีตของเสียแยกแถว จะได้เห็นว่าเจ้าไหนให้น้ำแข็งเยอะ
+  // ตัดที่นี่แทนที่จะรวมไว้ในแถวแพ็ค เพราะแพ็คตัดแค่ "เนื้อที่ใช้จริง"
+  var lost = used.filter(function (u) { return u.loss > 0; });
+  if (lost.length) {
+    var wsh = sheet_(SHEET_WASTE);
+    if (wsh) {
+      var wmap = ensureCols_(wsh, MOVE_COLS);
+      lost.forEach(function (u) {
+        appendByCols_(wsh, wmap, {
+          'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': session.name,
+          'รายการ': u.item.name, 'จำนวน': u.loss, 'หน่วย': baseUnitOf_(u.item),
+          'แพ็ค': 0, 'เศษ': u.loss, 'เศษ(ชิ้น)': 0,
+          'ชิ้นต่อไม้': perStickOf_(u.item), 'ไม้ต่อแพ็ค': u.item.perPack,
+          'ประเภท': 'น้ำแข็ง/ละลาย',
+          'หมายเหตุ': 'เบิก ' + u.taken + ' ชั่งได้ ' + u.qty + ' ' + u.item.subUnit
+        });
+      });
+    }
+  }
 
   var msg = '📦 แพ็คของ — ' + CENTRAL + '\n\n' +
             (used.length
               ? 'ใช้ ' + used.map(function (u) {
-                  return u.item.name + ' ' + u.qty + ' ' + u.item.subUnit;
+                  return u.item.name + ' ' + u.qty + ' ' + u.item.subUnit +
+                         (u.loss > 0 ? '  (เบิก ' + u.taken + ' · น้ำแข็ง ' + u.loss + ')' : '');
                 }).join('\n    ') + '\n'
               : '') +
             'ได้ ' + out.name + ' ' + fmtPack_(made, out) + '\n' +
