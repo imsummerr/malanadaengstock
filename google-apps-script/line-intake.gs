@@ -809,7 +809,9 @@ function intakeStockQty_(item, counts, gram) {
         return { base: Math.round(counts[0].n * kg * 1000) / 1000, packs: 0, per: 1,
                  unitWarn: '', unitNote: counts[0].n + ' ' + typed + ' × ' + kg + ' กก.' };
       }
-      return { base: counts[0].n, packs: 0, per: 1, unitWarn: typed };
+      // ไม่รู้ว่าถุงละกี่โล ลงเลขดิบไปจะกลายเป็น "2 กก." ทั้งที่ซื้อมา 2 ถุง
+      // ยอมไม่ลงสต็อกดีกว่า ค่าใช้จ่ายยังบันทึกปกติ แล้วบอกให้พิมพ์น้ำหนักมาใหม่
+      return { base: 0, packs: 0, per: 1, unitWarn: typed };
     }
     return null;
   }
@@ -1420,6 +1422,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         // บอกจำนวนหน่วยย่อยมาด้วย ("ได้ 26 ไม้") → ลงของเข้าครัวกลางให้เลย
         // ยอดสต็อกคงเหลือจะขยับตาม และบอทของเข้าจะแจ้งวันหมดอายุให้เอง
         var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts, it.gram) : null;
+        if (q && q.unitWarn) {
+          unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
+                         '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+        }
         if (q && q.base > 0) {
           var srow = intakeAddStockIn_(byName[hit.name], q, ctx);
           if (srow) {
@@ -1428,11 +1434,6 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
                             (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : '') +
                             (q.unitNote ? '  (' + q.unitNote + ')' : '') +
                             (q.unitWarn ? '  ⚠️' : ''));
-            if (q.unitWarn) {
-              unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
-                             '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"' +
-                             '\n  ถ้าซื้อได้ทั้งสองแบบ บอกมาว่าถุงละกี่โล จะคูณให้เอง');
-            }
           }
         }
       }
@@ -1469,11 +1470,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
   if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
-  // หน่วยไม่ตรง = ตัวเลขเข้าสต็อกแล้วแต่คนละมาตรา ต้องบอก ไม่งั้นยอดเพี้ยนเงียบ ๆ
+  // หน่วยไม่ตรง = แปลงให้ไม่ได้ เลยไม่ลงสต็อก ต้องบอก ไม่งั้นยอดขาดเงียบ ๆ
   if (unitWarns.length) {
-    msg += '\n\n⚠️ หน่วยไม่ตรงกับที่ตั้งไว้ ' + unitWarns.length + ' รายการ\n' +
+    msg += '\n\n⚠️ ยังไม่ได้ลงสต็อก ' + unitWarns.length + ' รายการ — หน่วยแปลงให้ไม่ได้\n' +
            unitWarns.map(function (w) { return '• ' + w; }).join('\n') +
-           '\nบันทึกตัวเลขให้แล้ว แต่แก้หน่วยในชีตรายการสินค้าให้ตรงด้วย';
+           '\nค่าใช้จ่ายบันทึกแล้ว แต่สต็อกยังไม่ขยับ' +
+           '\nชั่งแล้วพิมพ์น้ำหนักมาใหม่ เช่น "ดอลลี่ 800 กรัม" (ไม่ต้องใส่ราคาซ้ำ)';
   }
   // เงินสดหน้าร้านลงในหน้า POS อยู่แล้ว รับทางไลน์ด้วยยอดจะถูกหักสองรอบ
   if (saidCash) {
