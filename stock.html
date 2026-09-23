@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23h';
+const PAGE_BUILD = '2026-09-23i';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -368,11 +368,19 @@ const SCOPE_CENTRAL = 'ครัวกลาง', SCOPE_SHOP = 'ร้าน';
 
 /* ชนิดสินค้า — ของไหลผ่าน 3 ชั้น
      วัตถุดิบ ซื้อเป็นโล เข้าครัวกลาง → ของแพ็ค นับเป็นแพ็ค → ส่งร้าน */
-const KIND_RAW = 'วัตถุดิบ';
+const KIND_RAW    = 'วัตถุดิบ';
+const KIND_PACKED = 'ของแพ็ค';
 const isRaw    = i => i.kind === KIND_RAW;
+const isPacked = i => i.kind === KIND_PACKED;
 const rawItems = () => D.items.filter(isRaw);
 /** ของที่ส่งร้าน/ขายได้ — ไม่รวมวัตถุดิบ เพราะยังแพ็คไม่ได้ ขายไม่ได้ */
 const packedItems = loc => itemsFor(loc).filter(i => !isRaw(i));
+/**
+ * ของเข้าครัวกลาง = ของที่ "ซื้อมา" เท่านั้น — วัตถุดิบ (ดิบ) กับของใช้
+ * ของที่แพ็คแล้วไม่โผล่ เพราะมันเกิดจากแท็บแพ็คของ ไม่ได้ซื้อเข้ามาตรง ๆ
+ * ถ้าโชว์ทั้งคู่ พนักงานจะเจอ "ดอลลี่" กับ "ดอลลี่ (ดิบ)" แล้วเลือกผิด
+ */
+const buyItems = loc => itemsFor(loc).filter(i => !isPacked(i));
 // ของเสียตัดวัตถุดิบได้ด้วย — ของแช่แข็งละลายแล้วเหลือน้อยกว่าที่ซื้อ
 // ส่วนที่หายไปคือน้ำแข็ง ต้องตัดออก ไม่งั้นยอดครัวกลางบวมค้างไว้ตลอด
 const wasteItems  = loc => itemsFor(loc);
@@ -507,7 +515,7 @@ function viewStock(v) {
 
 /* ── ฟอร์มของเข้า / ส่งเข้าร้าน / ของเสีย ── */
 const MOVE = {
-  in:     { title: '📥 ของเข้าครัวกลาง', lead: 'เสียบและแพ็คเสร็จแล้วลงยอดตรงนี้',
+  in:     { title: '📥 ของเข้าครัวกลาง', lead: 'ของที่ซื้อเข้ามา — วัตถุดิบลงท้ายด้วย (ดิบ) และของใช้ · ของที่แพ็คแล้วลงในแท็บแพ็คของ',
             action: 'stockIn', btn: 'บันทึกของเข้า', fixedLoc: true },
   toshop: { title: '🏪 ของเข้าร้าน', lead: 'รับของที่ครัวกลางส่งมา ระบบหักออกจากครัวกลางให้อัตโนมัติ',
             action: 'stockToShop', btn: 'บันทึกของเข้าร้าน', branchOnly: true },
@@ -580,7 +588,9 @@ function fillItems() {
   const loc = locEl ? locEl.value : D.central;
   const keep = sel.value;
   // ของเข้าร้าน/ของเสีย เลือกได้แต่ของที่แพ็คแล้ว วัตถุดิบอยู่แค่ในแท็บแพ็คของ
-  const list = (tab === 'in' || tab === 'waste') ? wasteItems(loc) : packedItems(loc);
+  const list = tab === 'in'    ? buyItems(loc)
+             : tab === 'waste' ? wasteItems(loc)
+             : packedItems(loc);
   sel.innerHTML = list.length
     ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
     : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
