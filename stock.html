@@ -683,7 +683,6 @@ async function submitMove(kind) {
 /** ของแพ็คที่ครัวกลางทำได้ */
 const packOutputs = () => packedItems(D.central);
 
-/** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
 /**
  * กรอกเศษเกินหนึ่งแพ็ค ให้ทดขึ้นไปเป็นแพ็คให้เลย
  * พิมพ์ "20 ไม้" ในช่องเศษ → กลายเป็น 2 แพ็ค 0 ไม้
@@ -718,6 +717,7 @@ function carryUnits(pEl, rEl, cEl, it) {
   return moved;
 }
 
+/** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
 function rawsOf(it) {
   if (!it || !it.raws) return [];
   return it.raws.map(n => itemOf(n)).filter(Boolean);
