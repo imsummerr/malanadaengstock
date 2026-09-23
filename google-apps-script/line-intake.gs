@@ -464,9 +464,17 @@ function intakeHelpText_() {
 
 /** หน่วยที่รู้จัก เรียงยาวก่อนสั้น เพราะ regex เลือกตัวแรกที่ตรง */
 var INTAKE_UNIT_RE =
-  'กิโลกรัม|กิโล|กรัม|ขีด|กก\\.?|โล|ก\\.|kgs?|kg|grams?|gram|g' +
+  'กิโลลิตร|กิโลกรัม|มิลลิลิตร|กิโล|ลิตร|กรัม|ขีด|กก\\.?|มล\\.?|โล|ก\\.|kgs?|kg|ml|grams?|gram|g' +
   '|บาท|฿|บ\\.|thb|baht' +
   '|ถุง|แพ็ค|แพ็ก|แพค|ชิ้น|อัน|ไม้|กล่อง|ลัง|มัด|กระปุก|ฝัก|ห่อ|แผ่น|ตัว|ใบ|ฟอง|ขวด|กระป๋อง|ที่';
+
+/**
+ * ราคาต่อกิโลที่คนพิมพ์บอกมาเอง เช่น "โลละ 136 บาท"
+ * ต้องดึงออกจากข้อความก่อนนับเลขอื่น ไม่งั้น 136 จะถูกอ่านเป็นยอดที่จ่าย
+ * แล้วเอามาใช้แทนที่จะหารเอง — ที่หารเองมันเพี้ยนเพราะยอดจริงปัดเศษ
+ */
+var INTAKE_PERKG_RE =
+  /(?:โลละ|กิโลละ|กิโลกรัมละ|กก\.?ละ|ต่อโล|ต่อกิโล|ต่อกก\.?)\s*([\d.,]+)\s*(?:บาท|฿|บ\.)?/i;
 
 function intakeUnitRe_() {
   return new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(' + INTAKE_UNIT_RE + ')?', 'gi');
@@ -606,6 +614,15 @@ function intakeParseLine_(line) {
     if (!text) return null;
   }
 
+  // "โลละ 136 บาท" — ตัดออกก่อน ไม่งั้น 136 จะไปนับเป็นยอดที่จ่าย
+  var perKg = 0;
+  var pk = text.match(INTAKE_PERKG_RE);
+  if (pk) {
+    perKg = intakeNum_(pk[1]);
+    text = text.replace(INTAKE_PERKG_RE, ' ').trim();
+    if (!text) return null;
+  }
+
   var baht = 0, gram = 0, qty = 0, unit = '', bare = [], counts = [];
   var saidMoney = false, saidUnit = false;
   var re = intakeUnitRe_(), m;
@@ -646,6 +663,7 @@ function intakeParseLine_(line) {
 
   return {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
+    perKg: perKg,                                     // คนพิมพ์บอกมาเอง ใช้แทนที่จะหาร
     pay: pay.method, expense: intakeIsExpense_(name),
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
@@ -1399,7 +1417,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           // เลยแปลงให้เฉพาะตัวที่มีวัตถุดิบเดียว ที่เหลือลงเป็นค่าใช้จ่ายอย่างเดียว
           if (opts.length === 1 && byName[opts[0]]) hit.name = opts[0];
         }
-        var perKg = (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
+        var perKg = it.perKg > 0 ? it.perKg
+                  : (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
         var kind  = it.rnd ? INTAKE_KIND_RND : INTAKE_KIND_STOCK;
         buyRows.push([
           date, time, 'L' + stamp + '-' + ('00' + buySeq).slice(-3),
@@ -1511,7 +1530,8 @@ function intakeAmountText_(it) {
   if (it.qty)  bits.push(it.qty + ' ' + (it.unit || 'หน่วย'));
 
   var out = bits.join(' / ');
-  if (it.baht && it.gram) out += ' (' + intakeMoney_(it.baht / it.gram * 1000) + ' บาท/กก.)';
+  if (it.perKg > 0) out += ' (' + intakeMoney_(it.perKg) + ' บาท/กก.)';
+  else if (it.baht && it.gram) out += ' (' + intakeMoney_(it.baht / it.gram * 1000) + ' บาท/กก.)';
   return out || '—';
 }
 
