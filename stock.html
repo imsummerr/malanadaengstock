@@ -218,7 +218,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23e';
+const PAGE_BUILD = '2026-09-23f';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -532,16 +532,16 @@ function viewMove(v, kind) {
     <div class="qtyrow" style="margin-top:12px">
       <div>
         <label class="fld" id="lbl-packs" style="margin-top:0">แพ็ค</label>
-        <input id="f-packs" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="recalc()">
+        <input id="f-packs" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="recalc()" onblur="carryMove()">
       </div>
       <div class="plus">+</div>
       <div>
         <label class="fld" id="lbl-rem" style="margin-top:0">เศษ</label>
-        <input id="f-rem" type="number" inputmode="decimal" min="0" step="any" placeholder="0" oninput="recalc()">
+        <input id="f-rem" type="number" inputmode="decimal" min="0" step="any" placeholder="0" oninput="recalc()" onblur="carryMove()">
       </div>
       <div id="wrap-pieces" class="hidden">
         <label class="fld" id="lbl-pieces" style="margin-top:0">เศษ (ชิ้น)</label>
-        <input id="f-pieces" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="recalc()">
+        <input id="f-pieces" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="recalc()" onblur="carryMove()">
       </div>
     </div>
 
@@ -597,6 +597,14 @@ function syncUnits() {
   }
   const pk = document.getElementById('f-packs');
   if (it.perPack <= 1) { pk.value = ''; pk.disabled = true; } else { pk.disabled = false; }
+}
+
+/** ทดหน่วยในฟอร์มของเข้า/ส่งร้าน/ของเสีย */
+function carryMove() {
+  const it = itemOf(document.getElementById('f-item').value);
+  if (carryUnits(document.getElementById('f-packs'),
+                 document.getElementById('f-rem'),
+                 document.getElementById('f-pieces'), it)) recalc();
 }
 
 function recalc() {
@@ -676,6 +684,40 @@ async function submitMove(kind) {
 const packOutputs = () => packedItems(D.central);
 
 /** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
+/**
+ * กรอกเศษเกินหนึ่งแพ็ค ให้ทดขึ้นไปเป็นแพ็คให้เลย
+ * พิมพ์ "20 ไม้" ในช่องเศษ → กลายเป็น 2 แพ็ค 0 ไม้
+ *
+ * ทดตอนออกจากช่อง (blur) ไม่ใช่ตอนพิมพ์ — ถ้าทดทุกตัวอักษร
+ * พอพิมพ์ "2" ของ "25" มันจะกระโดดไปก่อนแล้วพิมพ์ต่อไม่ได้
+ * ยอดรวมไม่เปลี่ยน แค่เขียนให้อ่านง่ายขึ้น
+ */
+function carryUnits(pEl, rEl, cEl, it) {
+  if (!it || !rEl) return false;
+  let moved = false;
+  const perStick = perStickOf(it);
+  // ชิ้นครบไม้ → ทดเป็นไม้ก่อน
+  if (cEl && !cEl.disabled && perStick > 1) {
+    const pieces = Number(cEl.value) || 0;
+    if (pieces >= perStick) {
+      rEl.value = (Number(rEl.value) || 0) + Math.floor(pieces / perStick);
+      cEl.value = pieces % perStick;
+      moved = true;
+    }
+  }
+  // ไม้ครบแพ็ค → ทดเป็นแพ็ค
+  if (pEl && !pEl.disabled && it.perPack > 1) {
+    const rem = Number(rEl.value) || 0;
+    if (rem >= it.perPack) {
+      pEl.value = (Number(pEl.value) || 0) + Math.floor(rem / it.perPack);
+      // เลขทศนิยม (ของชั่งเป็นโล) เหลือเศษให้ปัดตามเดิม ไม่ให้ 0.1+0.2 เพี้ยน
+      rEl.value = Math.round((rem % it.perPack) * 1000) / 1000;
+      moved = true;
+    }
+  }
+  return moved;
+}
+
 function rawsOf(it) {
   if (!it || !it.raws) return [];
   return it.raws.map(n => itemOf(n)).filter(Boolean);
@@ -694,13 +736,13 @@ function viewPack(v) {
 
     <div class="row2">
       <div><label class="fld" id="k-lbl-packs">ได้กี่แพ็ค</label>
-        <input id="k-packs" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()"></div>
+        <input id="k-packs" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()" onblur="carryPack()"></div>
       <div><label class="fld" id="k-lbl-rem">เศษ</label>
-        <input id="k-rem" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()"></div>
+        <input id="k-rem" type="number" inputmode="decimal" min="0" step="any" oninput="calcPack()" onblur="carryPack()"></div>
     </div>
     <div id="k-wrap-pieces" class="hidden">
       <label class="fld" id="k-lbl-pieces">เศษ (ชิ้น)</label>
-      <input id="k-pieces" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()">
+      <input id="k-pieces" type="number" inputmode="numeric" min="0" step="1" oninput="calcPack()" onblur="carryPack()">
     </div>
     <p class="note hidden" id="k-no-pieces"></p>
 
@@ -763,6 +805,14 @@ function syncPack() {
     : '<p class="note">รายการนี้ยังไม่ได้ตั้งของดิบไว้ในชีต — บันทึกได้ แต่จะไม่มีอะไรถูกตัดออก</p>';
 
   calcPack();
+}
+
+/** ทดหน่วยในฟอร์มแพ็คของ */
+function carryPack() {
+  const it = itemOf(document.getElementById('k-out').value);
+  if (carryUnits(document.getElementById('k-packs'),
+                 document.getElementById('k-rem'),
+                 document.getElementById('k-pieces'), it)) calcPack();
 }
 
 function calcPack() {
@@ -921,12 +971,12 @@ function fillCountRows() {
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${it.perPack > 1 ? esc(it.packUnit) : '–'}"
-             ${it.perPack > 1 ? '' : 'disabled'} oninput="countChanged(${i})">
+             ${it.perPack > 1 ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">
       <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
-             placeholder="${esc(it.subUnit)}" oninput="countChanged(${i})">
+             placeholder="${esc(it.subUnit)}" oninput="countChanged(${i})" onblur="carryCount(${i})">
       <input id="cpc-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${hasPieces(it) ? 'ชิ้น' : '–'}"
-             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})">
+             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">
     </div>`).join('')
     : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
@@ -938,6 +988,13 @@ function fillCountRows() {
   })).filter(x => x.row && x.p && x.r);
 
   paintCount();
+}
+
+/** ทดหน่วยในแถวนับสต็อก */
+function carryCount(i) {
+  const x = CROWS[i];
+  if (!x) return;
+  if (carryUnits(x.p, x.r, x.c, countItems()[i])) countChanged(i);
 }
 
 /** แถวนี้นับแล้วหรือยัง */
