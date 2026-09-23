@@ -1207,6 +1207,17 @@ function ensureColsRaw_(sheet, names) {
    เก็บผลไว้ต่อการเรียก 1 ครั้ง แล้วล้างทิ้งทันทีที่มีการเขียน */
 var _cache = {};
 function cacheClear_() { _cache = {}; }
+
+/**
+ * เขียนชีตแล้วตัวเลขเปลี่ยน แต่ "ชีตชื่อนี้อยู่ไหน" กับ "คอลัมน์ไหนคืออะไร" ไม่เปลี่ยน
+ * ทิ้งเฉพาะที่คำนวณจากข้อมูล จะได้ไม่ต้องไปถาม Spreadsheet ใหม่ทั้งหมด
+ * (การถามชีตแต่ละครั้งคือการข้ามไปมาระหว่างสคริปต์กับชีต ซึ่งช้ากว่าคำนวณในหัวมาก)
+ */
+function cacheClearData_() {
+  Object.keys(_cache).forEach(function (k) {
+    if (k.indexOf('sh:') !== 0 && k.indexOf('cols:') !== 0) delete _cache[k];
+  });
+}
 function cached_(key, fn) {
   if (!(key in _cache)) _cache[key] = fn();
   return _cache[key];
@@ -1239,7 +1250,7 @@ function appendRows_(sheet, map, list) {
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, width).setValues(rows);
-  cacheClear_();          // ข้อมูลเปลี่ยนแล้ว ของที่จำไว้ใช้ไม่ได้
+  cacheClearData_();      // ตัวเลขเปลี่ยนแล้ว แต่โครงชีตเหมือนเดิม
 }
 
 /* ───────────────────────── แปลงหน่วย 2 ระดับ ───────────────────────── */
@@ -1514,6 +1525,10 @@ function stockBalancesRaw_() {
 var STOCK_BRANCH_GROUPS = {};   // สำรอง — ปกติใช้ Script Property LINE_GROUPS แทน
 
 function stockLineGroups_() {
+  return cached_('linegroups', stockLineGroupsRaw_);
+}
+
+function stockLineGroupsRaw_() {
   var raw = PropertiesService.getScriptProperties().getProperty('LINE_GROUPS');
   if (!raw) return STOCK_BRANCH_GROUPS;
   try {
@@ -1569,12 +1584,16 @@ function stockNotify_(location, text) {
  * พอเติมของจนเกินจุดเตือนแล้ว ล้างสถานะ รอบหน้าถึงเตือนใหม่
  * สถานะจำแยกตามสถานที่ — ครัวกลางใกล้หมดไม่ได้แปลว่าสาขาใกล้หมดด้วย
  */
-function checkLowStock_(itemNames, location) {
+function checkLowStock_(itemNames, location, balOverride) {
   var loc = String(location || CENTRAL).trim();
   var items = {};
   getStockItems_().forEach(function (i) { items[i.name] = i; });
-  var bal = stockBalances_()[loc] || {};
+  // เพิ่งนับสต็อกเสร็จ ยอดคือตัวที่นับได้อยู่แล้ว ไม่ต้องไปไล่อ่านทุกชีตใหม่
+  var bal = balOverride || stockBalances_()[loc] || {};
   var props = PropertiesService.getScriptProperties();
+  // ดึงมาทีเดียวทั้งก้อน — เดิมถามทีละรายการ ของเกือบร้อยชิ้นก็คือเกือบร้อยรอบ
+  var all = props.getProperties() || {};
+  var toSet = {}, toDel = [];
   var hits = [];
 
   (itemNames || []).forEach(function (name) {
@@ -1585,25 +1604,29 @@ function checkLowStock_(itemNames, location) {
     var limit = lowPacks * it.perPack * perStickOf_(it);
     var have  = Number(bal[name]) || 0;
     var key   = 'LOWSTOCK_' + loc + '_' + name;
-    var wasLow = props.getProperty(key) === '1';
+    var wasLow = all[key] === '1';
 
     // คีย์เดิมสมัยที่เตือนแต่ครัวกลาง ไม่มีชื่อสถานที่คั่น — ย้ายมาคีย์ใหม่
     // ถ้าไม่ย้าย ของที่ต่ำอยู่แล้วจะถูกแจ้งซ้ำอีกรอบตอนอัปเดตโค้ด
-    if (!wasLow && loc === CENTRAL && props.getProperty('LOWSTOCK_' + name) === '1') {
+    if (!wasLow && loc === CENTRAL && all['LOWSTOCK_' + name] === '1') {
       wasLow = true;
-      props.setProperty(key, '1');
-      props.deleteProperty('LOWSTOCK_' + name);
+      toSet[key] = '1';
+      toDel.push('LOWSTOCK_' + name);
     }
 
     var isLow = have <= limit;
     if (isLow && !wasLow) {
       hits.push('• ' + name + ' เหลือ ' + fmtPack_(have, it) +
                 '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')');
-      props.setProperty(key, '1');
+      toSet[key] = '1';
     } else if (!isLow && wasLow) {
-      props.deleteProperty(key);
+      toDel.push(key);
     }
   });
+
+  // เขียนกลับทีเดียว — setProperties แบบไม่ลบของเดิม (token ไลน์ต้องไม่หาย)
+  if (Object.keys(toSet).length) props.setProperties(toSet);
+  toDel.forEach(function (k) { props.deleteProperty(k); });
 
   if (!hits.length) return;
   stockNotify_(loc, '⚠️ ของ' + loc + 'ใกล้หมด\n\n' + hits.join('\n') + '\n\n' +
@@ -1944,7 +1967,10 @@ function handleStockCount_(body) {
     catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
   }
 
-  checkLowStock_(items.map(function (it) { return it.name; }), loc);
+  // ยอดหลังนับ = ตัวที่นับได้ ไม่ต้องไปไล่อ่านทุกชีตใหม่อีกรอบ
+  var balNow = {};
+  counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
+  checkLowStock_(items.map(function (it) { return it.name; }), loc, balNow);
   return { success: true, counted: items.length, diffs: diffs.length,
            lineSent: line.sent, lineMsg: line.message,
            shrink: shrink };

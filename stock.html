@@ -218,7 +218,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23d';
+const PAGE_BUILD = '2026-09-23e';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -885,8 +885,9 @@ function viewCount(v) {
   <div class="card">
     <div class="counthead"><span>สินค้า</span><span>แพ็ค</span><span>ไม้</span><span>ชิ้น</span></div>
     <div id="c-rows"></div>
+    <button class="key" id="c-zero" onclick="fillRestZero()">ใส่ 0 ให้ที่ยังไม่ได้นับ</button>
     <button class="key btn-red submit" id="c-btn" onclick="submitCount()" disabled>บันทึกผลนับ</button>
-    <p class="note">ยังไม่มีของรายการไหน ให้ใส่ 0 — ปล่อยว่างถือว่ายังไม่ได้นับ</p>
+    <p class="note">นับเฉพาะที่มีของ แล้วกด "ใส่ 0 ให้ที่ยังไม่ได้นับ" ทีเดียวจบ</p>
   </div>`;
 
   fillCountRows();
@@ -900,6 +901,16 @@ function viewCount(v) {
  * ถ้าไม่สร้างใหม่ จำนวนแถวที่มีอยู่จริงกับรายการที่โค้ดวนจะไม่ตรงกัน
  * แล้ว getElementById จะได้ null ทั้งหน้าค้างไปเลย
  */
+/**
+ * ช่องกรอกทั้งหมด เก็บ element ไว้ตั้งแต่ตอนสร้าง
+ *
+ * ของเกือบสองร้อยรายการ = ช่องกรอกห้าหกร้อยช่อง ถ้าพิมพ์ทีนึงแล้วไปไล่
+ * getElementById ใหม่ทุกช่อง เครื่องจะหน่วงจนพิมพ์ไม่ทัน
+ * จำไว้ตั้งแต่แรก แล้วพิมพ์ทีก็อัปเดตแค่แถวเดียว
+ */
+let CROWS = [];
+let CDONE = 0;
+
 function fillCountRows() {
   const box = document.getElementById('c-rows');
   if (!box) return;
@@ -910,16 +921,54 @@ function fillCountRows() {
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${it.perPack > 1 ? esc(it.packUnit) : '–'}"
-             ${it.perPack > 1 ? '' : 'disabled'} oninput="paintProgress()">
+             ${it.perPack > 1 ? '' : 'disabled'} oninput="countChanged(${i})">
       <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
-             placeholder="${esc(it.subUnit)}" oninput="paintProgress()">
+             placeholder="${esc(it.subUnit)}" oninput="countChanged(${i})">
       <input id="cpc-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${hasPieces(it) ? 'ชิ้น' : '–'}"
-             ${hasPieces(it) ? '' : 'disabled'} oninput="paintProgress()">
+             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})">
     </div>`).join('')
     : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
+  CROWS = list.map((it, i) => ({
+    row: document.getElementById('cr-' + i),
+    p:   document.getElementById('cp-' + i),
+    r:   document.getElementById('cr2-' + i),
+    c:   document.getElementById('cpc-' + i)
+  })).filter(x => x.row && x.p && x.r);
+
   paintCount();
+}
+
+/** แถวนี้นับแล้วหรือยัง */
+const crFilled = x => x.p.value !== '' || x.r.value !== '' || (x.c && x.c.value !== '');
+
+/** พิมพ์ทีละช่อง — แตะแค่แถวที่เปลี่ยน ไม่ต้องไล่ทั้งหน้า */
+function countChanged(i) {
+  const x = CROWS[i];
+  if (!x) return;
+  const was = x.row.classList.contains('done');
+  const now = crFilled(x);
+  if (was === now) return;
+  x.row.classList.toggle('done', now);
+  CDONE += now ? 1 : -1;
+  paintCountBar();
+}
+
+/** ที่เหลือคือไม่มีของ — ใส่ 0 ให้ทีเดียว ไม่ต้องไล่จิ้มทีละช่อง */
+function fillRestZero() {
+  let added = 0;
+  CROWS.forEach(x => {
+    if (crFilled(x)) return;
+    if (!x.p.disabled) x.p.value = 0;
+    x.r.value = 0;
+    if (x.c && !x.c.disabled) x.c.value = 0;
+    x.row.classList.add('done');
+    added++;
+  });
+  CDONE += added;
+  paintCountBar();
+  if (added) toast('ใส่ 0 ให้ ' + added + ' รายการแล้ว');
 }
 
 function paintCount() {
@@ -938,20 +987,21 @@ function paintCount() {
   paintProgress();
 }
 
+/** ไล่ทั้งหน้า — ใช้ตอนสร้างแถวใหม่หรือเปลี่ยนสถานที่เท่านั้น */
 function paintProgress() {
-  let done = 0;
-  const items = countItems();
-  let rendered = 0;
-  items.forEach((it, i) => {
-    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
-    const cEl = document.getElementById('cpc-' + i);
-    if (!pEl || !rEl) return;          // แถวยังไม่ถูกสร้าง
-    rendered++;
-    const ok = (pEl.value !== '' || rEl.value !== '' || (cEl && cEl.value !== ''));
-    if (ok) done++;
-    document.getElementById('cr-' + i).classList.toggle('done', ok);
+  CDONE = 0;
+  CROWS.forEach(x => {
+    const ok = crFilled(x);
+    if (ok) CDONE++;
+    x.row.classList.toggle('done', ok);
   });
-  const total = rendered;
+  paintCountBar();
+}
+
+/** อัปเดตแถบความคืบหน้ากับปุ่ม — ไม่แตะช่องกรอก */
+function paintCountBar() {
+  const done  = CDONE;
+  const total = CROWS.length;
   const left  = total - done;
   const pct = total ? Math.round(done / total * 100) : 0;
   document.getElementById('c-bar').style.width = pct + '%';
@@ -969,12 +1019,10 @@ function paintProgress() {
 }
 
 async function submitCount() {
-  const rows = countItems().map((it, i) => {
-    const pEl = document.getElementById('cp-' + i), rEl = document.getElementById('cr2-' + i);
-    const cEl = document.getElementById('cpc-' + i);
-    if (!pEl || !rEl) return null;
-    return { item: it.name, packs: pEl.value, rem: rEl.value, pieces: cEl ? cEl.value : '' };
-  }).filter(Boolean);
+  const list = countItems();
+  const rows = CROWS.map((x, i) => ({
+    item: list[i].name, packs: x.p.value, rem: x.r.value, pieces: x.c ? x.c.value : ''
+  }));
   if (!rows.length) return toast('ไม่มีสินค้าให้นับที่นี่');
   const missing = rows.filter(r => r.packs === '' && r.rem === '' && r.pieces === '');
   if (missing.length) {
