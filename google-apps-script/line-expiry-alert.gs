@@ -166,6 +166,8 @@ function checkNewIncoming() {
   var colPacks   = findCol_(headers, ['แพ็ค', 'packs']);
   var colRem     = findCol_(headers, ['เศษ', 'rem']);
   var colPerPack = findCol_(headers, ['ไม้ต่อแพ็ค', 'หน่วยย่อยต่อแพ็ค', 'perPack']);
+  var colPieces  = findCol_(headers, ['เศษ(ชิ้น)', 'เศษชิ้น', 'pieces']);
+  var colPerStick= findCol_(headers, ['ชิ้นต่อไม้', 'perStick']);
   var colKind    = findCol_(headers, ['ประเภท', 'kind']);
   if (colName === -1) return;
 
@@ -195,6 +197,8 @@ function checkNewIncoming() {
       packs:      colPacks   !== -1 ? Number(row[colPacks])   || 0 : 0,
       rem:        colRem     !== -1 ? Number(row[colRem])     || 0 : 0,
       perPack:    colPerPack !== -1 ? Number(row[colPerPack]) || 0 : 0,
+      pieces:     colPieces  !== -1 ? Number(row[colPieces])  || 0 : 0,
+      perStick:   colPerStick!== -1 ? Number(row[colPerStick])|| 0 : 0,
       kind:       colKind    !== -1 ? String(row[colKind] || '')    : '',
       expireStr:  expireStr
     });
@@ -217,16 +221,33 @@ function checkNewIncoming() {
 }
 
 /**
- * ข้อความจำนวน — ถ้ามีข้อมูลแพ็คก็บอกเป็น "3 แพ็ค 5 ไม้ (1 แพ็ค = 7 ไม้)"
- * ถ้าไม่มี (แถวเก่าก่อนเพิ่มคอลัมน์) ก็บอกแบบเดิม "26 ไม้"
+ * ข้อความจำนวน — หน่วยต้องตรงกับช่องที่กรอกมา
+ *   กรอกช่องแพ็ค   → "2 แพ็ค"
+ *   กรอกช่องเศษไม้ → "6 ไม้"
+ *   กรอกช่องเศษชิ้น → "1 ชิ้น"
+ *
+ * คอลัมน์ "หน่วย" ในชีตเก็บหน่วยเล็กสุด ซึ่งของลูกชิ้นคือ "ชิ้น" ไม่ใช่ "ไม้"
+ * เอามาใช้ตรง ๆ ไม่ได้ ไม่งั้น 6 ไม้ จะกลายเป็น 6 ชิ้น
  */
 function qtyText_(it) {
-  var unit = it.unit || '';
-  if (it.perPack > 1 && (it.packs || it.rem)) {
+  // ไฟล์นี้อยู่โปรเจกต์เดียวกับ pos-backend แล้ว ใช้ตัวจัดรูปแบบตัวเดียวกันเลย
+  // จะได้ไม่มีสองสูตรที่เพี้ยนจากกันเวลาแก้ข้างใดข้างหนึ่ง
+  if (typeof fmtPack_ === 'function' && typeof findStockItem_ === 'function') {
+    try {
+      var item = findStockItem_(it.name);
+      if (item && Number(it.qty) > 0) return ' ' + fmtPack_(Number(it.qty), item);
+    } catch (e) { /* ไม่มีชีตรายการสินค้าก็ตกไปใช้ทางล่าง */ }
+  }
+
+  var unit  = it.unit || '';
+  var stick = it.perStick > 1 ? 'ไม้' : unit;    // ลูกชิ้น: หน่วยกลางคือไม้ เล็กสุดคือชิ้น
+  if (it.perPack > 1 && (it.packs || it.rem || it.pieces)) {
     var parts = [];
-    if (it.packs) parts.push(it.packs + ' แพ็ค');
-    if (it.rem)   parts.push(it.rem + ' ' + unit);
-    return ' ' + parts.join(' ') + ' (1 แพ็ค = ' + it.perPack + ' ' + unit + ')';
+    if (it.packs)  parts.push(it.packs + ' แพ็ค');
+    if (it.rem)    parts.push(it.rem + ' ' + stick);
+    if (it.pieces) parts.push(it.pieces + ' ชิ้น');
+    return ' ' + parts.join(' ') + ' (1 แพ็ค = ' + it.perPack + ' ' + stick +
+           (it.perStick > 1 ? ' · 1 ' + stick + ' = ' + it.perStick + ' ชิ้น' : '') + ')';
   }
   if (it.qty !== '' && it.qty != null) return ' ' + it.qty + ' ' + unit;
   return '';
