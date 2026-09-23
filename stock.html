@@ -218,7 +218,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23c';
+const PAGE_BUILD = '2026-09-23d';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -753,10 +753,10 @@ function syncPack() {
     ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => `
         <div class="note" style="margin-top:6px">${esc(r.name)}</div>
         <div class="row2" style="align-items:end">
-          <div><div class="sub">ชั่งได้จริง (${esc(r.subUnit)})</div>
+          <div><div class="sub">เอามากี่${esc(r.subUnit)}</div>
             <input id="k-rq-${i}" type="number" inputmode="decimal" min="0" step="any"
                    placeholder="0" oninput="calcPack()"></div>
-          <div><div class="sub">เบิกออกมา — ใส่ถ้าของแช่แข็ง</div>
+          <div><div class="sub">ได้เนื้อเท่าไหร่ — ของแช่แข็ง</div>
             <input id="k-rt-${i}" type="number" inputmode="decimal" min="0" step="any"
                    placeholder="ไม่ใส่ก็ได้" oninput="calcPack()"></div>
         </div>`).join('')
@@ -785,18 +785,18 @@ function calcPack() {
   rawsOf(it).forEach((r, i) => {
     const el = document.getElementById('k-rq-' + i);
     const tEl = document.getElementById('k-rt-' + i);
-    const net = el ? Number(el.value) || 0 : 0;
-    const taken = tEl ? Number(tEl.value) || 0 : 0;
-    // เบิกออกมาเท่าไหร่คือของที่หายจากสต็อกจริง ส่วนต่างคือน้ำแข็งที่ละลายทิ้ง
-    const used = taken > 0 ? taken : net;
+    // ตัดตามที่เอาออกมาจากสต็อก ส่วน "ได้เนื้อ" เก็บไว้ดู yield ไม่ตัดซ้ำ
+    const used = el ? Number(el.value) || 0 : 0;
+    const net = tEl ? Number(tEl.value) || 0 : 0;
     if (!(used > 0)) return;
-    if (taken > 0 && net > taken) {
-      html += `<div class="sub low">⚠️ ${esc(r.name)} ชั่งได้ ${net} แต่เบิกแค่ ${taken}</div>`;
+    if (net > used) {
+      html += `<div class="sub low">⚠️ ${esc(r.name)} ได้เนื้อ ${net} แต่เอามาแค่ ${used}</div>`;
       return;
     }
-    if (taken > net) {
+    if (net > 0 && net < used) {
       html += `<div class="sub">${esc(r.name)} น้ำแข็ง/เศษทิ้ง ` +
-              `<b>${Math.round((taken - net) * 1000) / 1000} ${esc(r.subUnit)}</b></div>`;
+              `<b>${Math.round((used - net) * 1000) / 1000} ${esc(r.subUnit)}</b>` +
+              ` · ได้เนื้อ ${Math.round(net / used * 100)}%</div>`;
     }
     // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน พนักงานเห็นแค่ผลแปลงหน่วยของที่ตัวเองกรอก
     if (isOwner()) {
@@ -824,13 +824,13 @@ async function submitPack() {
     const el = document.getElementById('k-rq-' + i);
     const tEl = document.getElementById('k-rt-' + i);
     const q = el ? el.value : '';
-    const taken = tEl ? tEl.value : '';
+    const net = tEl ? tEl.value : '';
     // ตัดของดิบไม่ครบ ยอดจะเพี้ยนแบบเงียบ ๆ เลยบังคับกรอกให้ครบทุกช่อง
-    if (!(Number(q) > 0)) return toast('กรอกว่าใช้ ' + esc(list[i].name) + ' ไปเท่าไหร่');
-    if (Number(taken) > 0 && Number(taken) < Number(q)) {
-      return toast(esc(list[i].name) + ' ชั่งได้มากกว่าที่เบิกออกมา');
+    if (!(Number(q) > 0)) return toast('กรอกว่าเอา ' + esc(list[i].name) + ' มาเท่าไหร่');
+    if (Number(net) > Number(q)) {
+      return toast(esc(list[i].name) + ' ได้เนื้อมากกว่าที่เอามา');
     }
-    raws.push({ name: list[i].name, qty: q, taken: taken });
+    raws.push({ name: list[i].name, qty: q, net: net });
   }
 
   const btn = document.getElementById('k-btn');
