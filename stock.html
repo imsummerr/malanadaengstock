@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23g';
+const PAGE_BUILD = '2026-09-23h';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -478,16 +478,21 @@ function render() {
 /* ── สต็อกคงเหลือ ── */
 function viewStock(v) {
   const blocks = D.stock.map(L => {
+    // บอกวันนับล่าสุดเสมอ — ของที่นับได้ 0 ไม่ขึ้นในตาราง
+    // ถ้าไม่บอก จะแยกไม่ออกว่า "นับแล้วไม่มีของ" กับ "ยังไม่ได้นับเลย"
+    const cnt = L.counted
+      ? `<small style="color:var(--muted);font-weight:400">นับล่าสุด ${esc(L.counted.when)} · ${L.counted.n} รายการ</small>`
+      : `<small style="color:var(--amber);font-weight:400">ยังไม่เคยนับสต็อกที่นี่</small>`;
     if (!L.rows.length) {
-      return `<div class="locblock"><div class="loctitle"><span class="pill">${esc(L.name)}</span></div>
-              <div class="empty">ยังไม่มีของในสต็อก</div></div>`;
+      return `<div class="locblock"><div class="loctitle"><span class="pill">${esc(L.name)}</span>${cnt}</div>
+              <div class="empty">${L.counted ? 'นับแล้ว ไม่มีของเหลือ' : 'ยังไม่มีของในสต็อก'}</div></div>`;
     }
     const rows = L.rows.map(r => `<tr>
         <td>${esc(r.item)}</td>
         <td class="num${r.low ? ' low' : ''}">${esc(r.text)}${r.low ? ' ⚠️' : ''}</td>
       </tr>`).join('');
     return `<div class="locblock">
-      <div class="loctitle"><span class="pill">${esc(L.name)}</span></div>
+      <div class="loctitle"><span class="pill">${esc(L.name)}</span>${cnt}</div>
       <table><tbody>${rows}</tbody></table>
     </div>`;
   }).join('');
@@ -496,7 +501,7 @@ function viewStock(v) {
     <h2>📦 สต็อกคงเหลือ</h2>
     <p class="lead">ยอดล่าสุดจากการนับครั้งหลังสุด บวกของเข้า ลบของเสีย</p>
     ${blocks || '<div class="empty">ยังไม่มีข้อมูล</div>'}
-    <p class="note">⚠️ = ต่ำกว่าจุดเตือนที่ตั้งไว้ในชีตรายการสินค้า</p>
+    <p class="note">⚠️ = ต่ำกว่าจุดเตือนที่ตั้งไว้ในชีตรายการสินค้า · ของที่เหลือ 0 ไม่ขึ้นในตาราง</p>
   </div>`;
 }
 

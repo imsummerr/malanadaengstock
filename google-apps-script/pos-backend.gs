@@ -1977,6 +1977,22 @@ function handleStockCount_(body) {
 }
 
 /** ข้อมูลตั้งต้นของหน้าสต็อก — รายการสินค้า สถานที่ และยอดคงเหลือ */
+/**
+ * นับสต็อกล่าสุดของแต่ละที่ เมื่อไหร่ กี่รายการ
+ * เอาไว้โชว์บนหน้าสต็อก — ของที่นับได้ 0 จะไม่ขึ้นในตาราง
+ * ถ้าไม่บอกวันนับไว้ จะแยกไม่ออกว่า "นับแล้วไม่มีของ" กับ "ยังไม่ได้นับ"
+ */
+function lastCountInfo_() {
+  var out = {};
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    var t = timeOf_(m.when);
+    var cur = out[m.loc];
+    if (!cur || t > cur.t) out[m.loc] = { t: t, when: m.when, n: 1 };
+    else if (t === cur.t) cur.n++;
+  });
+  return out;
+}
+
 function handleStockBootstrap_(p) {
   var session = checkToken_(p.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -2001,12 +2017,15 @@ function handleStockBootstrap_(p) {
 
   // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน ไม่ส่งให้พนักงานเลย
   // ซ่อนแค่ฝั่งหน้าเว็บไม่พอ เปิด Network ในเบราว์เซอร์ก็อ่านคำตอบได้
+  var last = owner ? lastCountInfo_() : {};
   var stock = !owner ? [] : locations.filter(function (loc) {
     return stockCanUseLoc_(session, loc);
   }).map(function (loc) {
     var m = bal[loc] || {};
+    var lc = last[loc];
     return {
       name: loc,
+      counted: lc ? { when: Utilities.formatDate(new Date(lc.t), TZ, 'd/M/yyyy HH:mm'), n: lc.n } : null,
       rows: items.filter(function (it) { return m[it.name]; }).map(function (it) {
         var have = Number(m[it.name]) || 0;
         var lowPacks = lowPacksFor_(it, loc);
