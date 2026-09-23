@@ -2245,6 +2245,19 @@ var RAW_KG = [
   // เห็ดชิเมจิ กับ สาหร่าย ซื้อเป็นห่อ ไม่ได้ชั่ง เลยไม่อยู่ในนี้
 ];
 var RAW_BAG = { 'เห็ดชิเมจิ': 'ห่อ', 'สาหร่าย': 'ห่อ', 'มันเทศ': 'อัน' };
+
+/**
+ * ของดิบที่ซื้อได้ทั้งแบบชั่งโลและแบบยกถุง — บอกว่าถุงละกี่ กก.
+ * ยอดคงเหลือเก็บเป็น กก. อย่างเดียว ซื้อมาเป็นถุงระบบคูณให้เอง
+ * ไม่ใส่ไว้ = พิมพ์ "2 ถุง" มาแล้วระบบไม่รู้ว่ากี่โล จะเตือนแทนการเดา
+ */
+var RAW_BAG_KG = {
+  // 'ดอลลี่': 1,   ← ใส่น้ำหนักจริงต่อถุงแล้วปลดคอมเมนต์
+};
+function rawBagKg_(base) {
+  var n = Number(RAW_BAG_KG[String(base || '').trim()]);
+  return n > 0 ? n : 0;
+}
 function rawUnitOf_(base) {
   if (RAW_KG.indexOf(base) !== -1) return 'กก.';
   return RAW_BAG[base] || 'ถุง';
@@ -2369,7 +2382,8 @@ function itemCatalogue_() {
       name: rawName_(base), kind: KIND_RAW,
       subUnit: u, packUnit: u, perPack: 1, perStick: 1,
       price: 0, scope: SCOPE_CENTRAL, raws: [],
-      note: 'ซื้อเป็น' + u + ' เข้าครัวกลาง แพ็คแล้วระบบตัดออกให้เอง'
+      note: 'ซื้อเป็น' + u + ' เข้าครัวกลาง แพ็คแล้วระบบตัดออกให้เอง' +
+            (rawBagKg_(base) ? ' · ยกถุงได้ ถุงละ ' + rawBagKg_(base) + ' กก.' : '')
     });
   });
 

@@ -482,6 +482,17 @@ function intakeUnitKind_(unit) {
   return 'count';
 }
 
+/**
+ * ของดิบที่ซื้อได้ทั้งโลและยกถุง — ถุงละกี่ กก. (ตาราง RAW_BAG_KG ใน pos-backend)
+ * ยังไม่ได้ตั้ง = คืน 0 แล้วให้ไปเตือนแทนการเดาน้ำหนัก
+ */
+function intakeRawBagKg_(itemName) {
+  if (typeof RAW_BAG_KG === 'undefined') return 0;
+  var base = String(itemName || '').replace(/\s*\(ดิบ\)\s*$/, '').trim();
+  var n = Number(RAW_BAG_KG[base]);
+  return n > 0 ? n : 0;
+}
+
 /** หน่วยที่ต้องชั่ง — ถ้าชีตตั้งไว้แบบนี้แล้วพิมพ์มาเป็นห่อ ระบบแปลงให้ไม่ได้ */
 function intakeIsWeightUnit_(u) {
   return /^(กก\.?|กิโล|กิโลกรัม|กรัม|ขีด|kgs?|kg|g)$/.test(String(u || '').trim());
@@ -788,8 +799,17 @@ function intakeStockQty_(item, counts, gram) {
       // ที่อันตรายจริงคือชั่งเป็นโลแต่พิมพ์มาเป็นห่อ เพราะไม่มีใครรู้ว่าห่อละกี่กรัม
       var typed = String(counts[0].unit || '').trim();
       var want  = String(item.subUnit || '').trim();
-      var warn  = intakeIsWeightUnit_(want) ? typed : '';
-      return { base: counts[0].n, packs: 0, per: 1, unitWarn: warn };
+      if (!intakeIsWeightUnit_(want)) {
+        return { base: counts[0].n, packs: 0, per: 1, unitWarn: '' };
+      }
+      // ชีตชั่งเป็นโล แต่พิมพ์มาเป็นถุง — ของบางอย่างซื้อได้ทั้งสองแบบ
+      // ถ้าบอกน้ำหนักต่อถุงไว้แล้ว คูณให้เลย ไม่ต้องเตือน
+      var kg = intakeRawBagKg_(item.name);
+      if (kg > 0) {
+        return { base: Math.round(counts[0].n * kg * 1000) / 1000, packs: 0, per: 1,
+                 unitWarn: '', unitNote: counts[0].n + ' ' + typed + ' × ' + kg + ' กก.' };
+      }
+      return { base: counts[0].n, packs: 0, per: 1, unitWarn: typed };
     }
     return null;
   }
@@ -1406,10 +1426,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             saved.s.push(srow);
             stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + byName[hit.name].subUnit +
                             (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : '') +
+                            (q.unitNote ? '  (' + q.unitNote + ')' : '') +
                             (q.unitWarn ? '  ⚠️' : ''));
             if (q.unitWarn) {
               unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
-                             '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+                             '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"' +
+                             '\n  ถ้าซื้อได้ทั้งสองแบบ บอกมาว่าถุงละกี่โล จะคูณให้เอง');
             }
           }
         }
