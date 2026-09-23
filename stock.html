@@ -218,7 +218,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23a';
+const PAGE_BUILD = '2026-09-23b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -372,6 +372,9 @@ const isRaw    = i => i.kind === KIND_RAW;
 const rawItems = () => D.items.filter(isRaw);
 /** ของที่ส่งร้าน/ขายได้ — ไม่รวมวัตถุดิบ เพราะยังแพ็คไม่ได้ ขายไม่ได้ */
 const packedItems = loc => itemsFor(loc).filter(i => !isRaw(i));
+// ของเสียตัดวัตถุดิบได้ด้วย — ของแช่แข็งละลายแล้วเหลือน้อยกว่าที่ซื้อ
+// ส่วนที่หายไปคือน้ำแข็ง ต้องตัดออก ไม่งั้นยอดครัวกลางบวมค้างไว้ตลอด
+const wasteItems  = loc => itemsFor(loc);
 
 /** สินค้าที่ลงได้ที่สถานที่นี้ */
 function itemsFor(loc) {
@@ -502,7 +505,7 @@ const MOVE = {
             action: 'stockIn', btn: 'บันทึกของเข้า', fixedLoc: true },
   toshop: { title: '🏪 ของเข้าร้าน', lead: 'รับของที่ครัวกลางส่งมา ระบบหักออกจากครัวกลางให้อัตโนมัติ',
             action: 'stockToShop', btn: 'บันทึกของเข้าร้าน', branchOnly: true },
-  waste:  { title: '🗑️ ของเสีย', lead: 'ของที่ทิ้ง ระบบจะตัดออกจากสต็อกให้',
+  waste:  { title: '🗑️ ของเสีย', lead: 'ของที่ทิ้ง ระบบจะตัดออกจากสต็อกให้ · ของแช่แข็งละลายแล้วหายไปเท่าไหร่ ตัดที่นี่ (เลือกสาเหตุ น้ำแข็ง/ละลาย)',
             action: 'stockWaste', btn: 'บันทึกของเสีย', reason: true }
 };
 
@@ -545,6 +548,7 @@ function viewMove(v, kind) {
     ${c.reason ? `<label class="fld">สาเหตุ</label>
       <select id="f-reason">
         <option>หมดอายุ</option><option>ของเสีย/เน่า</option>
+        <option>น้ำแข็ง/ละลาย</option><option>เศษตัดแต่ง</option>
         <option>ตกพื้น</option><option>ชำรุด</option><option>อื่น ๆ</option>
       </select>` : ''}
 
@@ -570,7 +574,7 @@ function fillItems() {
   const loc = locEl ? locEl.value : D.central;
   const keep = sel.value;
   // ของเข้าร้าน/ของเสีย เลือกได้แต่ของที่แพ็คแล้ว วัตถุดิบอยู่แค่ในแท็บแพ็คของ
-  const list = (tab === 'in') ? itemsFor(loc) : packedItems(loc);
+  const list = (tab === 'in' || tab === 'waste') ? wasteItems(loc) : packedItems(loc);
   sel.innerHTML = list.length
     ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
     : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
