@@ -1027,7 +1027,7 @@ var PromptPay = (function () {
 // URL ของ Web app (Apps Script) — ดูวิธีติดตั้งใน google-apps-script/POS-README.md
 // URL ของ Google Apps Script ของร้าน — ฝังไว้ให้ทุกเครื่องใช้ได้เลยไม่ต้องกรอก
 // ถ้า Deploy ใหม่แล้วได้ URL ใหม่ ให้แก้ตรงนี้ (และในไฟล์ pos-dashboard.html ด้วย)
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwoRUdsJa5HVhDFriJcIIodmxn-GTvAbPhVUM_aukiy_k2DtB1E1kHuxt0FERTR8Ay6iA/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyzHF5VxmKjuvSDEy5BLD8g46jnLNja2VDxK6cfHOuBNOdqeOYdvN2am6H8hPnQxAd5dw/exec';
 
 // พร้อมเพย์ของแต่ละสาขา — ใส่เบอร์มือถือ หรือเลขบัตรประชาชน/เลขผู้เสียภาษีของร้าน
 // QR รับเงินของแต่ละสาขา — ฝังไว้ให้ทุกเครื่องใช้ได้เลย ไม่ต้องอัปโหลดรูป
@@ -1073,7 +1073,8 @@ function loadSettings() {
   Object.keys(DEFAULT_BRANCH_QR).forEach(b => branches[b] = Object.assign({}, DEFAULT_BRANCH_QR[b]));
   Object.keys(saved.branches || {}).forEach(b =>
     branches[b] = Object.assign(branches[b] || { shopName: 'หม่าล่าหน้าแดง' }, saved.branches[b]));
-  return { apiUrl: saved.apiUrl || DEFAULT_API_URL, branches };
+  // URL ที่มากับไฟล์มาก่อนเสมอ ดูเหตุผลใน stock.html
+  return { apiUrl: DEFAULT_API_URL || saved.apiUrl, branches };
 }
 let settings = loadSettings();
 function apiUrl() { return (settings.apiUrl || '').trim(); }

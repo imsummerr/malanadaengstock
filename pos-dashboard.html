@@ -455,12 +455,15 @@
    ตั้งค่า — ใช้ URL เดียวกับหน้า pos.html
    ════════════════════════════════════════════════ */
 // URL เดียวกับ pos.html — แก้ทั้งสองไฟล์ให้ตรงกันเสมอ
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwoRUdsJa5HVhDFriJcIIodmxn-GTvAbPhVUM_aukiy_k2DtB1E1kHuxt0FERTR8Ay6iA/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyzHF5VxmKjuvSDEy5BLD8g46jnLNja2VDxK6cfHOuBNOdqeOYdvN2am6H8hPnQxAd5dw/exec';
 
 function apiUrl() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem('pos_settings') || '{}'); } catch (e) {}
-  return (s.apiUrl || DEFAULT_API_URL || '').trim();
+  // URL ที่มากับไฟล์มาก่อนเสมอ — ค่าที่เคยตั้งเองไว้ใช้ต่อเมื่อไฟล์ไม่ได้ระบุ
+  // เพราะทุกครั้งที่ Deploy ใหม่แล้ว URL เปลี่ยน ไฟล์จะถูกอัปเดตให้ แต่ค่าที่
+  // ตั้งเองค้างอยู่ใน localStorage จะทับตัวใหม่เงียบ ๆ แล้วยิงไป deployment ที่ตายแล้ว
+  return (DEFAULT_API_URL || s.apiUrl || '').trim();
 }
 
 /**
