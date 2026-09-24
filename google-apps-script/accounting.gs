@@ -299,18 +299,23 @@ function accFromDelivery_(year) {
     var date = accDate_(r['วันที่']);
     if (date.slice(0, 4) !== year) return;
 
-    var amount = 0;
-    try {
-      JSON.parse(r['ข้อมูล'] || '[]').forEach(function (it) {
-        amount += (Number(it.qty) || 0) * priceOf(it.name);
-      });
-    } catch (e) {}
+    // ยอดที่แอปแจ้งมาก่อน ประมาณการเป็นทางสำรอง
+    var told = accNum_(r['ยอดเงิน']);
+    var amount = told;
+    if (!(amount > 0)) {
+      try {
+        JSON.parse(r['ข้อมูล'] || '[]').forEach(function (it) {
+          amount += (Number(it.qty) || 0) * priceOf(it.name);
+        });
+      } catch (e) {}
+    }
     if (!amount) return;
 
     var pf = String(r['แพลตฟอร์ม'] || '').trim();
     out.push(accEntry_({
       date: date, no: r['เลขที่ออเดอร์'], kind: 'รับ', code: '4110',
-      detail: 'เดลิเวอรี่' + (pf ? ' ' + pf : '') + ' (ราคาบนแอป ก่อนหักค่าคอม)',
+      detail: 'เดลิเวอรี่' + (pf ? ' ' + pf : '') +
+              (told > 0 ? ' (ยอดที่แอปแจ้ง)' : ' (ประมาณจากรายการราคา)'),
       branch: r['สาขา'], amount: amount, vatable: true,
       doc: 'ออเดอร์แพลตฟอร์ม', source: 'POS_Delivery'
     }));

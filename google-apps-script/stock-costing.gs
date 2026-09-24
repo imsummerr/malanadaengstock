@@ -361,15 +361,18 @@ function costIncome_() {
     var vd = shD.getDataRange().getValues();
     var hd = vd[0].map(function (x) { return String(x).trim(); });
     var jLoc = hd.indexOf('สาขา'), jData = hd.indexOf('ข้อมูล');
-    var jPf  = hd.indexOf('แพลตฟอร์ม');
+    var jPf  = hd.indexOf('แพลตฟอร์ม'), jAmt = hd.indexOf('ยอดเงิน');
     if (jLoc !== -1 && jData !== -1) {
       for (var d = 1; d < vd.length; d++) {
-        var amt = 0;
-        try {
-          JSON.parse(vd[d][jData] || '[]').forEach(function (it) {
-            amt += (Number(it.qty) || 0) * (price[it.name] || 0);
-          });
-        } catch (e) {}
+        // ยอดที่แอปแจ้งแม่นกว่าการเดาจากรายการราคา เพราะราคาบนแอปตั้งสูงกว่าหน้าร้าน
+        var amt = jAmt === -1 ? 0 : Number(vd[d][jAmt]) || 0;
+        if (!amt) {
+          try {
+            JSON.parse(vd[d][jData] || '[]').forEach(function (it) {
+              amt += (Number(it.qty) || 0) * (price[it.name] || 0);
+            });
+          } catch (e) {}
+        }
         if (!amt) continue;
         var loc2 = String(vd[d][jLoc] || '').trim();
         add(loc2, 'เดลิเวอรี่', amt);

@@ -76,6 +76,7 @@ function rptGather_(ym, branch) {
     byHour: {}, byPay: {},
     sticks: 0, mama: 0, extras: 0,
     fee: 0, byApp: {},   // ค่า GP ที่แอปหัก แยกรายแอป
+    guessed: 0,          // ออเดอร์ที่ไม่ได้กรอกยอดเงิน ต้องเดาเอา
     menu: {},          // ลูกค้าสั่งอะไร นับจากบิล
     used: {},          // ของที่ถูกใช้จริง จากผลนับสต็อก
     waste: {},         // ของเสีย
@@ -146,7 +147,8 @@ function rptGather_(ym, branch) {
   // ── เดลิเวอรี่ — ไม่มีช่องเงิน ต้องคูณราคาเอง ──
   var dl = rptRead_(SHEET_DELIVERY);
   var jDate = dl.head.indexOf('วันที่'), jLoc = dl.head.indexOf('สาขา'),
-      jData = dl.head.indexOf('ข้อมูล'), jPf = dl.head.indexOf('แพลตฟอร์ม');
+      jData = dl.head.indexOf('ข้อมูล'), jPf = dl.head.indexOf('แพลตฟอร์ม'),
+      jAmt = dl.head.indexOf('ยอดเงิน');
   if (jDate !== -1 && jData !== -1) {
     var price = {};
     if (typeof itemCatalogue_ === 'function') {
@@ -156,15 +158,19 @@ function rptGather_(ym, branch) {
     dl.rows.forEach(function (r) {
       if (rptMonthOf_(r[jDate]) !== ym) return;
       if (only && jLoc !== -1 && String(r[jLoc] || '').trim() !== only) return;
-      var amt = 0;
+      // นับรายการเสมอ ส่วนยอดเงินเอาที่แอปแจ้งก่อน ไม่มีค่อยเดาจากรายการราคา
+      var guess = 0;
       try {
         JSON.parse(r[jData] || '[]').forEach(function (it) {
           var qty = Number(it.qty) || 0;
-          amt += qty * (price[it.name] || 0);
+          guess += qty * (price[it.name] || 0);
           if (it.name) out.menu['เดลิเวอรี่ · ' + it.name] =
             (out.menu['เดลิเวอรี่ · ' + it.name] || 0) + qty;
         });
       } catch (e) {}
+      var told = jAmt === -1 ? 0 : Number(r[jAmt]) || 0;
+      var amt = told > 0 ? told : guess;
+      if (told <= 0) out.guessed = (out.guessed || 0) + 1;
       if (!amt) return;
       out.delivery = rptBaht_(out.delivery + amt);
       // ค่า GP คิดจากราคาบนแอป แต่ละเจ้าหักไม่เท่ากัน
@@ -281,6 +287,10 @@ function monthlyReport(ym, branch) {
     if (g.byApp['ไม่ระบุแอป']) {
       rptLine_(R, '⚠️ มีออเดอร์ที่ไม่ได้เลือกแอป', '', '',
         'คิดค่าคอมด้วยเรตกลาง อาจไม่ตรงกับที่โดนหักจริง');
+    }
+    if (g.guessed) {
+      rptLine_(R, '⚠️ ไม่ได้กรอกยอดเงิน ' + g.guessed + ' ออเดอร์', '', '',
+        'ประมาณจากรายการราคาหน้าร้าน ซึ่งต่ำกว่าราคาบนแอป — กรอกยอดที่แอปแจ้งจะแม่นกว่า');
     }
   }
 

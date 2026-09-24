@@ -39,7 +39,7 @@ var DELIVERY_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน',
   'ของเพิ่ม', 'ข้อมูล', 'order_id',
   // ต่อท้ายเสมอ ห้ามแทรกกลาง ไม่งั้นคอลัมน์ของแถวเก่าจะเลื่อนความหมาย
-  'แพลตฟอร์ม'
+  'แพลตฟอร์ม', 'ยอดเงิน'
 ];
 
 /**
@@ -561,7 +561,9 @@ function handleDelivery_(body) {
       Number(o.addonCount) || 0,
       JSON.stringify(o.items || []),
       o.orderId || '',
-      String(o.platform || '').trim()
+      String(o.platform || '').trim(),
+      // ยอดที่แอปแจ้ง — กรอกมาก็ใช้เลขนี้เลย ไม่ต้องเดาจากรายการราคา
+      Number(o.amount) > 0 ? Number(o.amount) : ''
     ]);
     return { success: true, orderNo: orderNo };
   } finally {

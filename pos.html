@@ -395,6 +395,13 @@
               border:1.5px solid var(--line);border-radius:12px;font-size:16px;
               font-family:inherit;margin-bottom:14px;"></select>
 
+      <label class="fld" style="display:block;font-size:12.5px;font-weight:700;
+             color:var(--muted);margin-bottom:6px;">ยอดเงินที่แอปแจ้ง (บาท)</label>
+      <input id="delivery-amount" type="number" inputmode="decimal" min="0" step="any"
+             placeholder="ไม่ใส่ก็ได้ — ระบบจะประมาณจากรายการราคา"
+             style="width:100%;padding:12px 13px;border:1.5px solid var(--line);
+                    border-radius:12px;font-size:16px;font-family:inherit;margin-bottom:14px;">
+
       <div class="grid-2" id="delivery-grid"></div>
 
       <div class="sec-head" style="margin-top:16px;">
@@ -1690,6 +1697,8 @@ function fillDeliveryPlatforms() {
 
 function openDelivery() {
   clearDelivery();
+  const amtEl = document.getElementById('delivery-amount');
+  if (amtEl) amtEl.value = '';
   fillDeliveryPlatforms();
   renderDeliveryGrid();
   showScreen('delivery');
@@ -1716,6 +1725,8 @@ async function saveDelivery() {
     branch: auth.branch || '',
     staff: auth.name || '',
     platform: platform,
+    // ยอดที่แอปแจ้ง — ถ้ากรอกมา บัญชีจะใช้เลขนี้แทนการเดาจากรายการราคา
+    amount: Number((document.getElementById('delivery-amount') || {}).value) || 0,
     items: items,
     itemCount: total,
     addonCount: addons,
@@ -1733,7 +1744,8 @@ async function saveDelivery() {
     const json = await postApi({ action: 'posDelivery', token: auth.token, order: record });
     if (json && json.success) {
       toast('บันทึก' + (platform ? platform + ' ' : '') + 'แล้ว (' + total + ' รายการ'
-        + (addons > 0 ? ' · ของเพิ่ม ' + addons + ' อย่าง' : '') + ')');
+        + (addons > 0 ? ' · ของเพิ่ม ' + addons + ' อย่าง' : '')
+        + (record.amount ? ' · ' + record.amount + ' บาท' : '') + ')');
       flushPending();
       prefetchBills();
       return;
