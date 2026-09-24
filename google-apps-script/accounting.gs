@@ -37,7 +37,14 @@ var ACC_ACCOUNTS = [
   { code: '4110', name: 'รายได้จากการขาย — เดลิเวอรี่',       group: 'รายได้' },
   { code: '4900', name: 'รายได้อื่น',                         group: 'รายได้' },
 
-  { code: '5100', name: 'ซื้อวัตถุดิบ / ต้นทุนขาย',            group: 'ต้นทุนขาย' },
+  { code: '5100', name: 'ค่าใช้จ่ายวัตถุดิบ (ตามที่ใช้จริง)',    group: 'ต้นทุนขาย' },
+  { code: '5200', name: 'ของเสีย / ของหมดอายุ',                group: 'ต้นทุนขาย' },
+
+  // ซื้อของเข้ามายังไม่ใช่ค่าใช้จ่าย เป็นของที่ยังอยู่ในมือ
+  // จะกลายเป็นต้นทุนขายตอนนับสต็อกแล้วรู้ว่าใช้ไปเท่าไหร่ (5100/5200)
+  // ถ้าลงเป็นค่าใช้จ่ายตั้งแต่ตอนซื้อ เดือนที่ตุนของเยอะจะดูขาดทุน
+  // ทั้งที่ขายได้ปกติ แล้วเดือนถัดไปจะดูกำไรเกินจริง
+  { code: '1300', name: 'สินค้าคงคลัง (ซื้อเข้ามาแต่ยังไม่ได้ใช้)', group: 'สินทรัพย์' },
 
   { code: '6100', name: 'ค่าเช่าที่',                          group: 'ค่าใช้จ่าย' },
   { code: '6200', name: 'ค่าแรงและเงินเดือน',                  group: 'ค่าใช้จ่าย' },
@@ -58,7 +65,7 @@ var ACC_EXPENSE_MAP = {
   'ค่าแก๊ส':    '6300',
   'ค่าน้ำแข็ง':  '6300',
   'ค่าไม้เสียบ': '6400',
-  'ค่าของสด':   '5100',
+  'ค่าของสด':   '1300',   // ของสดเข้าคลังก่อน เป็นต้นทุนตอนใช้จริง
   'อื่น ๆ':      '6900'
 };
 
@@ -333,7 +340,8 @@ function accFromExpenses_(year) {
 
 /**
  * ซื้อของเข้า (จากไลน์)
- *   วัตถุดิบ    → 5100 ต้นทุนขาย
+ *   วัตถุดิบ    → 1300 สินค้าคงคลัง ยังไม่ใช่ต้นทุนขาย
+ *                 จะกลายเป็น 5100 ตอนนับสต็อกแล้วรู้ว่าใช้ไปเท่าไหร่
  *   พัฒนาสูตร  → 6600 ค่าใช้จ่าย ไม่ใช่ต้นทุนขาย เพราะไม่ได้เอาไปขาย
  * แถวเก่าที่ยังไม่มีคอลัมน์ "ประเภทซื้อ" ถือเป็นวัตถุดิบเหมือนเดิม
  *
@@ -353,7 +361,9 @@ function accFromPurchases_(year) {
     var isRnd = String(r['ประเภทซื้อ'] || '').trim() === rnd;
 
     out.push(accEntry_({
-      date: date, no: r['เลขที่'], kind: 'จ่าย', code: isRnd ? '6600' : '5100',
+      // ของที่ซื้อเข้ามาลงคลังก่อน (1300) ยังไม่ใช่ต้นทุนขาย
+      // ของที่ซื้อมาลองสูตรไม่เข้าคลัง เพราะไม่ได้เอาไปขาย ลงเป็นค่าใช้จ่ายเลย
+      date: date, no: r['เลขที่'], kind: 'จ่าย', code: isRnd ? '6600' : '1300',
       detail: (isRnd ? 'ลองสูตร ' : 'ซื้อ ') + (r['รายการ'] || '') +
               (accNum_(r['น้ำหนัก(กรัม)']) ? ' ' + accNum_(r['น้ำหนัก(กรัม)']) + ' ก.' : ''),
       branch: r['สถานที่'], amount: amount, pay: r['วิธีจ่าย'],
@@ -388,12 +398,49 @@ function accFromManual_(year) {
 }
 
 /** รวมทุกแหล่ง เรียงตามวันที่ */
+/**
+ * ต้นทุนวัตถุดิบที่รับรู้จริง — มาจากเครื่องคิดต้นทุนใน stock-costing.gs
+ * ไม่ได้ลงตอนซื้อ แต่ลงตอนนับสต็อกแล้วรู้ว่าของหายไปเท่าไหร่
+ * ของที่ยังอยู่ในมือไม่ใช่ค่าใช้จ่าย เป็นสินทรัพย์ (1300)
+ */
+function accFromUsage_(year) {
+  if (typeof costReplay_ !== 'function') return [];
+  var out = [];
+  var rep;
+  try { rep = costReplay_(); }
+  catch (e) { Logger.log('accFromUsage_ คิดต้นทุนไม่ได้: ' + e.message); return []; }
+
+  // รวมเป็นรายเดือนต่อสถานที่ ไม่งั้นสมุดรายวันจะบวมด้วยแถวรายชิ้น
+  var group = {};
+  (rep.log || []).forEach(function (r) {
+    var d = new Date(r.t);
+    var key = Utilities.formatDate(d, accTz_(), 'yyyy-MM-dd') + '|' + r.loc + '|' + r.kind;
+    group[key] = accRound_((group[key] || 0) + r.value);
+  });
+
+  Object.keys(group).forEach(function (key) {
+    var p = key.split('|');
+    if (p[0].slice(0, 4) !== year) return;
+    if (!group[key]) return;
+    out.push(accEntry_({
+      date: p[0], kind: 'จ่าย', code: p[2] === 'ของเสีย' ? '5200' : '5100',
+      detail: (p[2] === 'ของเสีย' ? 'ของเสีย ' : 'ใช้วัตถุดิบ ') + p[1] +
+              ' (ตัดจากคลังตามผลนับสต็อก)',
+      branch: p[1], amount: group[key],
+      pay: 'ตัดจากคลัง',      // ไม่ใช่เงินออกจากกระเป๋ารอบใหม่ จ่ายไปตั้งแต่ตอนซื้อแล้ว
+      doc: 'ผลนับสต็อก', source: 'stock-costing'
+    }));
+  });
+  return out;
+}
+
 function accCollect_(year) {
   var all = []
     .concat(accFromOrders_(year))
     .concat(accFromDelivery_(year))
     .concat(accFromExpenses_(year))
     .concat(accFromPurchases_(year))
+    .concat(accFromUsage_(year))
     .concat(accFromManual_(year));
 
   all.sort(function (a, b) {

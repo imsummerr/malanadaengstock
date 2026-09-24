@@ -173,6 +173,7 @@ function costEvents_() {
  *   used    ของที่ออกไปแล้ว       loc → { ใช้ไป, ของเสีย, นับเกิน }
  *   sent    มูลค่าของที่ส่งไปให้สาขาสะสม = ยอดหนี้ก่อนหักเงินที่จ่ายคืน
  *   moved   มูลค่าที่ส่งออกจากครัวกลาง แยกรายสินค้า
+ *   log     ต้นทุนที่รับรู้แต่ละครั้ง พร้อมวันที่ — บัญชีเอาไปลงให้ตรงเดือน
  *   warn    จุดที่ตัวเลขไม่สมบูรณ์ ต้องบอก ไม่ใช่กลืนเงียบ ๆ
  */
 function costReplay_() {
@@ -181,7 +182,7 @@ function costReplay_() {
 
 function costReplayRaw_() {
   var central = costCentral_();
-  var lay = {}, used = {}, sent = {}, moved = {}, warn = [];
+  var lay = {}, used = {}, sent = {}, moved = {}, warn = [], log = [];
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
 
   function box(loc, item) {
@@ -193,7 +194,11 @@ function costReplayRaw_() {
     if (!used[loc]) used[loc] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, items: {} };
     return used[loc];
   }
-  function noteItem(loc, item, what, qty, value) {
+  function noteItem(loc, item, what, qty, value, when) {
+    // จดวันที่ไว้ด้วย บัญชีจะได้เอาไปลงให้ตรงเดือน
+    if (what !== 'นับเกิน' && value) {
+      log.push({ t: when, loc: loc, item: item, kind: what, qty: qty, value: value });
+    }
     var b = bucket(loc);
     if (!b.items[item]) b.items[item] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, qty: 0 };
     b[what] = costBaht_(b[what] + value);
@@ -274,7 +279,7 @@ function costReplayRaw_() {
 
     } else if (e.type === 'ของเสีย') {
       var t3 = take(e.loc, e.item, e.qty);
-      noteItem(e.loc, e.item, 'ของเสีย', t3.qty, t3.value);
+      noteItem(e.loc, e.item, 'ของเสีย', t3.qty, t3.value, e.t);
 
     } else if (e.type === 'เช็คสต็อก') {
       // นับได้เท่าไหร่คือเท่านั้น ส่วนที่หายไประหว่างสองรอบนับคือของที่ใช้ไป
@@ -282,17 +287,18 @@ function costReplayRaw_() {
       var diff = costQty_(have - e.qty);
       if (diff > 0.00001) {
         var t4 = take(e.loc, e.item, diff);
-        noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value);
+        noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
       } else if (diff < -0.00001) {
         var add = -diff;
         var c = guessCost(e.loc, e.item);
         put(e.loc, e.item, add, c);
-        noteItem(e.loc, e.item, 'นับเกิน', add, costBaht_(add * c));
+        noteItem(e.loc, e.item, 'นับเกิน', add, costBaht_(add * c), e.t);
       }
     }
   });
 
-  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn };
+  log.sort(function (a, b) { return a.t - b.t; });
+  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn, log: log };
 }
 
 /* ═══════════════════ เงินที่สาขาจ่ายคืนแล้ว ═══════════════════ */
