@@ -438,8 +438,44 @@ function setupCosting() {
   } else {
     Logger.log('มีชีต "' + COST_SHEET_PAY + '" อยู่แล้ว');
   }
+  refreshCostingSheets();
+  Logger.log('\nอยากให้ชีตอัปเดตเองทุกชั่วโมง สั่ง setupCostingTriggers() อีกทีนึง');
+}
+
+/* ═══════════════════ ให้ชีตอัปเดตเอง ═══════════════════ */
+
+/** เขียนทั้งสองชีตรวดเดียว */
+function refreshCostingSheets() {
+  cacheClear_();
   buildStockValue();
   buildBranchLedger();
+}
+
+/**
+ * ตั้งให้ชีตอัปเดตเองทุกชั่วโมง
+ * ไม่ได้ให้อัปเดตทุกครั้งที่บันทึกของ เพราะการคิดต้นทุนต้องไล่ทุกแถวตั้งแต่ต้น
+ * ถ้าไปแขวนไว้ท้ายปุ่มบันทึก คนกดจะรอนานขึ้นทุกครั้งโดยไม่จำเป็น
+ * อยากได้ตัวเลขสด ๆ เดี๋ยวนั้นให้ดูหน้าเว็บ ซึ่งคิดตอนเปิดอยู่แล้ว
+ */
+function setupCostingTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'refreshCostingSheets') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('refreshCostingSheets').timeBased().everyHours(1).create();
+  Logger.log('ตั้งให้ชีตบัญชีอัปเดตเองทุกชั่วโมงแล้ว');
+}
+
+/** เมนูในชีต — เจ้าของจะได้ไม่ต้องเข้า Apps Script เพื่อกดอัปเดต */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi().createMenu('📒 บัญชี')
+      .addItem('อัปเดตตัวเลขเดี๋ยวนี้', 'refreshCostingSheets')
+      .addItem('ดูสรุปย่อ', 'previewCosting')
+      .addSeparator()
+      .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
+      .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
+      .addToUi();
+  } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
 }
 
 /** ดูสรุปเร็ว ๆ ใน Log ไม่ต้องเปิดชีต */
