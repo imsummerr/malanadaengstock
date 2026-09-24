@@ -626,7 +626,7 @@ function onOpen() {
       .addSeparator()
       .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
       .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
-      .addItem('⚠️ ล้างสต็อกเป็นศูนย์', 'resetStockToZero')
+      .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')
       .addToUi();
   } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
 }
