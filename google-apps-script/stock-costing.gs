@@ -155,7 +155,10 @@ function costEvents_() {
     vc.forEach(function (r) {
       var item = String(r[mapC['รายการ']] || '').trim();
       if (!item) return;
-      ev.push({ t: costTime_(r[mapC['วันที่เวลา']]), step: 5, type: 'เช็คสต็อก',
+      // ล้างยอดตั้งต้น ไม่ใช่ของที่ถูกใช้ไป จึงไม่คิดเป็นค่าใช้จ่ายวัตถุดิบ
+      var kindC = String(r[mapC['ประเภท']] || '').trim();
+      ev.push({ t: costTime_(r[mapC['วันที่เวลา']]), step: 5,
+                type: kindC === 'ล้างยอด' ? 'ล้างยอด' : 'เช็คสต็อก',
                 loc: String(r[mapC['สาขา']] || '').trim(), item: item,
                 qty: costQty_(r[mapC['จำนวน']]) });
     });
@@ -280,6 +283,12 @@ function costReplayRaw_() {
     } else if (e.type === 'ของเสีย') {
       var t3 = take(e.loc, e.item, e.qty);
       noteItem(e.loc, e.item, 'ของเสีย', t3.qty, t3.value, e.t);
+
+    } else if (e.type === 'ล้างยอด') {
+      // ทิ้งชั้นต้นทุนเดิมทั้งหมด แล้วตั้งใหม่ตามยอดที่สั่ง ไม่ลงบัญชีอะไรเลย
+      // ใช้ตอนเริ่มระบบหรือรีเซ็ต ไม่ใช่การนับสต็อกปกติ
+      box(e.loc, e.item).length = 0;
+      if (e.qty > 0) put(e.loc, e.item, e.qty, guessCost(e.loc, e.item));
 
     } else if (e.type === 'เช็คสต็อก') {
       // นับได้เท่าไหร่คือเท่านั้น ส่วนที่หายไประหว่างสองรอบนับคือของที่ใช้ไป
@@ -612,8 +621,12 @@ function onOpen() {
       .addItem('อัปเดตตัวเลขเดี๋ยวนี้', 'refreshCostingSheets')
       .addItem('ดูสรุปย่อ', 'previewCosting')
       .addSeparator()
+      .addItem('📊 รายงานเดือนนี้', 'monthlyReportThisMonth')
+      .addItem('📊 รายงานเดือนที่แล้ว', 'monthlyReportLastMonth')
+      .addSeparator()
       .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
       .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
+      .addItem('⚠️ ล้างสต็อกเป็นศูนย์', 'resetStockToZero')
       .addToUi();
   } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
 }
