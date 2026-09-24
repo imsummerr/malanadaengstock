@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-23i';
+const PAGE_BUILD = '2026-09-24a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -450,7 +450,8 @@ const TABS = [
   { id: 'pack',    label: '🔪 แพ็คของ',        who: 'central' },
   { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
   { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
-  { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    }
+  { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    },
+  { id: 'money',   label: '💰 บัญชี',           who: 'owner'   }
 ];
 let tab = 'stock';
 
@@ -481,6 +482,99 @@ function render() {
   if (tab === 'toshop') return viewMove(v, 'toshop');
   if (tab === 'waste')  return viewMove(v, 'waste');
   if (tab === 'count')  return viewCount(v);
+  if (tab === 'money')  return viewMoney(v);
+}
+
+/* ── บัญชี — เจ้าของร้านคนเดียว ── */
+/** ตัวเลขบัญชีโหลดแยก เพราะต้องไล่ทุกแถวย้อนหลัง หนักกว่าหน้าอื่น */
+let MONEY = null;
+
+const baht = n => (Math.round((Number(n) || 0) * 100) / 100)
+  .toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function viewMoney(v) {
+  if (!MONEY) {
+    v.innerHTML = '<div class="card"><div class="empty">กำลังคิดต้นทุน…</div></div>';
+    loadMoney();
+    return;
+  }
+  const M = MONEY;
+  const locs = Object.keys(M.pl).sort((a, b) =>
+    a === M.central ? -1 : b === M.central ? 1 : a.localeCompare(b, 'th'));
+
+  const cards = locs.map(loc => {
+    const p = M.pl[loc];
+    const o = M.owed[loc];
+    const st = M.stock[loc] || { rows: [], total: 0 };
+    const isC = loc === M.central;
+
+    // ครัวกลางไม่มีรายได้ ส่งต่อที่ต้นทุน กำไรไปโผล่ที่สาขาทั้งหมด
+    const money = isC ? '' : `
+      <table><tbody>
+        <tr><td>ขายหน้าร้าน</td><td class="num">${baht(p['หน้าร้าน'])}</td></tr>
+        <tr><td>เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>
+        <tr><td><b>รายได้รวม</b></td><td class="num"><b>${baht(p['รายได้'])}</b></td></tr>
+        <tr><td>− ค่าใช้จ่ายวัตถุดิบ</td><td class="num">${baht(p['ค่าใช้จ่ายวัตถุดิบ'])}</td></tr>
+        <tr><td>− ของเสีย</td><td class="num">${baht(p['ของเสีย'])}</td></tr>
+        <tr><td><b>กำไรขั้นต้น</b></td><td class="num"><b>${baht(p['กำไรขั้นต้น'])}</b></td></tr>
+        <tr><td>− ค่าใช้จ่ายอื่น</td><td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>
+        <tr><td><b>กำไรสุทธิ</b></td><td class="num ${p['กำไรสุทธิ'] < 0 ? 'low' : ''}">
+            <b>${baht(p['กำไรสุทธิ'])}</b></td></tr>
+      </tbody></table>`;
+
+    const debt = (!isC && o) ? `
+      <div class="loctitle" style="margin-top:14px">กับครัวกลาง</div>
+      <table><tbody>
+        <tr><td>รับของไปแล้ว</td><td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
+        <tr><td>จ่ายคืนแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
+        <tr><td><b>ถึงกำหนดจ่าย</b> <small>ของที่ใช้/ทิ้งไปแล้วแต่ยังไม่จ่าย</small></td>
+            <td class="num ${o['ถึงกำหนดจ่าย'] > 0 ? 'low' : ''}"><b>${baht(o['ถึงกำหนดจ่าย'])}</b></td></tr>
+        <tr><td>ค้างชำระทั้งหมด</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
+      </tbody></table>` : '';
+
+    const top = st.rows.slice(0, 12).map(r => `<tr>
+        <td>${esc(r.item)}</td>
+        <td class="num">${r.qty}</td>
+        <td class="num">${baht(r.unit)}</td>
+        <td class="num">${baht(r.value)}</td>
+      </tr>`).join('');
+
+    return `<div class="card">
+      <div class="loctitle"><span class="pill">${esc(loc)}</span>
+        <small>วัตถุดิบคงเหลือ ${baht(st.total)} บาท</small></div>
+      ${money}${debt}
+      <div class="loctitle" style="margin-top:14px">ของที่มีอยู่</div>
+      <table>
+        <thead><tr><th>สินค้า</th><th class="num">คงเหลือ</th>
+          <th class="num">ต้นทุน/หน่วย</th><th class="num">มูลค่า</th></tr></thead>
+        <tbody>${top || '<tr><td colspan="4" class="empty">ไม่มีของ</td></tr>'}</tbody>
+      </table>
+      ${st.rows.length > 12 ? `<p class="note">แสดง 12 จาก ${st.rows.length} รายการ — ดูครบในชีต "บัญชี_มูลค่าสต็อก"</p>` : ''}
+    </div>`;
+  }).join('');
+
+  const warn = M.warn.length ? `<div class="card"><div class="warnbox" style="margin:0">
+      ⚠️ ตัวเลขยังไม่สมบูรณ์ ${M.warn.length} จุด<br>
+      ${M.warn.slice(0, 6).map(w => `• ${esc(w.loc)} · ${esc(w.item)} — ${esc(w.msg)}`).join('<br>')}
+      ${M.warn.length > 6 ? '<br>…' : ''}
+    </div></div>` : '';
+
+  v.innerHTML = `<div class="card">
+      <h2>💰 บัญชี</h2>
+      <p class="lead">คิดสดจากของที่เคลื่อนไหวจริง แบบเข้าก่อนออกก่อน ·
+         ครัวกลางส่งต่อที่ต้นทุน ไม่มีกำไรไม่มีขาดทุน</p>
+      <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
+    </div>${warn}${cards}`;
+}
+
+async function loadMoney() {
+  try {
+    MONEY = (await apiGet({ action: 'costBoard' })).data;
+    if (tab === 'money') render();
+  } catch (e) {
+    document.getElementById('view').innerHTML =
+      `<div class="card"><div class="warnbox" style="margin:0">❌ ${esc(e.message)}</div></div>`;
+  }
 }
 
 /* ── สต็อกคงเหลือ ── */

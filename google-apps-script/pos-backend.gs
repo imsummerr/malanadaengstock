@@ -203,6 +203,7 @@ function doGet(e) {
     if (p.action === 'posBills') return json_(handleBills_(p));
     if (p.action === 'history')  return json_(handleHistory_(p));
     if (p.action === 'stockBootstrap') return json_(handleStockBootstrap_(p));
+    if (p.action === 'costBoard')      return json_(handleCostBoard_(p));
     return json_({ success: false, message: 'ไม่รู้จัก action: ' + p.action });
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
@@ -1991,6 +1992,28 @@ function lastCountInfo_() {
     else if (t === cur.t) cur.n++;
   });
   return out;
+}
+
+/**
+ * งบบัญชีสด ๆ สำหรับหน้าเว็บ — เจ้าของร้านคนเดียว
+ * เป็นข้อมูลเงิน ต้นทุน และหนี้ระหว่างกัน ห้ามหลุดถึงพนักงานเด็ดขาด
+ * เช็คที่เซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนแท็บ เพราะเปิด Network ก็ยิงเองได้
+ */
+function handleCostBoard_(p) {
+  var session = checkToken_(p.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (!isStockOwner_(session)) {
+    return { success: false, code: 403, message: 'ดูบัญชีได้เฉพาะเจ้าของร้าน' };
+  }
+  if (typeof costSummary_ !== 'function') {
+    return { success: false, message: 'ยังไม่ได้ติดตั้งไฟล์ stock-costing.gs ในโปรเจกต์นี้' };
+  }
+  var s = costSummary_();
+  return { success: true, data: {
+    version: BACKEND_VERSION, central: s.central,
+    stock: s.stock, owed: s.owed, pl: s.pl,
+    warn: s.warn.slice(0, 30)
+  } };
 }
 
 function handleStockBootstrap_(p) {

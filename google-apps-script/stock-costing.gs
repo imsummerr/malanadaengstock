@@ -24,6 +24,7 @@
 var COST_SHEET_PAY    = 'บัญชี_สาขาจ่ายคืน';      // กรอกเอง เวลาสาขาโอนเงินคืนครัวกลาง
 var COST_SHEET_STOCK  = 'บัญชี_มูลค่าสต็อก';       // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 var COST_SHEET_LEDGER = 'บัญชี_ครัวกลางกับสาขา';   // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
+var COST_SHEET_PL     = 'บัญชี_กำไรแต่ละที่';       // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 
 var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ'];
 
@@ -311,6 +312,76 @@ function costPaidBack_() {
   return out;
 }
 
+/* ═══════════════════ รายรับและค่าใช้จ่ายของแต่ละที่ ═══════════════════ */
+
+/** เงินที่ขายได้ แยกตามสาขา — จากบิลหน้าร้านและเดลิเวอรี่ */
+function costIncome_() {
+  var out = {};
+  function add(loc, key, baht) {
+    loc = String(loc || '').trim();
+    if (!loc || !baht) return;
+    if (!out[loc]) out[loc] = { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0 };
+    out[loc][key] = costBaht_(out[loc][key] + baht);
+    out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
+  }
+
+  var sh = sheet_(SHEET_ORDERS);
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    var h = v[0].map(function (x) { return String(x).trim(); });
+    var iLoc = h.indexOf('สาขา'), iNet = h.indexOf('ยอดสุทธิ');
+    if (iLoc !== -1 && iNet !== -1) {
+      for (var r = 1; r < v.length; r++) add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
+    }
+  }
+
+  // เดลิเวอรี่เก็บรายการไว้เป็น JSON ไม่มียอดเงินตรง ๆ ต้องคูณราคาเอง
+  var shD = sheet_(SHEET_DELIVERY);
+  if (shD && shD.getLastRow() > 1) {
+    var price = {};
+    if (typeof itemCatalogue_ === 'function') {
+      try { itemCatalogue_().forEach(function (it) { if (it.price) price[it.name] = it.price; }); }
+      catch (e) {}
+    }
+    var vd = shD.getDataRange().getValues();
+    var hd = vd[0].map(function (x) { return String(x).trim(); });
+    var jLoc = hd.indexOf('สาขา'), jData = hd.indexOf('ข้อมูล');
+    if (jLoc !== -1 && jData !== -1) {
+      for (var d = 1; d < vd.length; d++) {
+        var amt = 0;
+        try {
+          JSON.parse(vd[d][jData] || '[]').forEach(function (it) {
+            amt += (Number(it.qty) || 0) * (price[it.name] || 0);
+          });
+        } catch (e) {}
+        add(vd[d][jLoc], 'เดลิเวอรี่', amt);
+      }
+    }
+  }
+  return out;
+}
+
+/** เงินสดที่จ่ายออกหน้าร้าน แยกตามสาขาและประเภท */
+function costOutgo_() {
+  var out = {};
+  var sh = sheet_(SHEET_EXPENSE);
+  if (!sh || sh.getLastRow() < 2) return out;
+  var v = sh.getDataRange().getValues();
+  var h = v[0].map(function (x) { return String(x).trim(); });
+  var iLoc = h.indexOf('สาขา'), iBaht = h.indexOf('จำนวนเงิน'), iType = h.indexOf('ประเภท');
+  if (iLoc === -1 || iBaht === -1) return out;
+  for (var r = 1; r < v.length; r++) {
+    var loc = String(v[r][iLoc] || '').trim();
+    var baht = Number(v[r][iBaht]) || 0;
+    if (!loc || !baht) continue;
+    var type = iType === -1 ? 'อื่น ๆ' : (String(v[r][iType] || '').trim() || 'อื่น ๆ');
+    if (!out[loc]) out[loc] = { รวม: 0, ตามประเภท: {} };
+    out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
+    out[loc]['ตามประเภท'][type] = costBaht_((out[loc]['ตามประเภท'][type] || 0) + baht);
+  }
+  return out;
+}
+
 /* ═══════════════════ สรุปให้อ่านง่าย ═══════════════════ */
 
 /**
@@ -364,8 +435,31 @@ function costSummary_() {
   Object.keys(back).forEach(seat);
   delete owed[central];
 
+  // งบของแต่ละที่ — สาขามีรายได้ ครัวกลางไม่มี (ส่งต่อที่ต้นทุน)
+  var income = costIncome_(), outgo = costOutgo_();
+  var pl = {};
+  var locs = {};
+  [stock, owed, rep.used, income, outgo].forEach(function (o) {
+    Object.keys(o).forEach(function (l) { locs[l] = true; });
+  });
+  Object.keys(locs).forEach(function (loc) {
+    var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0 };
+    var u = rep.used[loc] || { ใช้ไป: 0, ของเสีย: 0 };
+    var ex = outgo[loc] || { รวม: 0, ตามประเภท: {} };
+    var cogs = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
+    pl[loc] = {
+      รายได้: inc['รวม'], หน้าร้าน: inc['หน้าร้าน'], เดลิเวอรี่: inc['เดลิเวอรี่'],
+      ค่าใช้จ่ายวัตถุดิบ: u['ใช้ไป'] || 0,
+      ของเสีย: u['ของเสีย'] || 0,
+      กำไรขั้นต้น: costBaht_(inc['รวม'] - cogs),
+      ค่าใช้จ่ายอื่น: ex['รวม'], ตามประเภท: ex['ตามประเภท'],
+      กำไรสุทธิ: costBaht_(inc['รวม'] - cogs - ex['รวม']),
+      วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
+    };
+  });
+
   return { central: central, stock: stock, owed: owed,
-           used: rep.used, warn: rep.warn };
+           used: rep.used, pl: pl, warn: rep.warn };
 }
 
 /* ═══════════════════ เขียนลงชีต ═══════════════════ */
@@ -454,11 +548,32 @@ function setupCosting() {
 
 /* ═══════════════════ ให้ชีตอัปเดตเอง ═══════════════════ */
 
-/** เขียนทั้งสองชีตรวดเดียว */
+/** กำไรขาดทุนแยกตามที่ — ครัวกลางไม่มีรายได้ เพราะส่งต่อที่ต้นทุน */
+function buildLocationPL() {
+  cacheClear_();
+  var s = costSummary_();
+  var rows = [];
+  Object.keys(s.pl).sort().forEach(function (loc) {
+    var p = s.pl[loc];
+    rows.push([loc, p['หน้าร้าน'], p['เดลิเวอรี่'], p['รายได้'],
+               p['ค่าใช้จ่ายวัตถุดิบ'], p['ของเสีย'], p['กำไรขั้นต้น'],
+               p['ค่าใช้จ่ายอื่น'], p['กำไรสุทธิ'], p['วัตถุดิบคงเหลือ']]);
+  });
+  costWriteSheet_(COST_SHEET_PL,
+    ['สถานที่', 'ขายหน้าร้าน', 'เดลิเวอรี่', 'รายได้รวม',
+     'ค่าใช้จ่ายวัตถุดิบ', 'ของเสีย', 'กำไรขั้นต้น',
+     'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'], rows,
+    'ตัวเลขสะสมตั้งแต่เริ่มระบบ · ครัวกลางไม่มีรายได้เพราะส่งต่อที่ต้นทุน · อัปเดตเมื่อ ' +
+    Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm'));
+  Logger.log('เขียนชีต "' + COST_SHEET_PL + '" แล้ว ' + rows.length + ' แถว');
+}
+
+/** เขียนทุกชีตรวดเดียว */
 function refreshCostingSheets() {
   cacheClear_();
   buildStockValue();
   buildBranchLedger();
+  buildLocationPL();
 }
 
 /**
