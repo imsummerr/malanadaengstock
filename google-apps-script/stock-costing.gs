@@ -9,12 +9,13 @@
  *    1) ซื้อเข้าครัวกลาง   สร้างชั้นต้นทุนใหม่ ราคาต่อหน่วยจากบิลในไลน์
  *    2) แพ็คของ            กินชั้นของดิบ แล้วโยนต้นทุนไปเป็นของที่แพ็คแล้ว
  *    3) ส่งเข้าร้าน         กินชั้นครัวกลาง สร้างชั้นที่สาขา "ราคาเท่าเดิม"
- *                          ยังไม่ต้องจ่ายเงิน ของยังเป็นเงินของครัวกลางอยู่
+ *                          ของออกจากครัวกลางแล้ว = สาขาเป็นหนี้เต็มจำนวนทันที
  *    4) เช็คสต็อก          นับได้เท่าไหร่คือเท่านั้น ส่วนที่หายไปคือของที่ใช้จริง
- *                          → เป็นค่าใช้จ่ายวัตถุดิบ และเป็นยอดที่สาขาต้องจ่ายคืน
+ *                          → เป็นค่าใช้จ่ายวัตถุดิบ และเป็นยอดที่ถึงกำหนดจ่าย
  *
- *  สาขาจ่ายคืนเฉพาะของที่ใช้ไปจริง ไม่ใช่ทุกอย่างที่รับไป
- *  ของที่ยังวางอยู่ที่สาขายังไม่ต้องจ่าย เพราะยังขายไม่ได้เงิน
+ *  ยอดค้างชำระ = ของที่รับไปทั้งหมด − ที่จ่ายคืนแล้ว
+ *  ขายได้เท่าไหร่ก็จ่ายคืนเท่านั้น ที่เหลือค้างไว้เท่ากับของที่ยังวางอยู่
+ *  ของเสียที่สาขาก็ยังต้องจ่าย เพราะของออกจากครัวกลางไปแล้ว ทิ้งแล้วหนี้ไม่หาย
  *
  *  ครัวกลางไม่มีกำไรไม่มีขาดทุน — ส่งต่อที่ต้นทุนจริง กำไรไปโผล่ที่สาขาทั้งหมด
  *  ตัวเลขที่ครัวกลางจึงเป็น "เงินที่จมอยู่ในของ" ล้วน ๆ
@@ -169,8 +170,7 @@ function costEvents_() {
  * ไล่ทุกเหตุการณ์ตั้งแต่แถวแรก แล้วคืนสภาพ ณ ตอนนี้
  *   layers  ชั้นต้นทุนที่ยังเหลือ  loc → item → [{qty, cost}]
  *   used    ของที่ออกไปแล้ว       loc → { ใช้ไป, ของเสีย, นับเกิน }
- *   owed    ยอดที่สาขาต้องจ่ายคืนสะสม  สาขา → บาท (ยังไม่หักเงินที่จ่ายคืน)
- *   sent    มูลค่าของที่ส่งไปให้สาขาสะสม — ไว้ดูว่าของยังค้างอยู่ที่นั่นเท่าไหร่
+ *   sent    มูลค่าของที่ส่งไปให้สาขาสะสม = ยอดหนี้ก่อนหักเงินที่จ่ายคืน
  *   moved   มูลค่าที่ส่งออกจากครัวกลาง แยกรายสินค้า
  *   warn    จุดที่ตัวเลขไม่สมบูรณ์ ต้องบอก ไม่ใช่กลืนเงียบ ๆ
  */
@@ -180,7 +180,7 @@ function costReplay_() {
 
 function costReplayRaw_() {
   var central = costCentral_();
-  var lay = {}, used = {}, owed = {}, sent = {}, moved = {}, warn = [];
+  var lay = {}, used = {}, sent = {}, moved = {}, warn = [];
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
 
   function box(loc, item) {
@@ -198,11 +198,6 @@ function costReplayRaw_() {
     b[what] = costBaht_(b[what] + value);
     b.items[item][what] = costBaht_(b.items[item][what] + value);
     if (what !== 'นับเกิน') b.items[item].qty = costQty_(b.items[item].qty + qty);
-    // สาขาเป็นหนี้ครัวกลางตอนของออกจากสต็อกสาขา ไม่ใช่ตอนรับของ
-    // ของที่ยังวางอยู่ยังเป็นเงินของครัวกลาง ขายไม่ได้ก็ยังไม่ต้องจ่าย
-    if (loc !== central && what !== 'นับเกิน') {
-      owed[loc] = costBaht_((owed[loc] || 0) + value);
-    }
   }
   function total(loc, item) {
     return costQty_(box(loc, item).reduce(function (s, l) { return s + l.qty; }, 0));
@@ -262,6 +257,7 @@ function costReplayRaw_() {
                          ' — คิดต้นทุนจากราคาล่าสุดแทน' });
       }
       put(e.loc, e.item, e.qty, e.qty > 0 ? value / e.qty : 0);
+      // ของออกจากครัวกลางแล้วเป็นหนี้ทันทีเต็มจำนวน — จะขายได้หรือทิ้งก็หนี้เท่าเดิม
       sent[e.loc] = costBaht_((sent[e.loc] || 0) + value);
       moved[e.item] = costBaht_((moved[e.item] || 0) + value);
 
@@ -285,7 +281,7 @@ function costReplayRaw_() {
     }
   });
 
-  return { layers: lay, used: used, owed: owed, sent: sent, moved: moved, warn: warn };
+  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn };
 }
 
 /* ═══════════════════ เงินที่สาขาจ่ายคืนแล้ว ═══════════════════ */
@@ -338,19 +334,22 @@ function costSummary_() {
   function seat(loc) {
     if (owed[loc]) return owed[loc];
     var u = rep.used[loc] || {};
+    var sent = rep.sent[loc] || 0;
+    var paid = back[loc] || 0;
+    var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
     owed[loc] = {
-      ส่งไปแล้ว:   rep.sent[loc] || 0,          // ของที่ยกไปให้ ยังไม่ใช่หนี้
+      ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
       ใช้ไป:       u['ใช้ไป'] || 0,
       ของเสีย:     u['ของเสีย'] || 0,
-      ต้องจ่าย:    rep.owed[loc] || 0,          // ใช้ไป + ของเสีย
-      จ่ายคืนแล้ว: back[loc] || 0,
-      ค้างชำระ:    costBaht_((rep.owed[loc] || 0) - (back[loc] || 0)),
+      จ่ายคืนแล้ว: paid,
+      ค้างชำระ:    costBaht_(sent - paid),
+      ถึงกำหนดจ่าย: costBaht_(Math.max(0, gone - paid)),  // ของที่ออกจากสต็อกแล้วแต่ยังไม่จ่าย
       ของที่ยังอยู่: (stock[loc] || { total: 0 }).total
     };
     return owed[loc];
   }
   Object.keys(rep.sent).forEach(seat);
-  Object.keys(rep.owed).forEach(seat);
+  Object.keys(rep.used).forEach(function (l) { if (l !== central) seat(l); });
   Object.keys(back).forEach(seat);
   delete owed[central];
 
@@ -409,7 +408,7 @@ function buildBranchLedger() {
     var st = s.stock[loc] || { total: 0 };
     var o = s.owed[loc];
     rows.push([loc, o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'],
-               o['ต้องจ่าย'], o['จ่ายคืนแล้ว'], o['ค้างชำระ'], st.total]);
+               o['จ่ายคืนแล้ว'], o['ถึงกำหนดจ่าย'], o['ค้างชำระ'], st.total]);
   });
   var c = s.central;
   var uc = s.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
@@ -417,9 +416,9 @@ function buildBranchLedger() {
              (s.stock[c] || { total: 0 }).total]);
 
   costWriteSheet_(COST_SHEET_LEDGER,
-    ['สถานที่', 'ของที่ส่งไปแล้ว', 'ใช้ไปจริง', 'ของเสีย',
-     'ต้องจ่ายคืน', 'จ่ายคืนแล้ว', 'ค้างชำระ', 'มูลค่าของที่ยังอยู่'], rows,
-    'สาขาจ่ายคืนเฉพาะของที่ใช้ไปจริง ของที่ยังวางอยู่ยังไม่ต้องจ่าย · อัปเดตเมื่อ ' +
+    ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย',
+     'จ่ายคืนแล้ว', 'ถึงกำหนดจ่าย', 'ค้างชำระ', 'มูลค่าของที่ยังอยู่'], rows,
+    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที · ขายได้เท่าไหร่จ่ายคืนเท่านั้น ที่เหลือค้างไว้ · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สาขาจ่ายคืนกรอกในชีต "' + COST_SHEET_PAY + '"');
   Logger.log('เขียนชีต "' + COST_SHEET_LEDGER + '" แล้ว ' + rows.length + ' แถว');
@@ -458,13 +457,13 @@ function previewCosting() {
   Object.keys(s.owed).forEach(function (loc) {
     var o = s.owed[loc];
     out.push('\n💰 ' + loc +
-             '\n   ส่งไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() +
-             ' · ยังวางอยู่ ' + o['ของที่ยังอยู่'].toLocaleString() +
+             '\n   รับของไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() +
+             ' · จ่ายคืนแล้ว ' + o['จ่ายคืนแล้ว'].toLocaleString() +
+             ' → ค้างชำระ ' + o['ค้างชำระ'].toLocaleString() + ' บาท' +
              '\n   ใช้ไปจริง ' + o['ใช้ไป'].toLocaleString() +
              ' + ของเสีย ' + o['ของเสีย'].toLocaleString() +
-             ' = ต้องจ่าย ' + o['ต้องจ่าย'].toLocaleString() +
-             '\n   จ่ายคืนแล้ว ' + o['จ่ายคืนแล้ว'].toLocaleString() +
-             ' → ค้างชำระ ' + o['ค้างชำระ'].toLocaleString() + ' บาท');
+             ' → ถึงกำหนดจ่าย ' + o['ถึงกำหนดจ่าย'].toLocaleString() + ' บาท' +
+             '\n   ของที่ยังวางอยู่ ' + o['ของที่ยังอยู่'].toLocaleString() + ' บาท');
   });
   if (s.warn.length) {
     out.push('\n⚠️ จุดที่ตัวเลขไม่สมบูรณ์ ' + s.warn.length + ' จุด');
