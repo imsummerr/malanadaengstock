@@ -207,17 +207,25 @@ function costReplayRaw_() {
     box(loc, item).push({ qty: qty, cost: cost });
     if (cost > 0) lastCost[loc + '|' + item] = cost;
   }
-  /** ดึงของออกแบบเข้าก่อนออกก่อน — คืนมูลค่าที่ดึงได้ และส่วนที่ของไม่พอ */
+  /**
+   * ดึงของออกแบบเข้าก่อนออกก่อน
+   * คืน parts มาด้วย = ดึงมาจากชั้นไหนบ้าง ชั้นละเท่าไหร่ ราคาเท่าไหร่
+   * ตอนส่งเข้าร้านต้องยกทั้งชั้นไปตั้งที่สาขา ไม่ใช่เฉลี่ยรวมเป็นราคาเดียว
+   * ไม่งั้นของที่ซื้อมาคนละราคาจะถูกกลืนเป็นราคากลาง แล้วต้นทุนที่สาขา
+   * จะไม่ตรงกับตอนที่รับมา
+   */
   function take(loc, item, qty) {
-    var a = box(loc, item), value = 0, got = 0;
+    var a = box(loc, item), value = 0, got = 0, parts = [];
     while (qty > 0.00001 && a.length) {
       var l = a[0];
       var n = Math.min(l.qty, qty);
       value += n * l.cost;
+      parts.push({ qty: costQty_(n), cost: l.cost });
       got += n; l.qty = costQty_(l.qty - n); qty = costQty_(qty - n);
       if (l.qty <= 0.00001) a.shift();
     }
-    return { qty: costQty_(got), value: costBaht_(value), short: costQty_(qty) };
+    return { qty: costQty_(got), value: costBaht_(value),
+             short: costQty_(qty), parts: parts };
   }
   function guessCost(loc, item) {
     return lastCost[loc + '|' + item] || lastCost[central + '|' + item] || 0;
@@ -256,7 +264,9 @@ function costReplayRaw_() {
                     msg: 'ส่งเข้าร้านมากกว่าที่ครัวกลางมี ขาด ' + t2.short +
                          ' — คิดต้นทุนจากราคาล่าสุดแทน' });
       }
-      put(e.loc, e.item, e.qty, e.qty > 0 ? value / e.qty : 0);
+      // ยกทั้งชั้นไปตั้งที่สาขา ราคาต่อหน่วยของแต่ละชั้นเท่าเดิมเป๊ะ
+      t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost); });
+      if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost);
       // ของออกจากครัวกลางแล้วเป็นหนี้ทันทีเต็มจำนวน — จะขายได้หรือทิ้งก็หนี้เท่าเดิม
       sent[e.loc] = costBaht_((sent[e.loc] || 0) + value);
       moved[e.item] = costBaht_((moved[e.item] || 0) + value);
