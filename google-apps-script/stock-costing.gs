@@ -411,6 +411,8 @@ function costSummary_() {
     stock[loc] = { rows: rows, total: costBaht_(sum) };
   });
 
+  var income = costIncome_(), outgo = costOutgo_();
+
   var owed = {};
   function seat(loc) {
     if (owed[loc]) return owed[loc];
@@ -418,6 +420,9 @@ function costSummary_() {
     var sent = rep.sent[loc] || 0;
     var paid = back[loc] || 0;
     var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
+    // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนคืนครัวกลางไปแล้ว
+    var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
+                         ((outgo[loc] || {})['รวม'] || 0) - paid);
     owed[loc] = {
       ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
       ใช้ไป:       u['ใช้ไป'] || 0,
@@ -425,7 +430,12 @@ function costSummary_() {
       จ่ายคืนแล้ว: paid,
       // จ่ายครบแล้วของที่เหลือไม่ใช่หนี้ เป็นวัตถุดิบคงเหลือของสาขาเฉย ๆ
       ค้างชำระ:    costBaht_(sent - paid),
-      ถึงกำหนดจ่าย: costBaht_(Math.max(0, gone - paid)),  // ของที่ออกจากสต็อกแล้วแต่ยังไม่จ่าย
+      ค่าของที่ใช้ไปแล้ว: costBaht_(Math.max(0, gone - paid)),
+      เงินในมือ: cash,
+      // มีเงินเท่าไหร่ก็จ่ายเท่านั้น แต่ไม่เกินยอดที่ค้างอยู่
+      // ใช้ของไปแค่ 180 แต่มีเงิน 600 ค้างอยู่ 300 ก็เคลียร์ 300 ไปเลย
+      // ของที่ยังไม่ได้ใช้ก็ยังอยู่ในสต็อกสาขาเหมือนเดิม แค่จ่ายเงินล่วงหน้าไว้
+      จ่ายได้เลย: costBaht_(Math.max(0, Math.min(cash, sent - paid))),
       วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
     };
     return owed[loc];
@@ -436,7 +446,6 @@ function costSummary_() {
   delete owed[central];
 
   // งบของแต่ละที่ — สาขามีรายได้ ครัวกลางไม่มี (ส่งต่อที่ต้นทุน)
-  var income = costIncome_(), outgo = costOutgo_();
   var pl = {};
   var locs = {};
   [stock, owed, rep.used, income, outgo].forEach(function (o) {
@@ -512,18 +521,18 @@ function buildBranchLedger() {
     var u = s.used[loc] || { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0 };
     var st = s.stock[loc] || { total: 0 };
     var o = s.owed[loc];
-    rows.push([loc, o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'],
-               o['จ่ายคืนแล้ว'], o['ถึงกำหนดจ่าย'], o['ค้างชำระ'], st.total]);
+    rows.push([loc, o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+               o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'], st.total]);
   });
   var c = s.central;
   var uc = s.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
-  rows.push([c + ' (คงเหลือในครัว)', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '',
+  rows.push([c + ' (คงเหลือในครัว)', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '',
              (s.stock[c] || { total: 0 }).total]);
 
   costWriteSheet_(COST_SHEET_LEDGER,
-    ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย',
-     'จ่ายคืนแล้ว', 'ถึงกำหนดจ่าย', 'ค้างชำระ', 'มูลค่าวัตถุดิบคงเหลือ'], rows,
-    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที · ขายได้เท่าไหร่จ่ายคืนเท่านั้น ที่เหลือค้างไว้ · อัปเดตเมื่อ ' +
+    ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย', 'จ่ายคืนแล้ว',
+     'ค้างชำระ', 'เงินในมือ', 'จ่ายได้เลย', 'มูลค่าวัตถุดิบคงเหลือ'], rows,
+    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที · มีเงินเท่าไหร่จ่ายเท่านั้น แต่ไม่เกินที่ค้าง · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สาขาจ่ายคืนกรอกในชีต "' + COST_SHEET_PAY + '"');
   Logger.log('เขียนชีต "' + COST_SHEET_LEDGER + '" แล้ว ' + rows.length + ' แถว');
@@ -624,7 +633,8 @@ function previewCosting() {
              ' → ค้างชำระ ' + o['ค้างชำระ'].toLocaleString() + ' บาท' +
              '\n   ใช้ไปจริง ' + o['ใช้ไป'].toLocaleString() +
              ' + ของเสีย ' + o['ของเสีย'].toLocaleString() +
-             ' → ถึงกำหนดจ่าย ' + o['ถึงกำหนดจ่าย'].toLocaleString() + ' บาท' +
+             '\n   เงินในมือ ' + o['เงินในมือ'].toLocaleString() +
+             ' → จ่ายได้เลย ' + o['จ่ายได้เลย'].toLocaleString() + ' บาท' +
              '\n   วัตถุดิบคงเหลือ ' + o['วัตถุดิบคงเหลือ'].toLocaleString() + ' บาท');
   });
   if (s.warn.length) {

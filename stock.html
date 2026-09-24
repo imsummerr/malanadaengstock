@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-24a';
+const PAGE_BUILD = '2026-09-24b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -527,9 +527,13 @@ function viewMoney(v) {
       <table><tbody>
         <tr><td>รับของไปแล้ว</td><td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
         <tr><td>จ่ายคืนแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
-        <tr><td><b>ถึงกำหนดจ่าย</b> <small>ของที่ใช้/ทิ้งไปแล้วแต่ยังไม่จ่าย</small></td>
-            <td class="num ${o['ถึงกำหนดจ่าย'] > 0 ? 'low' : ''}"><b>${baht(o['ถึงกำหนดจ่าย'])}</b></td></tr>
-        <tr><td>ค้างชำระทั้งหมด</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
+        <tr><td>ค้างชำระ</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
+        <tr><td>เงินในมือ <small>ขายได้ − ค่าใช้จ่าย − ที่โอนคืนแล้ว</small></td>
+            <td class="num">${baht(o['เงินในมือ'])}</td></tr>
+        <tr><td><b>จ่ายได้เลย</b> <small>มีเท่าไหร่จ่ายเท่านั้น ไม่เกินที่ค้าง</small></td>
+            <td class="num ${o['จ่ายได้เลย'] > 0 ? 'low' : ''}"><b>${baht(o['จ่ายได้เลย'])}</b></td></tr>
+        <tr><td>ค่าของที่ใช้ไปแล้ว <small>ขั้นต่ำที่ควรจ่าย</small></td>
+            <td class="num">${baht(o['ค่าของที่ใช้ไปแล้ว'])}</td></tr>
       </tbody></table>` : '';
 
     const top = st.rows.slice(0, 12).map(r => `<tr>
