@@ -37,8 +37,37 @@ var EXTRAS = [
 
 var DELIVERY_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่ออเดอร์', 'สาขา', 'พนักงาน', 'รายการ', 'รวมจำนวน',
-  'ของเพิ่ม', 'ข้อมูล', 'order_id'
+  'ของเพิ่ม', 'ข้อมูล', 'order_id',
+  // ต่อท้ายเสมอ ห้ามแทรกกลาง ไม่งั้นคอลัมน์ของแถวเก่าจะเลื่อนความหมาย
+  'แพลตฟอร์ม'
 ];
+
+/**
+ * ค่า GP ที่แต่ละแอปหัก — แก้ตัวเลขตรงนี้ให้ตรงกับใบแจ้งยอดของร้าน
+ *
+ * VAT คิดจาก "ค่า GP" ไม่ใช่จากราคาอาหาร
+ *   ขาย 100 · GP 30% = 30 บาท · VAT 7% ของ 30 = 2.10 → ถูกหักรวม 32.10
+ *   ไม่ใช่ 30 + 7 = 37
+ *
+ * เรตพวกนี้ต่อรองได้ ร้านในตึกเดียวกันยังได้คนละเรต
+ * ตัวเลขที่ใส่ไว้เป็นเรตกลางของตลาด ให้แก้เป็นเรตจริงของร้าน
+ */
+var DELIVERY_GP = {
+  'Grab':       0.30,
+  'LINE MAN':   0.30,
+  'ShopeeFood': 0.30,
+  'foodpanda':  0.32,
+  'อื่น ๆ':      0.30
+};
+var DELIVERY_GP_VAT = 0.07;          // VAT ที่บวกบนค่า GP
+var DELIVERY_PLATFORMS = Object.keys(DELIVERY_GP);
+
+/** ถูกหักไปกี่ % ของราคาบนแอป (รวม VAT แล้ว) */
+function deliveryCutRate_(platform) {
+  var gp = DELIVERY_GP[String(platform || '').trim()];
+  if (gp === undefined) gp = DELIVERY_GP['อื่น ๆ'] || 0;
+  return round_(gp * (1 + DELIVERY_GP_VAT));
+}
 
 // 'วิธีจ่าย' ต่อท้ายไว้ ไม่แทรกกลาง แถวเก่าที่ยังว่างถือเป็นเงินสด
 var EXPENSE_HEADERS = [
@@ -531,7 +560,8 @@ function handleDelivery_(body) {
       Number(o.itemCount) || 0,
       Number(o.addonCount) || 0,
       JSON.stringify(o.items || []),
-      o.orderId || ''
+      o.orderId || '',
+      String(o.platform || '').trim()
     ]);
     return { success: true, orderNo: orderNo };
   } finally {

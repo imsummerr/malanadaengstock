@@ -387,6 +387,14 @@
         กรอกว่าออเดอร์นี้มีอะไรบ้าง แล้วกดบันทึก — ไม่ต้องคิดเงินหน้าร้าน
       </p>
 
+      <!-- ต้องรู้ว่ามาจากแอปไหน เพราะแต่ละเจ้าหักค่า GP ไม่เท่ากัน
+           ถ้าไม่เลือก บัญชีจะคิดค่าคอมด้วยเรตกลาง ซึ่งอาจไม่ตรงกับที่โดนหักจริง -->
+      <label class="fld" style="display:block;font-size:12.5px;font-weight:700;
+             color:var(--muted);margin-bottom:6px;">มาจากแอปไหน</label>
+      <select id="delivery-platform" style="width:100%;padding:12px 13px;
+              border:1.5px solid var(--line);border-radius:12px;font-size:16px;
+              font-family:inherit;margin-bottom:14px;"></select>
+
       <div class="grid-2" id="delivery-grid"></div>
 
       <div class="sec-head" style="margin-top:16px;">
@@ -1667,8 +1675,22 @@ function clearDelivery() {
   if (box) box.value = 0;
 }
 
+/* แอปที่ร้านเปิดขายอยู่ — เซิร์ฟเวอร์ส่งมาให้ตอนโหลด ถ้ายังไม่มีก็ใช้ชุดนี้ */
+let DELIVERY_APPS = ['Grab', 'LINE MAN', 'ShopeeFood', 'อื่น ๆ'];
+
+function fillDeliveryPlatforms() {
+  const sel = document.getElementById('delivery-platform');
+  if (!sel) return;
+  // จำแอปที่เลือกล่าสุดไว้ ส่วนใหญ่ออเดอร์ติด ๆ กันมาจากเจ้าเดิม
+  let last = '';
+  try { last = localStorage.getItem('pos_last_platform') || ''; } catch (e) {}
+  sel.innerHTML = DELIVERY_APPS
+    .map(p => `<option${p === last ? ' selected' : ''}>${p}</option>`).join('');
+}
+
 function openDelivery() {
   clearDelivery();
+  fillDeliveryPlatforms();
   renderDeliveryGrid();
   showScreen('delivery');
 }
@@ -1683,12 +1705,17 @@ async function saveDelivery() {
     .filter(name => delivery[name] > 0)
     .map(name => ({ name: name, qty: delivery[name] }));
 
+  const pfEl = document.getElementById('delivery-platform');
+  const platform = pfEl ? pfEl.value : '';
+  try { localStorage.setItem('pos_last_platform', platform); } catch (e) {}
+
   const record = {
     kind: 'delivery',
     orderId: 'DLV' + now.getTime(),
     date: isoDate(now),
     branch: auth.branch || '',
     staff: auth.name || '',
+    platform: platform,
     items: items,
     itemCount: total,
     addonCount: addons,
@@ -1705,7 +1732,7 @@ async function saveDelivery() {
   try {
     const json = await postApi({ action: 'posDelivery', token: auth.token, order: record });
     if (json && json.success) {
-      toast('บันทึกออเดอร์เดลิเวอรี่แล้ว (' + total + ' รายการ'
+      toast('บันทึก' + (platform ? platform + ' ' : '') + 'แล้ว (' + total + ' รายการ'
         + (addons > 0 ? ' · ของเพิ่ม ' + addons + ' อย่าง' : '') + ')');
       flushPending();
       prefetchBills();

@@ -307,12 +307,27 @@ function accFromDelivery_(year) {
     } catch (e) {}
     if (!amount) return;
 
+    var pf = String(r['แพลตฟอร์ม'] || '').trim();
     out.push(accEntry_({
       date: date, no: r['เลขที่ออเดอร์'], kind: 'รับ', code: '4110',
-      detail: 'เดลิเวอรี่ (ประมาณการจากรายการราคา)',
+      detail: 'เดลิเวอรี่' + (pf ? ' ' + pf : '') + ' (ราคาบนแอป ก่อนหักค่าคอม)',
       branch: r['สาขา'], amount: amount, vatable: true,
       doc: 'ออเดอร์แพลตฟอร์ม', source: 'POS_Delivery'
     }));
+
+    // ค่า GP + VAT ที่แอปหักไว้ — ไม่เคยเข้ากระเป๋าเรา ต้องลงเป็นค่าใช้จ่าย
+    // ไม่งั้นรายได้จะดูสูงเกินจริงราวหนึ่งในสามของยอดเดลิเวอรี่
+    var cut = (typeof deliveryCutRate_ === 'function') ? deliveryCutRate_(pf) : 0;
+    var fee = accRound_(amount * cut);
+    if (fee > 0) {
+      out.push(accEntry_({
+        date: date, no: r['เลขที่ออเดอร์'], kind: 'จ่าย', code: '6500',
+        detail: 'ค่าคอม' + (pf || 'แพลตฟอร์ม') + ' ' +
+                Math.round(cut * 1000) / 10 + '% (รวม VAT ของค่า GP)',
+        branch: r['สาขา'], amount: fee,
+        pay: 'แอปหักจากยอดโอน', doc: 'ออเดอร์แพลตฟอร์ม', source: 'POS_Delivery'
+      }));
+    }
   });
   return out;
 }

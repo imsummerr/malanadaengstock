@@ -75,6 +75,7 @@ function rptGather_(ym, branch) {
     byDow: RPT_DAYS.map(function (d) { return { day: d, sales: 0, bills: 0, dates: {} }; }),
     byHour: {}, byPay: {},
     sticks: 0, mama: 0, extras: 0,
+    fee: 0, byApp: {},   // ค่า GP ที่แอปหัก แยกรายแอป
     menu: {},          // ลูกค้าสั่งอะไร นับจากบิล
     used: {},          // ของที่ถูกใช้จริง จากผลนับสต็อก
     waste: {},         // ของเสีย
@@ -145,7 +146,7 @@ function rptGather_(ym, branch) {
   // ── เดลิเวอรี่ — ไม่มีช่องเงิน ต้องคูณราคาเอง ──
   var dl = rptRead_(SHEET_DELIVERY);
   var jDate = dl.head.indexOf('วันที่'), jLoc = dl.head.indexOf('สาขา'),
-      jData = dl.head.indexOf('ข้อมูล');
+      jData = dl.head.indexOf('ข้อมูล'), jPf = dl.head.indexOf('แพลตฟอร์ม');
   if (jDate !== -1 && jData !== -1) {
     var price = {};
     if (typeof itemCatalogue_ === 'function') {
@@ -155,14 +156,27 @@ function rptGather_(ym, branch) {
     dl.rows.forEach(function (r) {
       if (rptMonthOf_(r[jDate]) !== ym) return;
       if (only && jLoc !== -1 && String(r[jLoc] || '').trim() !== only) return;
+      var amt = 0;
       try {
         JSON.parse(r[jData] || '[]').forEach(function (it) {
           var qty = Number(it.qty) || 0;
-          out.delivery = rptBaht_(out.delivery + qty * (price[it.name] || 0));
+          amt += qty * (price[it.name] || 0);
           if (it.name) out.menu['เดลิเวอรี่ · ' + it.name] =
             (out.menu['เดลิเวอรี่ · ' + it.name] || 0) + qty;
         });
       } catch (e) {}
+      if (!amt) return;
+      out.delivery = rptBaht_(out.delivery + amt);
+      // ค่า GP คิดจากราคาบนแอป แต่ละเจ้าหักไม่เท่ากัน
+      var pf = jPf === -1 ? '' : String(r[jPf] || '').trim();
+      var cut = (typeof deliveryCutRate_ === 'function') ? deliveryCutRate_(pf) : 0;
+      var fee = rptBaht_(amt * cut);
+      out.fee = rptBaht_(out.fee + fee);
+      var key = pf || 'ไม่ระบุแอป';
+      if (!out.byApp[key]) out.byApp[key] = { sales: 0, fee: 0, orders: 0, rate: cut };
+      out.byApp[key].sales = rptBaht_(out.byApp[key].sales + amt);
+      out.byApp[key].fee = rptBaht_(out.byApp[key].fee + fee);
+      out.byApp[key].orders++;
     });
   }
 
@@ -205,7 +219,8 @@ function rptGather_(ym, branch) {
   }
 
   out.revenue = rptBaht_(out.sales + out.delivery);
-  out.gross   = rptBaht_(out.revenue - out.cogs - out.wasteCost);
+  out.cash    = rptBaht_(out.revenue - out.fee);     // เงินที่เข้ากระเป๋าจริง
+  out.gross   = rptBaht_(out.cash - out.cogs - out.wasteCost);
   out.net     = rptBaht_(out.gross - out.expense);
   return out;
 }
@@ -235,8 +250,11 @@ function monthlyReport(ym, branch) {
   var title = 'รายงานเดือน ' + ym + (g.branch ? ' · ' + g.branch : ' · ทุกสาขา');
   R.push(['ยอดขายและกำไร', 'บาท', '% ของยอดขาย', 'หมายเหตุ']);
   rptLine_(R, 'ขายหน้าร้าน', g.sales, rptPct_(g.sales, g.revenue), g.bills + ' บิล');
-  rptLine_(R, 'เดลิเวอรี่', g.delivery, rptPct_(g.delivery, g.revenue), 'ก่อนหักค่าคอม');
+  rptLine_(R, 'เดลิเวอรี่ (ราคาบนแอป)', g.delivery, rptPct_(g.delivery, g.revenue), '');
   rptLine_(R, 'รายได้รวม', g.revenue, 100, '');
+  rptLine_(R, '− ค่าคอมแอป + VAT', g.fee, rptPct_(g.fee, g.revenue),
+    g.delivery ? 'หักจากราคาบนแอป ' + rptPct_(g.fee, g.delivery) + '%' : '');
+  rptLine_(R, 'เงินเข้าจริง', g.cash, rptPct_(g.cash, g.revenue), '');
   rptLine_(R, '− ค่าใช้จ่ายวัตถุดิบ', g.cogs, rptPct_(g.cogs, g.revenue), 'จากผลนับสต็อก');
   rptLine_(R, '− ของเสีย', g.wasteCost, rptPct_(g.wasteCost, g.revenue), '');
   rptLine_(R, 'กำไรขั้นต้น', g.gross, rptPct_(g.gross, g.revenue), '');
@@ -250,6 +268,21 @@ function monthlyReport(ym, branch) {
   rptLine_(R, 'กำไรสุทธิ', g.net, rptPct_(g.net, g.revenue), '');
   rptLine_(R, 'เฉลี่ยต่อบิล', g.bills ? g.sales / g.bills : 0, '', g.bills + ' บิล');
   rptLine_(R, 'ส่วนลดที่ให้ไป', g.discount, rptPct_(g.discount, g.revenue), '');
+
+  // ── แยกตามแอป ──
+  if (Object.keys(g.byApp).length) {
+    R.push(['', '', '', '']);
+    R.push(['เดลิเวอรี่แยกตามแอป', 'ราคาบนแอป', 'โดนหักกี่ %', 'ค่าคอม → เงินเข้าจริง']);
+    rptTop_(g.byApp, function (v) { return v.sales; }).forEach(function (e) {
+      var a = g.byApp[e.k];
+      rptLine_(R, e.k + ' (' + a.orders + ' ออเดอร์)', a.sales, a.rate * 100,
+        '−' + a.fee.toLocaleString() + ' → ' + rptBaht_(a.sales - a.fee).toLocaleString());
+    });
+    if (g.byApp['ไม่ระบุแอป']) {
+      rptLine_(R, '⚠️ มีออเดอร์ที่ไม่ได้เลือกแอป', '', '',
+        'คิดค่าคอมด้วยเรตกลาง อาจไม่ตรงกับที่โดนหักจริง');
+    }
+  }
 
   // ── วันไหนขายดี ──
   R.push(['', '', '', '']);
@@ -326,7 +359,7 @@ function monthlyReport(ym, branch) {
     rptLine_(R, '⚠️ ขายได้แต่ไม่มีค่าใช้จ่ายวัตถุดิบ', '', '',
       'ยังไม่ได้นับสต็อกสิ้นเดือน หรือไปกด "ล้างสต็อก" แทนการนับ — ตัวเลขกำไรสูงเกินจริง');
   } else if (g.revenue > 0) {
-    rptLine_(R, 'ต้นทุนวัตถุดิบต่อยอดขาย', '', rptPct_(g.cogs + g.wasteCost, g.revenue),
+    rptLine_(R, 'ต้นทุนวัตถุดิบต่อเงินเข้าจริง', '', rptPct_(g.cogs + g.wasteCost, g.cash),
       'ร้านหม่าล่าทั่วไปอยู่ราว 30–40% สูงกว่านี้ให้ดูว่าของหายหรือขายถูกไป');
   }
   if (g.wasteCost > 0) {
@@ -369,9 +402,10 @@ function rptWrite_(title, rows, g) {
 function rptText_(g, best, worst, peak) {
   var L = ['📊 ' + g.ym + (g.branch ? ' · ' + g.branch : ''),
     'รายได้ ' + g.revenue.toLocaleString() + ' (' + g.bills + ' บิล)',
-    'ต้นทุนวัตถุดิบ ' + g.cogs.toLocaleString() + ' = ' + rptPct_(g.cogs, g.revenue) + '%',
+    'ค่าคอมแอป ' + g.fee.toLocaleString() + ' → เงินเข้าจริง ' + g.cash.toLocaleString(),
+    'ต้นทุนวัตถุดิบ ' + g.cogs.toLocaleString() + ' = ' + rptPct_(g.cogs, g.cash) + '%',
     'ของเสีย ' + g.wasteCost.toLocaleString() + ' = ' + rptPct_(g.wasteCost, g.revenue) + '%',
-    'กำไรขั้นต้น ' + g.gross.toLocaleString() + ' = ' + rptPct_(g.gross, g.revenue) + '%',
+    'กำไรขั้นต้น ' + g.gross.toLocaleString() + ' = ' + rptPct_(g.gross, g.cash) + '%',
     'ค่าใช้จ่าย ' + g.expense.toLocaleString() + ' = ' + rptPct_(g.expense, g.revenue) + '%',
     'กำไรสุทธิ ' + g.net.toLocaleString() + ' = ' + rptPct_(g.net, g.revenue) + '%'];
   if (best)  L.push('ขายดีสุด ' + best.day + ' เฉลี่ยวันละ ' + best.avg.toLocaleString());

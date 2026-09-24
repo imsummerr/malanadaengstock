@@ -335,7 +335,7 @@ function costIncome_() {
   function add(loc, key, baht) {
     loc = String(loc || '').trim();
     if (!loc || !baht) return;
-    if (!out[loc]) out[loc] = { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0 };
+    if (!out[loc]) out[loc] = { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0, ค่าคอม: 0, ตามแอป: {} };
     out[loc][key] = costBaht_(out[loc][key] + baht);
     out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
   }
@@ -361,6 +361,7 @@ function costIncome_() {
     var vd = shD.getDataRange().getValues();
     var hd = vd[0].map(function (x) { return String(x).trim(); });
     var jLoc = hd.indexOf('สาขา'), jData = hd.indexOf('ข้อมูล');
+    var jPf  = hd.indexOf('แพลตฟอร์ม');
     if (jLoc !== -1 && jData !== -1) {
       for (var d = 1; d < vd.length; d++) {
         var amt = 0;
@@ -369,7 +370,21 @@ function costIncome_() {
             amt += (Number(it.qty) || 0) * (price[it.name] || 0);
           });
         } catch (e) {}
-        add(vd[d][jLoc], 'เดลิเวอรี่', amt);
+        if (!amt) continue;
+        var loc2 = String(vd[d][jLoc] || '').trim();
+        add(loc2, 'เดลิเวอรี่', amt);
+        // ค่า GP ที่แอปหัก — คิดจากราคาบนแอป ไม่ใช่เงินที่โอนเข้าบัญชี
+        var pf = jPf === -1 ? '' : String(vd[d][jPf] || '').trim();
+        var cut = (typeof deliveryCutRate_ === 'function') ? deliveryCutRate_(pf) : 0;
+        var fee = costBaht_(amt * cut);
+        if (!out[loc2]) return;
+        if (!out[loc2]['ค่าคอม']) out[loc2]['ค่าคอม'] = 0;
+        if (!out[loc2]['ตามแอป']) out[loc2]['ตามแอป'] = {};
+        out[loc2]['ค่าคอม'] = costBaht_(out[loc2]['ค่าคอม'] + fee);
+        var key = pf || 'ไม่ระบุแอป';
+        if (!out[loc2]['ตามแอป'][key]) out[loc2]['ตามแอป'][key] = { ขาย: 0, ค่าคอม: 0 };
+        out[loc2]['ตามแอป'][key]['ขาย'] = costBaht_(out[loc2]['ตามแอป'][key]['ขาย'] + amt);
+        out[loc2]['ตามแอป'][key]['ค่าคอม'] = costBaht_(out[loc2]['ตามแอป'][key]['ค่าคอม'] + fee);
       }
     }
   }
@@ -467,17 +482,21 @@ function costSummary_() {
     Object.keys(o).forEach(function (l) { locs[l] = true; });
   });
   Object.keys(locs).forEach(function (loc) {
-    var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0 };
+    var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0, ค่าคอม: 0, ตามแอป: {} };
     var u = rep.used[loc] || { ใช้ไป: 0, ของเสีย: 0 };
     var ex = outgo[loc] || { รวม: 0, ตามประเภท: {} };
     var cogs = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
+    var fee = inc['ค่าคอม'] || 0;
     pl[loc] = {
       รายได้: inc['รวม'], หน้าร้าน: inc['หน้าร้าน'], เดลิเวอรี่: inc['เดลิเวอรี่'],
+      ค่าคอมแอป: fee, ตามแอป: inc['ตามแอป'] || {},
+      // เงินที่เข้ากระเป๋าจริง = ราคาบนแอป − ค่า GP − VAT ของ GP
+      เงินเข้าจริง: costBaht_(inc['รวม'] - fee),
       ค่าใช้จ่ายวัตถุดิบ: u['ใช้ไป'] || 0,
       ของเสีย: u['ของเสีย'] || 0,
-      กำไรขั้นต้น: costBaht_(inc['รวม'] - cogs),
+      กำไรขั้นต้น: costBaht_(inc['รวม'] - fee - cogs),
       ค่าใช้จ่ายอื่น: ex['รวม'], ตามประเภท: ex['ตามประเภท'],
-      กำไรสุทธิ: costBaht_(inc['รวม'] - cogs - ex['รวม']),
+      กำไรสุทธิ: costBaht_(inc['รวม'] - fee - cogs - ex['รวม']),
       วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
     };
   });
@@ -579,12 +598,12 @@ function buildLocationPL() {
   var rows = [];
   Object.keys(s.pl).sort().forEach(function (loc) {
     var p = s.pl[loc];
-    rows.push([loc, p['หน้าร้าน'], p['เดลิเวอรี่'], p['รายได้'],
+    rows.push([loc, p['หน้าร้าน'], p['เดลิเวอรี่'], p['ค่าคอมแอป'], p['รายได้'],
                p['ค่าใช้จ่ายวัตถุดิบ'], p['ของเสีย'], p['กำไรขั้นต้น'],
                p['ค่าใช้จ่ายอื่น'], p['กำไรสุทธิ'], p['วัตถุดิบคงเหลือ']]);
   });
   costWriteSheet_(COST_SHEET_PL,
-    ['สถานที่', 'ขายหน้าร้าน', 'เดลิเวอรี่', 'รายได้รวม',
+    ['สถานที่', 'ขายหน้าร้าน', 'เดลิเวอรี่ (ราคาบนแอป)', 'ค่าคอม+VAT', 'รายได้รวม',
      'ค่าใช้จ่ายวัตถุดิบ', 'ของเสีย', 'กำไรขั้นต้น',
      'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'], rows,
     'ตัวเลขสะสมตั้งแต่เริ่มระบบ · ครัวกลางไม่มีรายได้เพราะส่งต่อที่ต้นทุน · อัปเดตเมื่อ ' +
