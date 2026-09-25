@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-24b';
+const PAGE_BUILD = '2026-09-25a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -832,9 +832,18 @@ function carryUnits(pEl, rEl, cEl, it) {
 }
 
 /** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
+/** ของดิบที่ต้องกรอกเอง — ไม่รวมตัวที่ผูกอัตราส่วนไว้แล้ว */
 function rawsOf(it) {
   if (!it || !it.raws) return [];
-  return it.raws.map(n => itemOf(n)).filter(Boolean);
+  const auto = it.autoRaws || {};
+  return it.raws.filter(n => !auto[n]).map(n => itemOf(n)).filter(Boolean);
+}
+
+/** ของที่ตัดเองอัตโนมัติ เช่นถ้วย 1 ใบต่อ 1 กระปุก — โชว์ให้เห็น แต่ไม่ต้องกรอก */
+function autoRawsOf(it) {
+  const auto = (it && it.autoRaws) || {};
+  return Object.keys(auto).map(n => ({ item: itemOf(n), per: auto[n] }))
+    .filter(x => x.item);
 }
 
 function viewPack(v) {
@@ -904,8 +913,16 @@ function syncPack() {
 
   // ช่องกรอกของดิบสร้างใหม่ตามของที่เลือก — ของที่พันมีหลายช่อง ของที่แค่เสียบมีช่องเดียว
   // ไม่ต้องให้เลือกเองว่าใช้อะไร เพราะสูตรตั้งไว้ในชีตแล้ว (คอลัมน์ "วัตถุดิบ")
+  // ของที่ตัดตามจำนวนที่ได้ ไม่ต้องถาม บอกให้รู้ว่าระบบจะตัดอะไรไปเท่าไหร่
+  const autos = autoRawsOf(it);
+  const autoNote = autos.length
+    ? `<p class="note" style="margin-top:10px">` + autos.map(a =>
+        `ตัด <b>${esc(a.item.name)}</b> ให้เอง ${a.per === 1 ? '1' : a.per} ` +
+        `${esc(a.item.subUnit)} ต่อ 1 ${esc(it.subUnit)} — ไม่ต้องกรอก`).join('<br>') + `</p>`
+    : '';
+
   const raws = rawsOf(it);
-  document.getElementById('k-raws').innerHTML = raws.length
+  document.getElementById('k-raws').innerHTML = (raws.length
     ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => `
         <div class="note" style="margin-top:6px">${esc(r.name)}</div>
         <div class="row2" style="align-items:end">
@@ -916,7 +933,9 @@ function syncPack() {
             <input id="k-rt-${i}" type="number" inputmode="decimal" min="0" step="any"
                    placeholder="ไม่ใส่ก็ได้" oninput="calcPack()"></div>
         </div>`).join('')
-    : '<p class="note">รายการนี้ยังไม่ได้ตั้งของดิบไว้ในชีต — บันทึกได้ แต่จะไม่มีอะไรถูกตัดออก</p>';
+    : (autos.length ? ''
+       : '<p class="note">รายการนี้ยังไม่ได้ตั้งของดิบไว้ในชีต — บันทึกได้ แต่จะไม่มีอะไรถูกตัดออก</p>'))
+    + autoNote;
 
   calcPack();
 }
@@ -945,6 +964,18 @@ function calcPack() {
     html += `<div class="sub">= ${made} ${esc(baseUnitOf(it))} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)}` +
             (hasPieces(it) ? ` · 1 ${esc(it.subUnit)} = ${perStickOf(it)} ชิ้น` : '') + ')</div>';
   }
+
+  autoRawsOf(it).forEach(a => {
+    const used = Math.round(made * a.per * 1000) / 1000;
+    if (isOwner()) {
+      const have = balOf(D.central, a.item.name), left = have - used;
+      html += `<div class="sub">${esc(a.item.name)} ${esc(fmtPack(have, a.item))} → เหลือ ` +
+              `<b>${esc(fmtPack(left, a.item))}</b>` +
+              (left < 0 ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>';
+    } else {
+      html += `<div class="sub">ตัด ${esc(a.item.name)} ออก ${used} ${esc(a.item.subUnit)}</div>`;
+    }
+  });
 
   rawsOf(it).forEach((r, i) => {
     const el = document.getElementById('k-rq-' + i);

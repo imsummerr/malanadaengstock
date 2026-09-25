@@ -1358,6 +1358,30 @@ function getStockItems_() {
   return cached_('items', getStockItemsRaw_);
 }
 
+/**
+ * ช่อง "วัตถุดิบ" ในชีตเขียนได้สองแบบ
+ *   "หมูสามชั้น (ดิบ)"   ต้องกรอกเองว่าใช้ไปเท่าไหร่
+ *   "ถ้วย 2 ออน x1"      ใช้ 1 ต่อของที่ได้ 1 ชิ้น ระบบตัดให้เอง
+ * แก้ตัวเลขหลัง x ในชีตได้ ถ้าวันหลังเปลี่ยนเป็นถ้วยละ 2 ฝา
+ */
+var RAW_PER_RE = /\s*[xX×]\s*([\d.]+)\s*$/;
+
+function rawNames_(cell) {
+  return splitLocs_(cell).map(function (t) { return t.replace(RAW_PER_RE, '').trim(); })
+    .filter(function (t) { return t; });
+}
+
+function autoRaws_(cell) {
+  var out = {};
+  splitLocs_(cell).forEach(function (t) {
+    var m = String(t).match(RAW_PER_RE);
+    if (!m) return;
+    var n = Number(m[1]);
+    if (n > 0) out[t.replace(RAW_PER_RE, '').trim()] = n;
+  });
+  return out;
+}
+
 function getStockItemsRaw_() {
   var sh = sheet_(SHEET_ITEMS);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -1377,7 +1401,8 @@ function getStockItemsRaw_() {
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
       kind:     String(v[i][map['ชนิด']] || '').trim(),
-      raws:     splitLocs_(v[i][map['วัตถุดิบ']]),
+      raws:     rawNames_(v[i][map['วัตถุดิบ']]),
+      autoRaws: autoRaws_(v[i][map['วัตถุดิบ']]),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim()
     });
@@ -1738,6 +1763,16 @@ function handleStockPack_(body) {
   var want = body.raws;
   if (!want && body.raw) want = [{ name: body.raw, qty: body.rawQty }];   // รูปแบบเดิม
   want = want || [];
+
+  // ของที่ผูกอัตราส่วนไว้ (เช่นถ้วย 1 ใบต่อ 1 กระปุก) เติมให้เอง
+  // คิดที่ฝั่งนี้ ไม่ใช่ฝั่งหน้าเว็บ เพราะหน้าเว็บเก่าค้างอยู่ก็ยังต้องตัดถูก
+  var auto = out.autoRaws || {};
+  Object.keys(auto).forEach(function (nm) {
+    var already = want.some(function (w) {
+      return String(w && w.name || '').trim() === nm;
+    });
+    if (!already) want.push({ name: nm, qty: round_(made * auto[nm]) });
+  });
 
   var used = [], seen = {};
   for (var i = 0; i < want.length; i++) {
@@ -2469,14 +2504,17 @@ var BAG_UNIT = {
  *   [ชื่อ, หน่วยย่อย, [วัตถุดิบที่ใช้], ราคาขาย, หมายเหตุ]
  *
  * วัตถุดิบที่ลงท้ายด้วย (ดิบ) ระบบสร้างให้เอง — น้ำจิ้มที่ยังไม่ได้เท
- * ที่เหลือคือของใช้ที่มีอยู่แล้ว เช่นถ้วย ซึ่งกรอกเป็น "ใบ" ได้ไม่ต้องครบแพ็ค
+ * ที่เหลือคือของใช้ที่มีอยู่แล้ว
+ *
+ * เขียน "ชื่อ x1" = ใช้ 1 หน่วยต่อของที่ได้ 1 ชิ้น ระบบตัดให้เอง ไม่ต้องกรอก
+ * เพราะได้กี่กระปุกก็ใช้ถ้วยเท่านั้นใบ ถามซ้ำก็มีแต่จะกรอกผิด
  *
  * จำนวนต่อแพ็คอยู่ใน PACK_SIZE_EXCEPTION ที่เดียวกับของตัวอื่น
  * ราคาขาย 0 = แถมให้ลูกค้า ไม่นับเป็นยอดที่ควรได้
  */
 var FILL_ITEMS = [
-  ['น้ำจิ้มงา (กระปุก)',   'กระปุก', ['น้ำจิ้มงา (ดิบ)', 'ถ้วย 2 ออน'],   0, 'เทจากถุงใส่กระปุก'],
-  ['น้ำจิ้มสุกี้ (กระปุก)', 'กระปุก', ['น้ำจิ้มสุกี้ (ดิบ)', 'ถ้วย 2 ออน'], 0, 'เทจากแกลลอนใส่กระปุก']
+  ['น้ำจิ้มงา (กระปุก)',   'กระปุก', ['น้ำจิ้มงา (ดิบ)', 'ถ้วย 2 ออน x1'],   0, 'เทจากถุงใส่กระปุก'],
+  ['น้ำจิ้มสุกี้ (กระปุก)', 'กระปุก', ['น้ำจิ้มสุกี้ (ดิบ)', 'ถ้วย 2 ออน x1'], 0, 'เทจากแกลลอนใส่กระปุก']
 ];
 
 var PRICE_EXCEPTION = {
