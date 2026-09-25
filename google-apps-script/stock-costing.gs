@@ -34,6 +34,56 @@ function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 function costQty_(n)  { return Math.round((Number(n) || 0) * 10000) / 10000; }
 
 function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
+
+/**
+ * วันเริ่มนับใหม่ — อะไรที่เกิดก่อนวันนี้ ระบบไม่เอามาคิดเลย
+ *
+ * ไม่ลบแถวเก่าทิ้ง เพราะลบแล้วเอากลับไม่ได้ และประวัติที่เคยลงไว้ก็หายด้วย
+ * ใช้วิธีขีดเส้นแทน อยากย้อนดูของเก่าก็แค่เลื่อนวันกลับ
+ * ตั้งด้วย setStartDate('2026-10-01') · ล้างเส้นด้วย clearStartDate()
+ */
+function costStartDate_() {
+  var v = PropertiesService.getScriptProperties().getProperty('ACC_START_DATE');
+  v = String(v || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 0;
+  var d = new Date(v + 'T00:00:00');
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+/** แถวนี้เกิดก่อนวันเริ่มนับใหม่หรือเปล่า */
+function costBefore_(v) {
+  var start = costStartDate_();
+  if (!start) return false;
+  var t = costTime_(v);
+  return t > 0 && t < start;
+}
+
+/** ขีดเส้นเริ่มนับใหม่ เช่น setStartDate('2026-10-01') */
+function setStartDate(ymd) {
+  var v = String(ymd || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    Logger.log('รูปแบบวันต้องเป็น yyyy-MM-dd เช่น setStartDate(\'2026-10-01\')');
+    return;
+  }
+  PropertiesService.getScriptProperties().setProperty('ACC_START_DATE', v);
+  Logger.log('ตั้งวันเริ่มนับใหม่เป็น ' + v + '\n' +
+             'ยอดขาย ค่าใช้จ่าย และของที่เคลื่อนไหวก่อนวันนี้ จะไม่ถูกนำมาคิดอีก\n' +
+             'แถวเก่ายังอยู่ในชีตครบ ไม่ได้ลบ — เลื่อนวันกลับเมื่อไหร่ก็เห็นเหมือนเดิม');
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+}
+
+/** ยกเลิกเส้น กลับไปนับทุกอย่างตั้งแต่แถวแรก */
+function clearStartDate() {
+  PropertiesService.getScriptProperties().deleteProperty('ACC_START_DATE');
+  Logger.log('ยกเลิกวันเริ่มนับใหม่แล้ว — กลับไปนับทุกอย่างตั้งแต่แถวแรก');
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+}
+
+/** ดูว่าตอนนี้ขีดเส้นไว้วันไหน */
+function showStartDate() {
+  var v = PropertiesService.getScriptProperties().getProperty('ACC_START_DATE');
+  Logger.log(v ? 'นับตั้งแต่ ' + v + ' เป็นต้นไป' : 'ยังไม่ได้ขีดเส้น — นับทุกอย่างตั้งแต่แถวแรก');
+}
 function costTz_()      { return (typeof TZ === 'string' && TZ) ? TZ : 'Asia/Bangkok'; }
 
 function costTime_(v) {
@@ -164,6 +214,9 @@ function costEvents_() {
     });
   }
 
+  // ตัดของก่อนวันเริ่มนับใหม่ออกตั้งแต่ต้นทาง จะได้ไม่ต้องไปกรองซ้ำทุกที่
+  var start = costStartDate_();
+  if (start) ev = ev.filter(function (e) { return !(e.t > 0 && e.t < start); });
   ev.sort(function (a, b) { return (a.t - b.t) || (a.step - b.step); });
   return ev;
 }
@@ -319,6 +372,7 @@ function costPaidBack_() {
   if (!sh || sh.getLastRow() < 2) return out;
   var map = ensureCols_(sh, COST_PAY_COLS);
   sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
+    if (costBefore_(r[map['วันที่']])) return;
     var loc = String(r[map['สาขา']] || '').trim();
     var baht = Number(r[map['จำนวนเงิน']]) || 0;
     if (!loc || !baht) return;
@@ -344,9 +398,12 @@ function costIncome_() {
   if (sh && sh.getLastRow() > 1) {
     var v = sh.getDataRange().getValues();
     var h = v[0].map(function (x) { return String(x).trim(); });
-    var iLoc = h.indexOf('สาขา'), iNet = h.indexOf('ยอดสุทธิ');
+    var iLoc = h.indexOf('สาขา'), iNet = h.indexOf('ยอดสุทธิ'), iDate = h.indexOf('วันที่');
     if (iLoc !== -1 && iNet !== -1) {
-      for (var r = 1; r < v.length; r++) add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
+      for (var r = 1; r < v.length; r++) {
+        if (iDate !== -1 && costBefore_(v[r][iDate])) continue;
+        add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
+      }
     }
   }
 
@@ -363,7 +420,9 @@ function costIncome_() {
     var jLoc = hd.indexOf('สาขา'), jData = hd.indexOf('ข้อมูล');
     var jPf  = hd.indexOf('แพลตฟอร์ม'), jAmt = hd.indexOf('ยอดเงิน');
     if (jLoc !== -1 && jData !== -1) {
+      var jDate = hd.indexOf('วันที่');
       for (var d = 1; d < vd.length; d++) {
+        if (jDate !== -1 && costBefore_(vd[d][jDate])) continue;
         // ยอดที่แอปแจ้งแม่นกว่าการเดาจากรายการราคา เพราะราคาบนแอปตั้งสูงกว่าหน้าร้าน
         var amt = jAmt === -1 ? 0 : Number(vd[d][jAmt]) || 0;
         if (!amt) {
@@ -402,8 +461,10 @@ function costOutgo_() {
   var v = sh.getDataRange().getValues();
   var h = v[0].map(function (x) { return String(x).trim(); });
   var iLoc = h.indexOf('สาขา'), iBaht = h.indexOf('จำนวนเงิน'), iType = h.indexOf('ประเภท');
+  var iDate = h.indexOf('วันที่');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
+    if (iDate !== -1 && costBefore_(v[r][iDate])) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
@@ -529,6 +590,7 @@ function buildStockValue() {
   var s = costSummary_();
   var rows = [];
   Object.keys(s.stock).forEach(function (loc) {
+    if (!s.stock[loc].rows.length) return;      // ไม่มีของก็ไม่ต้องมีแถวรวม
     s.stock[loc].rows.forEach(function (r) {
       rows.push([loc, r.item, r.qty, r.unit, r.value]);
     });
@@ -649,6 +711,8 @@ function onOpen() {
       .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
       .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
       .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')
+      .addItem('⚠️ เริ่มใหม่ทั้งระบบ (ของ + เงิน)', 'resetEverything')
+      .addItem('ดูวันเริ่มนับ', 'showStartDate')
       .addToUi();
   } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
 }

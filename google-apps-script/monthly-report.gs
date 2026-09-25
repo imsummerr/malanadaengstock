@@ -96,6 +96,7 @@ function rptGather_(ym, branch) {
 
   o.rows.forEach(function (r) {
     if (iDate === -1 || rptMonthOf_(r[iDate]) !== ym) return;
+    if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[iDate]))) return;
     if (only && String(r[iLoc] || '').trim() !== only) return;
     var net = Number(r[iNet]) || 0;
     out.bills++;
@@ -157,6 +158,7 @@ function rptGather_(ym, branch) {
     }
     dl.rows.forEach(function (r) {
       if (rptMonthOf_(r[jDate]) !== ym) return;
+      if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[jDate]))) return;
       if (only && jLoc !== -1 && String(r[jLoc] || '').trim() !== only) return;
       // นับรายการเสมอ ส่วนยอดเงินเอาที่แอปแจ้งก่อน ไม่มีค่อยเดาจากรายการราคา
       var guess = 0;
@@ -193,6 +195,7 @@ function rptGather_(ym, branch) {
   if (kDate !== -1 && kBaht !== -1) {
     ex.rows.forEach(function (r) {
       if (rptMonthOf_(r[kDate]) !== ym) return;
+      if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[kDate]))) return;
       if (only && kLoc !== -1 && String(r[kLoc] || '').trim() !== only) return;
       var baht = Number(r[kBaht]) || 0;
       if (!baht) return;
@@ -443,6 +446,34 @@ function monthlyReportThisMonth() { return monthlyReport(); }
  *   ถ้ามาล้างยอดแทน ของที่เหลือจะหายไปเฉย ๆ โดยไม่กลายเป็นต้นทุน
  *   แล้วเดือนนั้นจะไม่รู้ว่า COGS เท่าไหร่ กำไรที่เห็นจะสูงเกินจริง
  */
+/**
+ * เริ่มใหม่ทั้งระบบ — ทั้งของ ทั้งเงิน
+ *   ของ   ตั้งเป็น 0 ทุกที่ (แถว "ล้างยอด" ไม่นับเป็นค่าใช้จ่ายวัตถุดิบ)
+ *   เงิน  ขีดเส้นวันเริ่มนับใหม่ ยอดขาย/ค่าใช้จ่าย/หนี้ก่อนหน้านั้นไม่เอามาคิด
+ *
+ * ไม่ลบแถวไหนทิ้งเลย ประวัติยังอยู่ในชีตครบ แค่ไม่ถูกนำมาคิด
+ * เปลี่ยนใจก็สั่ง clearStartDate() แล้วลบแถว "ล้างยอด" ในชีตเช็คสต็อกออก
+ */
+function resetEverything(startYmd) {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var ymd = String(startYmd || Utilities.formatDate(new Date(), rptTz_(), 'yyyy-MM-dd')).trim();
+  if (ui) {
+    var ans = ui.alert('เริ่มใหม่ทั้งระบบ',
+      'จะตั้งของทุกที่เป็น 0 และเริ่มนับเงินใหม่ตั้งแต่ ' + ymd + '\n\n' +
+      'ยอดขาย ค่าใช้จ่าย และยอดค้างชำระก่อนวันนั้น จะไม่ถูกนำมาคิดอีก\n' +
+      'แถวเก่ายังอยู่ในชีตครบ ไม่ได้ลบ\n\n' +
+      '⚠️ ถ้านี่คือการปิดยอดสิ้นเดือน อย่ากดปุ่มนี้ ให้ไปนับสต็อกตามปกติ\n\n' +
+      'ยืนยันไหม', ui.ButtonSet.YES_NO);
+    if (ans !== ui.Button.YES) { Logger.log('ยกเลิก ไม่ได้แก้อะไร'); return; }
+  }
+  PropertiesService.getScriptProperties().setProperty('ACC_START_DATE', ymd);
+  zeroOutAllStock();
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+  Logger.log('\nเริ่มใหม่เรียบร้อย — นับทุกอย่างตั้งแต่ ' + ymd + ' เป็นต้นไป\n' +
+             'ของเก่ายังอยู่ในชีต แค่ไม่ถูกนำมาคิด · ย้อนกลับด้วย clearStartDate()');
+}
+
 function resetStockToZero() {
   // กดจากเมนูต้องยืนยันก่อน กดพลาดแล้วยอดหายทั้งระบบ
   var ui = null;
