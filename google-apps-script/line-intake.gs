@@ -1385,6 +1385,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   });
 
   var buyLines = [], expLines = [], stockLines = [], rndLines = [], unitWarns = [];
+  var packWarns = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
   var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
@@ -1428,11 +1429,21 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         // แพ็คที่ซื้อมาไม่ใช่แพ็คที่ส่งร้าน — เต้าหู้ชีส 1 แพ็คซื้อได้ราว 13 ไม้
         // ส่วนแพ็คส่งร้านคือ 10 ไม้ที่พนักงานแพ็คเอง จำนวนจริงรู้ตอนแพ็ค
         // ถ้าเอาของที่ซื้อไปลงช่องของแพ็คเลย ยอดจะเกินจริงแล้วกลายเป็นของหาย
+        var makeOnly = false;
         if (byName[hit.name] && byName[hit.name].kind !== 'วัตถุดิบ') {
           var opts = byName[hit.name].raws || [];
-          // ของที่พันใช้หลายวัตถุดิบ ระบบเดาแทนไม่ได้ว่าซื้อตัวไหนมา
-          // เลยแปลงให้เฉพาะตัวที่มีวัตถุดิบเดียว ที่เหลือลงเป็นค่าใช้จ่ายอย่างเดียว
-          if (opts.length === 1 && byName[opts[0]]) hit.name = opts[0];
+          // ตัวที่ใช้วัตถุดิบเดียว รู้แน่ว่าซื้ออะไรมา แปลงเป็นของดิบให้เลย
+          if (opts.length === 1 && byName[opts[0]]) {
+            hit.name = opts[0];
+
+          // ของที่ต้องพันเอง ไม่ได้ซื้อมาเป็นไม้ ๆ ซื้อมาแค่หมูกับไส้
+          // ระบบเดาแทนไม่ได้ว่าพันด้วยหมูอะไรไปกี่โล ถ้าลงสต็อกให้ตรงนี้
+          // หมูดิบจะไม่ถูกตัด ยอดครัวกลางบวมค้าง แล้วต้นทุนต่อไม้ก็ผิด
+          // ต้องไปลงในแท็บแพ็คของ ที่มีช่องให้เลือกหมูและกรอกจำนวน
+          } else if (opts.length) {
+            makeOnly = true;
+            packWarns.push(hit.name);
+          }
         }
         var perKg = it.perKg > 0 ? it.perKg
                   : (it.gram > 0 && it.baht > 0) ? Math.round(it.baht / it.gram * 100000) / 100 : '';
@@ -1466,7 +1477,9 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           continue;
         }
         var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts, it.gram) : null;
-        if (q && q.unitWarn) {
+        if (makeOnly) {
+          // บอกไปแล้วว่าต้องไปลงแพ็คของ ไม่ต้องบ่นเรื่องหน่วยซ้ำอีก
+        } else if (q && q.unitWarn) {
           unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
                          '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
         } else if (!q || !(q.base > 0)) {
@@ -1478,7 +1491,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             (uTyped ? 'พิมพ์มาเป็น "' + uTyped + '" แต่' : 'ไม่ได้บอกจำนวน · ') +
             'ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
         }
-        if (q && q.base > 0) {
+        if (!makeOnly && q && q.base > 0) {
           var srow = intakeAddStockIn_(byName[hit.name], q, ctx);
           if (srow) {
             saved.s.push(srow);
@@ -1528,6 +1541,14 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
            unitWarns.map(function (w) { return '• ' + w; }).join('\n') +
            '\nค่าใช้จ่ายบันทึกแล้ว แต่สต็อกยังไม่ขยับ' +
            '\nพิมพ์ใหม่โดยใส่จำนวนเป็นหน่วยที่ชีตตั้งไว้ (ไม่ต้องใส่ราคาซ้ำ)';
+  }
+  // ของที่ต้องพันเอง ไม่ใช่ของซื้อ ต้องบอกให้ไปลงที่ถูกช่อง
+  if (packWarns.length) {
+    msg += '\n\n🍢 ของที่ต้องพันเอง ' + packWarns.length + ' รายการ — ไม่เข้าครัวกลาง\n' +
+           packWarns.map(function (w) { return '• ' + w; }).join('\n') +
+           '\nของพวกนี้เกิดจากการแพ็ค ไม่ได้ซื้อมาเป็นไม้ ๆ' +
+           '\nให้ลงในแท็บ "แพ็คของ" บนหน้าเว็บ แล้วเลือกด้วยว่าใช้หมูอะไรไปเท่าไหร่' +
+           '\nส่วนหมูกับไส้ที่ซื้อมา ลงทางไลน์ได้ตามปกติ';
   }
   // เงินสดหน้าร้านลงในหน้า POS อยู่แล้ว รับทางไลน์ด้วยยอดจะถูกหักสองรอบ
   if (saidCash) {

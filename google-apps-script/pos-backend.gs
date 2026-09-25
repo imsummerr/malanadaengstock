@@ -1880,6 +1880,14 @@ function handleStockIn_(body) {
     return { success: false, message: '"' + p.item.name + '" เป็นของหน้าร้าน ไม่ได้ลงที่ครัวกลาง' };
   }
 
+  // ของแพ็คเกิดจากแท็บแพ็คของ ไม่ได้ซื้อเข้ามาตรง ๆ
+  // ถ้ารับตรงนี้ วัตถุดิบจะไม่ถูกตัด ยอดครัวกลางบวมค้าง แล้วต้นทุนต่อไม้ก็ผิด
+  // หน้าเว็บซ่อนให้อยู่แล้ว แต่กันไว้ที่เซิร์ฟเวอร์ด้วย เผื่อยิงเข้ามาทางอื่น
+  if (p.item.kind === KIND_PACKED) {
+    return { success: false, message: '"' + p.item.name + '" เป็นของที่แพ็คเอง ' +
+             'ให้ลงในแท็บ "แพ็คของ" — ของเข้าครัวกลางรับเฉพาะของที่ซื้อมา' };
+  }
+
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
   var map = ensureCols_(sh, MOVE_COLS);
