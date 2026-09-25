@@ -712,6 +712,8 @@ function onOpen() {
       .addSeparator()
       .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
       .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
+      .addItem('🧹 ลบรายการที่ลงไลน์ผิด (ทั้งวัน)', 'deleteIntakeDay')
+      .addSeparator()
       .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')
       .addItem('⚠️ เริ่มใหม่ทั้งระบบ (ของ + เงิน)', 'resetEverything')
       .addItem('ดูวันเริ่มนับ', 'showStartDate')

@@ -474,6 +474,98 @@ function resetEverything(startYmd) {
              'ของเก่ายังอยู่ในชีต แค่ไม่ถูกนำมาคิด · ย้อนกลับด้วย clearStartDate()');
 }
 
+/**
+ * ลบรายการที่ลงไปผิดของ "วันเดียว" ออกให้หมด — ทั้งสต็อกและเงิน
+ *
+ * ต่างจากล้างสต็อกตรงที่ตัวนั้นตั้งยอดเป็น 0 แต่แถวเก่ายังอยู่และเงิน
+ * ยังถูกนับ ส่วนตัวนี้ลบแถวทิ้งจริง เหมือนไม่เคยพิมพ์เข้ากลุ่มวันนั้น
+ * ใช้ตอนลงไลน์ผิดหลายรายการจนแก้ทีละอันไม่ไหว แล้วอยากพิมพ์ใหม่ทั้งชุด
+ *
+ * ลบ 3 ชีต — ของเข้าครัวกลาง (จำนวนของเข้า) · ซื้อของเข้า · POS_Expenses
+ * ไม่แตะ ของเข้าร้าน เช็คสต็อก ของเสีย แพ็คของ และยอดขาย POS_Orders
+ * เพราะพวกนั้นไม่ได้มาจากไลน์ ลบไปจะพังของที่ถูกอยู่แล้ว
+ *
+ * ไม่ใส่วันมา = วันนี้ · ใส่เป็น 'd/M/yyyy' หรือ 'yyyy-MM-dd' ก็ได้
+ */
+function deleteIntakeDay(ymd) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = rptTz_();
+  var want = rptDayKey_(ymd || new Date(), tz);
+  if (!want) { Logger.log('อ่านวันที่ไม่ออก — ใส่เป็น 25/9/2026 หรือ 2026-09-25'); return; }
+
+  // [ชื่อชีต, คอลัมน์วันที่, คอลัมน์ประเภท (เว้นว่าง = เอาทุกแถว), ค่าที่ต้องตรง]
+  var targets = [
+    ['จำนวนของเข้า', 'วันที่เวลา', 'ประเภท', 'ของเข้าครัวกลาง'],
+    ['ซื้อของเข้า',   'วันที่',     '',       ''],
+    ['POS_Expenses', 'วันที่',     '',       '']
+  ];
+
+  var plan = [], total = 0;
+  targets.forEach(function (t) {
+    var hit = rptRowsOnDay_(ss, t[0], t[1], t[2], t[3], want, tz);
+    plan.push({ name: t[0], rows: hit });
+    total += hit.length;
+  });
+
+  if (!total) { Logger.log('ไม่มีรายการของวันที่ ' + want + ' ให้ลบ'); return; }
+
+  var detail = plan.filter(function (x) { return x.rows.length; })
+    .map(function (x) { return '• ' + x.name + ' — ' + x.rows.length + ' แถว'; }).join('\n');
+
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  if (ui) {
+    var ans = ui.alert('ลบรายการของวันที่ ' + want,
+      detail + '\n\nรวม ' + total + ' แถว — ลบทิ้งจริง เอาคืนไม่ได้\n\n' +
+      'ไม่แตะยอดขาย ของเข้าร้าน เช็คสต็อก ของเสีย และแพ็คของ\n\nยืนยันไหม',
+      ui.ButtonSet.YES_NO);
+    if (ans !== ui.Button.YES) { Logger.log('ยกเลิก ไม่ได้ลบอะไร'); return; }
+  }
+
+  plan.forEach(function (x) {
+    if (!x.rows.length) return;
+    var sh = ss.getSheetByName(x.name);
+    // ลบจากล่างขึ้นบน ไม่งั้นเลขแถวเลื่อนแล้วลบผิดแถว
+    x.rows.slice().sort(function (a, b) { return b - a; })
+      .forEach(function (r) { sh.deleteRow(r); });
+  });
+
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+  Logger.log('🧹 ลบรายการของวันที่ ' + want + ' แล้ว ' + total + ' แถว\n' + detail +
+             '\n\nพิมพ์เข้ากลุ่มใหม่ได้เลย เหมือนไม่เคยลงวันนั้น');
+}
+
+/** วันในรูป d/M/yyyy — รับได้ทั้ง Date, 'd/M/yyyy' และ 'yyyy-MM-dd' */
+function rptDayKey_(v, tz) {
+  if (v instanceof Date) return Utilities.formatDate(v, tz, 'd/M/yyyy');
+  var t = String(v || '').trim();
+  var m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return Number(m[3]) + '/' + Number(m[2]) + '/' + m[1];
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return Number(m[1]) + '/' + Number(m[2]) + '/' + m[3];
+  return '';
+}
+
+/** เลขแถวในชีตนี้ที่ตรงวันที่ (และตรงประเภท ถ้าระบุมา) */
+function rptRowsOnDay_(ss, sheetName, dateCol, kindCol, kindWant, want, tz) {
+  var sh = ss.getSheetByName(sheetName);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+  var head = v[0].map(function (x) { return String(x || '').trim(); });
+  var dc = head.indexOf(dateCol);
+  if (dc === -1) return [];
+  var kc = kindCol ? head.indexOf(kindCol) : -1;
+
+  var out = [];
+  for (var i = 1; i < v.length; i++) {
+    if (kc !== -1 && String(v[i][kc] || '').trim() !== kindWant) continue;
+    if (rptDayKey_(v[i][dc], tz) !== want) continue;
+    out.push(i + 1);
+  }
+  return out;
+}
+
 function resetStockToZero() {
   // กดจากเมนูต้องยืนยันก่อน กดพลาดแล้วยอดหายทั้งระบบ
   var ui = null;
