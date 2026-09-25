@@ -2018,6 +2018,9 @@ function handleStockCount_(body) {
 function lastCountInfo_() {
   var out = {};
   readMoves_(SHEET_COUNT).forEach(function (m) {
+    // ขีดเส้นวันเริ่มนับใหม่ไว้แล้ว การนับก่อนหน้านั้นก็ไม่ควรโผล่
+    // ไม่งั้นหัวตารางจะบอกวันนับที่เครื่องคิดต้นทุนไม่ได้ใช้แล้ว
+    if (typeof costBefore_ === 'function' && costBefore_(m.when)) return;
     var t = timeOf_(m.when);
     var cur = out[m.loc];
     if (!cur || t > cur.t) out[m.loc] = { t: t, when: m.when, n: 1 };
