@@ -708,6 +708,8 @@ function onOpen() {
       .addItem('📊 รายงานเดือนนี้', 'monthlyReportThisMonth')
       .addItem('📊 รายงานเดือนที่แล้ว', 'monthlyReportLastMonth')
       .addSeparator()
+      .addItem('🧹 รวมแถวสินค้าที่ชื่อซ้ำ', 'mergeDuplicateItems')
+      .addSeparator()
       .addItem('ตั้งค่าครั้งแรก', 'setupCosting')
       .addItem('ให้อัปเดตเองทุกชั่วโมง', 'setupCostingTriggers')
       .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')

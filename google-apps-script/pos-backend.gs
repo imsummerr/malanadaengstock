@@ -2744,9 +2744,59 @@ function applyItemCatalogue() {
   var dups = duplicateItemRows_(sh, map);
   if (dups.length) {
     Logger.log('\n⚠️ มีแถวชื่อซ้ำ ' + dups.length + ' แถว — เขียนทับให้เฉพาะแถวแรก\n  ' +
-               dups.join('\n  ') + '\nลบแถวซ้ำทิ้งในชีตได้เลย ประวัติไม่หาย');
+               dups.join('\n  ') +
+               '\nรัน mergeDuplicateItems ได้เลย มันรวมให้เหลือแถวเดียว ประวัติไม่หาย');
   }
   Logger.log('\nเหลือที่ต้องกรอกเองในชีต: เตือนเมื่อเหลือ(แพ็ค) — เหลือกี่แพ็คให้เตือนไลน์');
+}
+
+/**
+ * รวมแถวสินค้าที่ชื่อซ้ำให้เหลือแถวเดียว
+ *
+ * fixItemList เขียนทับให้แค่แถวแรก แถวที่ซ้ำเลยค้างข้อมูลเก่าไว้
+ * แล้วโผล่ซ้อนกันในหน้าเว็บ เกิดจากตอนเปลี่ยนชื่อของ ชื่อใหม่ไปชนกับ
+ * แถวที่มีอยู่แล้ว
+ *
+ * ยกค่าที่แถวแรกเว้นว่างไว้ขึ้นมาจากแถวซ้ำก่อนลบ จะได้ไม่เสียจุดเตือน
+ * หรือชิ้นต่อไม้ที่เจ้าของกรอกมือไว้ในแถวหลัง
+ *
+ * ไม่แตะชีตประวัติเลย ยอดคงเหลือคิดจากชีตนั้น ตัวเลขไม่ขยับ
+ */
+function mergeDuplicateItems() {
+  var sh = sheet_(SHEET_ITEMS);
+  if (!sh || sh.getLastRow() < 2) { Logger.log('ไม่มีรายการสินค้าให้ตรวจ'); return; }
+  var map = ensureCols_(sh, ITEM_COLS);
+  var last = sh.getLastRow(), wide = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, wide).getValues()[0];
+  var v = sh.getRange(2, 1, last - 1, wide).getValues();
+
+  var firstAt = {}, kill = [], log = [];
+  for (var i = 0; i < v.length; i++) {
+    var n = String(v[i][map['สินค้า']] || '').trim();
+    if (!n) continue;
+    if (firstAt[n] === undefined) { firstAt[n] = i; continue; }
+
+    var k = firstAt[n], took = [];
+    for (var c = 0; c < wide; c++) {
+      var keep = v[k][c], dup = v[i][c];
+      if ((keep === '' || keep === null) && dup !== '' && dup !== null) {
+        v[k][c] = dup;
+        took.push(String(head[c] || ('คอลัมน์ ' + (c + 1))));
+      }
+    }
+    kill.push(i + 2);
+    log.push('แถว ' + (i + 2) + ' — ' + n + ' → รวมเข้าแถว ' + (k + 2) +
+             (took.length ? ' · ยกค่ามาให้: ' + took.join(', ') : ''));
+  }
+
+  if (!kill.length) { Logger.log('✅ ไม่มีแถวชื่อซ้ำ'); return; }
+
+  // เขียนค่าที่รวมแล้วกลับไปก่อน แล้วค่อยลบจากล่างขึ้นบน เลขแถวจะได้ไม่เลื่อน
+  sh.getRange(2, 1, last - 1, wide).setValues(v);
+  kill.sort(function (a, b) { return b - a; })
+      .forEach(function (r) { sh.deleteRow(r); });
+  cacheClear_();
+  Logger.log('🧹 ลบแถวซ้ำ ' + kill.length + ' แถว\n  ' + log.join('\n  '));
 }
 
 /** แถวที่ชื่อสินค้าซ้ำกับแถวก่อนหน้า — บอกเลขแถวไว้ให้ไปลบเอง */
