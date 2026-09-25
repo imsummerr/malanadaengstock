@@ -167,6 +167,13 @@ function checkNewIncoming() {
     props.setProperty(PROP_LAST_ROW, String(lastRow));
     return;
   }
+  // แถวหายไป = มีคนลบแถวทิ้งในชีต (ลบของที่ลงผิด) เลขที่จำไว้เลยเกินจริง
+  // ปล่อยไว้จะเงียบยาว เพราะของเข้าใหม่ไปแทนที่แถวเดิมที่ "แจ้งไปแล้ว"
+  // ขยับหมุดลงมาให้เท่าของจริง แล้วเริ่มนับใหม่จากตรงนั้น
+  if (lastRow < lastNotified) {
+    props.setProperty(PROP_LAST_ROW, String(lastRow));
+    return;
+  }
   if (lastRow <= lastNotified) return; // ไม่มีแถวใหม่
 
   var values = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();

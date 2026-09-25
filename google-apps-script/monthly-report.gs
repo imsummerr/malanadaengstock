@@ -531,6 +531,15 @@ function deleteIntakeDay(ymd) {
   });
 
   if (typeof cacheClear_ === 'function') cacheClear_();
+  // บอทแจ้งของเข้าจำ "แถวที่แจ้งไปแล้ว" เป็นเลขแถว พอลบแถวออกเลขจะเกินจริง
+  // ไม่ขยับลงมา ของเข้าใหม่จะไปแทนที่แถวเก่าแล้วบอทเงียบยาว
+  try {
+    var inSh = ss.getSheetByName('จำนวนของเข้า');
+    if (inSh && typeof PROP_LAST_ROW === 'string') {
+      PropertiesService.getScriptProperties()
+        .setProperty(PROP_LAST_ROW, String(inSh.getLastRow()));
+    }
+  } catch (e) {}
   if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
   Logger.log('🧹 ลบรายการของวันที่ ' + want + ' แล้ว ' + total + ' แถว\n' + detail +
              '\n\nพิมพ์เข้ากลุ่มใหม่ได้เลย เหมือนไม่เคยลงวันนั้น');
