@@ -543,6 +543,19 @@ function intakePayOf_(text) {
 function intakeIsExpense_(name) { return /^ค่า/.test(String(name || '').trim()); }
 
 /** "ค่าเช่าแผง" → ประเภท "ค่าที่" · ไม่เข้าพวกไหนเลย → "อื่น ๆ" */
+/**
+ * บรรทัดที่ไม่มีในชีตรายการสินค้า และไม่ได้บอกจำนวนมาด้วย
+ * ลงเป็นค่าใช้จ่ายดีกว่า — "ถุงช้อปปิ้ง 9 บาท" นับสต็อกไม่ได้อยู่ดี
+ * เพราะไม่รู้ว่ากี่ใบ ลงเป็นรายการซื้อก็ได้แถวเปล่าที่ไม่มีใครใช้
+ * บอกจำนวนมา = ตั้งใจให้เป็นของ แม้ชื่อจะยังไม่มีในชีต ปล่อยไปตามเดิม
+ */
+function intakeLooksLikeExpense_(it, names) {
+  if (it.rnd) return false;
+  if (it.counts && it.counts.length) return false;
+  if (it.gram > 0) return false;
+  return !intakeMatchItem_(it.raw, names).matched;
+}
+
 function intakeExpenseType_(name) {
   var n = intakeNorm_(name);
   var keys = Object.keys(INTAKE_EXPENSE_ALIAS), i;
@@ -1449,7 +1462,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
       if (it.baht > 0 && it.pay === 'บัตรเครดิต') cardTotal += it.baht;
       if (it.cash) saidCash = true;
 
-      if (it.expense) {
+      if (it.expense || intakeLooksLikeExpense_(it, names)) {
         if (!expSheet) { expSheet = intakeExpenseSheet_(); expSeq = intakeSeqOf_(expSheet, date); }
         expSeq++;
         var type = intakeExpenseType_(it.raw);
