@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-25a';
+const PAGE_BUILD = '2026-09-25b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -832,11 +832,30 @@ function carryUnits(pEl, rEl, cEl, it) {
 }
 
 /** ของดิบที่ต้องใช้ทำของตัวนี้ — ของที่แค่เสียบไม้จะมีตัวเดียว คือของดิบชื่อเดียวกัน */
-/** ของดิบที่ต้องกรอกเอง — ไม่รวมตัวที่ผูกอัตราส่วนไว้แล้ว */
+/* กลุ่มวัตถุดิบ — "@เนื้อหมู" แปลว่าให้เลือกเอาเองว่าใช้หมูอะไร
+   ของที่พันไม่ได้ใช้หมูชิ้นเดิมทุกครั้ง แล้วแต่วันนั้นมีอะไร */
+const GROUP_MARK = '@';
+const isGroup = n => String(n).charAt(0) === GROUP_MARK;
+const groupName = n => String(n).slice(1);
+/** ตัวเลือกในกลุ่ม — เอาเฉพาะของดิบที่มีอยู่จริงในชีต */
+function groupChoices(n) {
+  const g = (D.rawGroups || {})[groupName(n)] || [];
+  return g.map(x => itemOf(x)).filter(Boolean);
+}
+
+/**
+ * ของดิบที่ต้องกรอกเอง — ไม่รวมตัวที่ผูกอัตราส่วนไว้แล้ว
+ * กลุ่มคืนเป็น { group: '@เนื้อหมู', choices: [...] } ให้ทำเป็นช่องเลือก
+ */
 function rawsOf(it) {
   if (!it || !it.raws) return [];
   const auto = it.autoRaws || {};
-  return it.raws.filter(n => !auto[n]).map(n => itemOf(n)).filter(Boolean);
+  return it.raws.filter(n => !auto[n]).map(n => {
+    if (!isGroup(n)) return itemOf(n);
+    const choices = groupChoices(n);
+    return choices.length ? { group: n, choices: choices, name: groupName(n),
+                              subUnit: choices[0].subUnit } : null;
+  }).filter(Boolean);
 }
 
 /** ของที่ตัดเองอัตโนมัติ เช่นถ้วย 1 ใบต่อ 1 กระปุก — โชว์ให้เห็น แต่ไม่ต้องกรอก */
@@ -923,10 +942,14 @@ function syncPack() {
 
   const raws = rawsOf(it);
   document.getElementById('k-raws').innerHTML = (raws.length
-    ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => `
-        <div class="note" style="margin-top:6px">${esc(r.name)}</div>
+    ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => (r.group
+        ? `<div class="note" style="margin-top:6px">ใช้${esc(r.name)}อะไร</div>
+           <select id="k-rs-${i}" onchange="syncPackRaw(${i}); calcPack()">${
+             r.choices.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')
+           }</select>`
+        : `<div class="note" style="margin-top:6px">${esc(r.name)}</div>`) + `
         <div class="row2" style="align-items:end">
-          <div><div class="sub">เอามากี่${esc(r.subUnit)}</div>
+          <div><div class="sub" id="k-ru-${i}">เอามากี่${esc(r.subUnit)}</div>
             <input id="k-rq-${i}" type="number" inputmode="decimal" min="0" step="any"
                    placeholder="0" oninput="calcPack()"></div>
           <div><div class="sub">ได้เนื้อเท่าไหร่ — ของแช่แข็ง</div>
@@ -938,6 +961,23 @@ function syncPack() {
     + autoNote;
 
   calcPack();
+}
+
+/** ของดิบแต่ละช่อง — กลุ่มเอาตามที่เลือกไว้ ไม่ใช่กลุ่มก็ตัวเดิม */
+function packRawAt(it, i) {
+  const r = rawsOf(it)[i];
+  if (!r) return null;
+  if (!r.group) return r;
+  const sel = document.getElementById('k-rs-' + i);
+  return itemOf(sel ? sel.value : r.choices[0].name) || r.choices[0];
+}
+
+/** เปลี่ยนเนื้อที่เลือก หน่วยอาจไม่เหมือนกัน ต้องอัปเดตป้าย */
+function syncPackRaw(i) {
+  const it = itemOf(document.getElementById('k-out').value);
+  const r = packRawAt(it, i);
+  const lbl = document.getElementById('k-ru-' + i);
+  if (r && lbl) lbl.textContent = 'เอามากี่' + r.subUnit;
 }
 
 /** ทดหน่วยในฟอร์มแพ็คของ */
@@ -977,7 +1017,9 @@ function calcPack() {
     }
   });
 
-  rawsOf(it).forEach((r, i) => {
+  rawsOf(it).forEach((_, i) => {
+    const r = packRawAt(it, i);
+    if (!r) return;
     const el = document.getElementById('k-rq-' + i);
     const tEl = document.getElementById('k-rt-' + i);
     // ตัดตามที่เอาออกมาจากสต็อก ส่วน "ได้เนื้อ" เก็บไว้ดู yield ไม่ตัดซ้ำ
@@ -1016,16 +1058,18 @@ async function submitPack() {
   const raws = [];
   const list = rawsOf(it);
   for (let i = 0; i < list.length; i++) {
+    const r = packRawAt(it, i);
+    if (!r) continue;
     const el = document.getElementById('k-rq-' + i);
     const tEl = document.getElementById('k-rt-' + i);
     const q = el ? el.value : '';
     const net = tEl ? tEl.value : '';
     // ตัดของดิบไม่ครบ ยอดจะเพี้ยนแบบเงียบ ๆ เลยบังคับกรอกให้ครบทุกช่อง
-    if (!(Number(q) > 0)) return toast('กรอกว่าเอา ' + esc(list[i].name) + ' มาเท่าไหร่');
+    if (!(Number(q) > 0)) return toast('กรอกว่าเอา ' + esc(r.name) + ' มาเท่าไหร่');
     if (Number(net) > Number(q)) {
-      return toast(esc(list[i].name) + ' ได้เนื้อมากกว่าที่เอามา');
+      return toast(esc(r.name) + ' ได้เนื้อมากกว่าที่เอามา');
     }
-    raws.push({ name: list[i].name, qty: q, net: net });
+    raws.push({ name: r.name, qty: q, net: net });
   }
 
   const btn = document.getElementById('k-btn');
