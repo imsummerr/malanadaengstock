@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-25 · บัญชี FIFO + รายงานรายเดือน + เดลิเวอรี่แยกแอป';
+var BACKEND_VERSION = '2026-09-25b · หมูแยกตามวิธีหั่น + นมผง + หม่าล่าผสม 2:1:1';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -267,7 +267,9 @@ function handleVersion_() {
       'รับไลน์ · line-intake.gs':        typeof handleLineIntake_   === 'function',
       'บัญชี · accounting.gs':           typeof accMonthSummary_    === 'function',
       'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function',
-      'เตือนนับสต็อก · stock-audit.gs':   typeof remindStockCount    === 'function'
+      'เตือนนับสต็อก · stock-audit.gs':   typeof remindStockCount    === 'function',
+      'ต้นทุน FIFO · stock-costing.gs':   typeof costSummary_        === 'function',
+      'รายงานเดือน · monthly-report.gs': typeof monthlyReport       === 'function'
     }
   };
 }
