@@ -549,6 +549,19 @@ function intakeIsExpense_(name) { return /^ค่า/.test(String(name || '').tr
  * เพราะไม่รู้ว่ากี่ใบ ลงเป็นรายการซื้อก็ได้แถวเปล่าที่ไม่มีใครใช้
  * บอกจำนวนมา = ตั้งใจให้เป็นของ แม้ชื่อจะยังไม่มีในชีต ปล่อยไปตามเดิม
  */
+/**
+ * ชีตกับโค้ดตั้งหน่วยไม่ตรงกัน = แก้โค้ดแล้วยังไม่ได้รันตัวซิงก์
+ * ไม่บอกตรงนี้ เจ้าของจะนึกว่าตัวเองพิมพ์ผิด แล้วไล่แก้ข้อความซ้ำ ๆ
+ * ทั้งที่ของจริงคือต้องกดรันฟังก์ชันในชีตครั้งเดียวจบ
+ */
+function intakeStaleUnitHint_(name, sheetUnit) {
+  if (typeof catalogueUnit_ !== 'function') return '';
+  var want = catalogueUnit_(name);
+  if (!want || want === sheetUnit) return '';
+  return '\n       ⚠️ โค้ดตั้งไว้เป็น "' + want + '" แล้ว แต่ชีตยังเป็นของเก่า' +
+         '\n       → รัน fixItemList แล้วตามด้วย addSupplyItems ในชีต';
+}
+
 function intakeLooksLikeExpense_(it, names) {
   if (it.rnd) return false;
   if (it.counts && it.counts.length) return false;
@@ -1537,7 +1550,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           // บอกไปแล้วว่าต้องไปลงแพ็คของ ไม่ต้องบ่นเรื่องหน่วยซ้ำอีก
         } else if (q && q.unitWarn) {
           unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
-                         '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+                         '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"' +
+                         intakeStaleUnitHint_(hit.name, byName[hit.name].subUnit));
         } else if (!byName[hit.name]) {
           // จับชื่อไม่ได้เลย ("ถุงช้อปปิ้ง") — มีดอกจันบอกอยู่แล้วในรายการซื้อของ
           // ห้ามแตะ byName[hit.name] ตรงนี้ มันเป็น undefined แล้วพังทั้งข้อความ
@@ -1549,7 +1563,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             ? String(it.counts[0].unit || '').trim() : '';
           unitWarns.push(hit.name + ' — ' +
             (uTyped ? 'พิมพ์มาเป็น "' + uTyped + '" แต่' : 'ไม่ได้บอกจำนวน · ') +
-            'ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+            'ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"' +
+            intakeStaleUnitHint_(hit.name, byName[hit.name].subUnit));
         }
         if (!makeOnly && q && q.base > 0) {
           var srow = intakeAddStockIn_(byName[hit.name], q, ctx);

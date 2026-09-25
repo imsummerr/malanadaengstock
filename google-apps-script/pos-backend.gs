@@ -1392,16 +1392,34 @@ function autoRaws_(cell) {
  * รวมทั้งของเข้าครัวกลางที่ไม่ควรมีของพัน
  */
 var _catKind = null;
+var _catUnit = null;
 function catalogueKind_(name) {
   if (!_catKind) {
     _catKind = {};
-    itemCatalogue_().forEach(function (it) { _catKind[it.name] = it.kind; });
-    SUPPLY_ITEMS.forEach(function (it) { _catKind[it[0]] = KIND_SUPPLY; });
+    _catUnit = {};
+    itemCatalogue_().forEach(function (it) {
+      _catKind[it.name] = it.kind;
+      _catUnit[it.name] = it.subUnit;
+    });
+    SUPPLY_ITEMS.forEach(function (it) {
+      _catKind[it[0]] = KIND_SUPPLY;
+      _catUnit[it[0]] = it[1];
+    });
   }
   var k = _catKind[String(name || '').trim()];
   if (k) return k;
   // ไม่มีในแคตตาล็อกแล้ว แต่ลงท้าย (ดิบ) ก็รู้ว่าเป็นวัตถุดิบแน่ ๆ
   return /\(ดิบ\)\s*$/.test(name) ? KIND_RAW : '';
+}
+
+/**
+ * หน่วยที่โค้ดตั้งไว้ให้ของชิ้นนี้ — ไม่ใช่หน่วยที่อยู่ในชีตตอนนี้
+ * สองอันนี้ต่างกันได้ ถ้าแก้โค้ดแล้วยังไม่ได้รัน fixItemList / addSupplyItems
+ * เอาไว้บอกให้ถูกว่า "ชีตยังไม่อัปเดต" ไม่ใช่ "พิมพ์หน่วยผิด"
+ */
+function catalogueUnit_(name) {
+  catalogueKind_(name);
+  return _catUnit[String(name || '').trim()] || '';
 }
 
 function getStockItemsRaw_() {
@@ -3296,8 +3314,9 @@ var SUPPLY_ITEMS = [
 
 /**
  * เพิ่มของใช้/วัตถุดิบ พร้อมตั้งว่าใช้ที่ไหน
- * ของที่มีอยู่แล้วอัปเดตเฉพาะช่อง "ใช้ที่" ไม่แตะช่องอื่น
- * รันซ้ำได้
+ * ของที่มีอยู่แล้วเขียนทับ หน่วย / ต่อแพ็ค / ใช้ที่ / ชนิด ให้ตรงกับโค้ด
+ * ช่องที่เจ้าของกรอกเอง (จุดเตือน) ไม่แตะ
+ * รันซ้ำได้ — แก้หน่วยในโค้ดแล้วต้องรันตัวนี้ ชีตถึงจะตาม
  */
 function addSupplyItems() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ITEMS);
