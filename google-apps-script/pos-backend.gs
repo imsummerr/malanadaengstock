@@ -1382,15 +1382,43 @@ function autoRaws_(cell) {
   return out;
 }
 
+/**
+ * ชนิดที่ควรจะเป็น ตามแคตตาล็อกในโค้ด
+ * ใช้ตอนช่อง "ชนิด" ในชีตว่าง — เกิดได้ถ้าแถวนั้นถูกเพิ่มไว้ก่อนที่จะมี
+ * คอลัมน์นี้ หรือมีแถวชื่อซ้ำที่ fixItemList ไม่ได้เขียนทับ
+ * ปล่อยว่างไว้แล้วมันจะไม่ใช่ทั้งวัตถุดิบและของแพ็ค เลยโผล่ทุกแท็บ
+ * รวมทั้งของเข้าครัวกลางที่ไม่ควรมีของพัน
+ */
+var _catKind = null;
+function catalogueKind_(name) {
+  if (!_catKind) {
+    _catKind = {};
+    itemCatalogue_().forEach(function (it) { _catKind[it.name] = it.kind; });
+    SUPPLY_ITEMS.forEach(function (it) { _catKind[it[0]] = KIND_SUPPLY; });
+  }
+  var k = _catKind[String(name || '').trim()];
+  if (k) return k;
+  // ไม่มีในแคตตาล็อกแล้ว แต่ลงท้าย (ดิบ) ก็รู้ว่าเป็นวัตถุดิบแน่ ๆ
+  return /\(ดิบ\)\s*$/.test(name) ? KIND_RAW : '';
+}
+
 function getStockItemsRaw_() {
   var sh = sheet_(SHEET_ITEMS);
   if (!sh || sh.getLastRow() < 2) return [];
   var map = ensureCols_(sh, ITEM_COLS);
   var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
-  var out = [];
+  var out = [], at = {};
   for (var i = 0; i < v.length; i++) {
     var name = String(v[i][map['สินค้า']] || '').trim();
     if (!name) continue;
+    var kind = String(v[i][map['ชนิด']] || '').trim() || catalogueKind_(name);
+    // แถวชื่อซ้ำ — เอาแถวแรกไว้ ยกเว้นแถวหลังกรอกชนิดไว้แต่แถวแรกไม่ได้กรอก
+    // ถ้าปล่อยซ้ำ รายการจะขึ้นสองอันในหน้าเว็บ แล้วเลือกผิดกันแน่
+    if (at[name] !== undefined) {
+      if (kind && !out[at[name]].kind) out[at[name]].kind = kind;
+      continue;
+    }
+    at[name] = out.length;
     var per = Number(v[i][map['หน่วยย่อยต่อแพ็ค']]) || 1;
     out.push({
       name:     name,
@@ -1400,7 +1428,7 @@ function getStockItemsRaw_() {
       perStick: Number(v[i][map['ชิ้นต่อไม้']]) > 0 ? Number(v[i][map['ชิ้นต่อไม้']]) : 1,
       price:    Number(v[i][map['ราคาขาย/หน่วยย่อย']]) || 0,
       lowPacks: Number(v[i][map['เตือนเมื่อเหลือ(แพ็ค)']]) || 0,
-      kind:     String(v[i][map['ชนิด']] || '').trim(),
+      kind:     kind,
       raws:     rawNames_(v[i][map['วัตถุดิบ']]),
       autoRaws: autoRaws_(v[i][map['วัตถุดิบ']]),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
@@ -2711,7 +2739,26 @@ function applyItemCatalogue() {
 
   Logger.log('เพิ่มใหม่ ' + added.length + ' รายการ' + (added.length ? ':\n  ' + added.join('\n  ') : ''));
   Logger.log('อัปเดตของเดิม ' + updated.length + ' รายการ');
+  var dups = duplicateItemRows_(sh, map);
+  if (dups.length) {
+    Logger.log('\n⚠️ มีแถวชื่อซ้ำ ' + dups.length + ' แถว — เขียนทับให้เฉพาะแถวแรก\n  ' +
+               dups.join('\n  ') + '\nลบแถวซ้ำทิ้งในชีตได้เลย ประวัติไม่หาย');
+  }
   Logger.log('\nเหลือที่ต้องกรอกเองในชีต: เตือนเมื่อเหลือ(แพ็ค) — เหลือกี่แพ็คให้เตือนไลน์');
+}
+
+/** แถวที่ชื่อสินค้าซ้ำกับแถวก่อนหน้า — บอกเลขแถวไว้ให้ไปลบเอง */
+function duplicateItemRows_(sh, map) {
+  if (sh.getLastRow() < 2) return [];
+  var seen = {}, out = [];
+  sh.getRange(2, map['สินค้า'] + 1, sh.getLastRow() - 1, 1).getValues()
+    .forEach(function (r, i) {
+      var n = String(r[0] || '').trim();
+      if (!n) return;
+      if (seen[n]) out.push('แถว ' + (i + 2) + ' — ' + n + ' (ซ้ำกับแถว ' + seen[n] + ')');
+      else seen[n] = i + 2;
+    });
+  return out;
 }
 
 /** ข้อความหมายเหตุที่ระบบเคยเขียนเอง — เจอแล้วลบได้ ไม่ใช่ของที่เจ้าของพิมพ์ */
