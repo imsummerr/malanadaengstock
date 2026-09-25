@@ -844,6 +844,17 @@ function intakeItemNames_() {
 function intakeStockQty_(item, counts, gram) {
   if (!item) return null;
 
+  // พิมพ์น้ำหนักมา แล้วชีตก็ตั้งหน่วยเป็นน้ำหนัก — แปลงให้ตรงหน่วยที่ตั้งไว้
+  // ใช้ได้ทั้งของดิบและของใช้ ของอย่างนมผง/ผงหม่าล่า นับเป็นกรัม
+  // ("นมผง 10 โล" → 10000 กรัม) ส่วนเนื้อสัตว์นับเป็น กก. ("650 กรัม" → 0.65)
+  var wantU = String(item.subUnit || '').trim();
+  if (gram > 0 && intakeIsWeightUnit_(wantU)) {
+    var g = Math.round(gram);
+    return /^(กรัม|g)$/i.test(wantU)
+      ? { base: g, packs: 0, per: 1 }
+      : { base: g / 1000, packs: 0, per: 1 };
+  }
+
   // ของดิบ — เข้าสต็อกตามที่ซื้อมาเลย ไม่ต้องรอให้บอกเป็นไม้
   // ชั่งเป็นโล/กรัม ก็แปลงเป็น กก. ส่วนที่ซื้อเป็นถุง/แพ็ค ก็นับตามนั้น
   if (item.kind === 'วัตถุดิบ') {
