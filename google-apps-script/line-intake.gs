@@ -142,7 +142,17 @@ function handleLineIntake_(body) {
       try {
         intakeHandleEvent_(events[i]);
       } catch (err) {
-        Logger.log('line-intake event error: ' + (err && err.message ? err.message : err));
+        var msg = (err && err.message ? err.message : String(err));
+        Logger.log('line-intake event error: ' + msg);
+        // เงียบไม่ได้ — โค้ดพังกลางทางแปลว่าบางส่วนลงชีตไปแล้ว บางส่วนไม่ลง
+        // เจ้าของเห็นบอทเงียบก็จะส่งซ้ำ แล้วยอดเบิ้ล เคยเกิดมาแล้ว
+        try {
+          intakeReply_({ token: (events[i] || {}).replyToken },
+            '⚠️ อ่านข้อความไม่จบ มีบางรายการลงไม่ครบ\n\n' +
+            'สาเหตุ: ' + msg + '\n\n' +
+            'อย่าเพิ่งส่งซ้ำ — เช็คในชีต "จำนวนของเข้า" กับ "ซื้อของเข้า" ก่อน\n' +
+            'ว่ามีอะไรลงไปแล้วบ้าง ไม่งั้นยอดจะเบิ้ล');
+        } catch (e2) {}
       }
     }
   } catch (err) {
@@ -858,7 +868,9 @@ function intakeStockQty_(item, counts, gram) {
   // ของดิบ — เข้าสต็อกตามที่ซื้อมาเลย ไม่ต้องรอให้บอกเป็นไม้
   // ชั่งเป็นโล/กรัม ก็แปลงเป็น กก. ส่วนที่ซื้อเป็นถุง/แพ็ค ก็นับตามนั้น
   if (item.kind === 'วัตถุดิบ') {
-    if (gram > 0) return { base: Math.round(gram) / 1000, packs: 0, per: 1 };
+    // ชีตไม่ได้ตั้งเป็นน้ำหนัก (เช่น วุ้นเส้นเกาหลีนับเป็นถุง) แต่พิมพ์โลมา
+    // ลงไปดื้อ ๆ จะกลายเป็น "0.5 ถุง" ทั้งที่ซื้อมาครึ่งโล — ต้องเตือน
+    if (gram > 0) return { base: 0, packs: 0, per: 1, unitWarn: 'กก./กรัม' };
     if (counts && counts.length) {
       // นับเป็นชิ้น ๆ ตามที่พิมพ์มา ("เต้าหู้ชีส 2 แพ็ค" = 2)
       // แต่ถ้าชีตตั้งหน่วยไว้เป็น กก. แล้วพิมพ์มาเป็นห่อ ระบบไม่รู้ว่าห่อละกี่กรัม
@@ -1513,6 +1525,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         } else if (q && q.unitWarn) {
           unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
                          '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"');
+        } else if (!byName[hit.name]) {
+          // จับชื่อไม่ได้เลย ("ถุงช้อปปิ้ง") — มีดอกจันบอกอยู่แล้วในรายการซื้อของ
+          // ห้ามแตะ byName[hit.name] ตรงนี้ มันเป็น undefined แล้วพังทั้งข้อความ
+          // เคยพังจริงมาแล้ว: สต็อกลงไปครบ แต่บอทเงียบ แล้วเจ้าของส่งซ้ำ ยอดเลยเบิ้ล
         } else if (!q || !(q.base > 0)) {
           // เจอชื่อในชีตแล้ว แต่แปลงจำนวนไม่ได้ — ค่าใช้จ่ายลงแล้วแต่สต็อกไม่ขยับ
           // ถ้าไม่บอก ของจะหายไปเงียบ ๆ แล้วไม่มีใครรู้ว่ายอดขาดตรงไหน
