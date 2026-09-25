@@ -219,7 +219,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-25b';
+const PAGE_BUILD = '2026-09-25c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -639,7 +639,10 @@ function viewMove(v, kind) {
     ${locField}
 
     <label class="fld">สินค้า</label>
+    <input id="f-find" type="search" autocomplete="off" placeholder="พิมพ์ค้นหา เช่น หัวไหล่"
+           oninput="fillItems()" style="margin-bottom:6px">
     <select id="f-item" onchange="syncUnits(); recalc()"></select>
+    <div class="sub" id="f-find-n"></div>
 
     <div class="qtyrow" style="margin-top:12px">
       <div>
@@ -689,11 +692,39 @@ function fillItems() {
   const list = tab === 'in'    ? buyItems(loc)
              : tab === 'waste' ? wasteItems(loc)
              : packedItems(loc);
-  sel.innerHTML = list.length
-    ? list.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
-    : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
-  if (keep && list.some(i => i.name === keep)) sel.value = keep;
+  fillSelect('f-item', 'f-find', list);
   syncUnits();
+}
+
+/**
+ * ช่องค้นหาคู่กับช่องเลือก — ลิสต์ยาวเป็นร้อยรายการ เลื่อนหาไม่ไหว
+ * เทียบแบบตัดช่องว่างกับวงเล็บออก พิมพ์ "หัวไหล่สไลซ์" ก็เจอ
+ * "หัวไหล่หมูติดหนังสไลซ์" ไม่ต้องพิมพ์ให้ตรงเป๊ะ
+ * พิมพ์แล้วไม่เจอเลย เอาทั้งลิสต์กลับมา ดีกว่าปล่อยช่องว่างจนงง
+ */
+function matchFind(name, q) {
+  const k = x => String(x).toLowerCase().replace(/[\s()]/g, '');
+  return !q || k(name).indexOf(k(q)) !== -1;
+}
+function fillSelect(selId, findId, list) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const findEl = document.getElementById(findId);
+  const q = findEl ? findEl.value.trim() : '';
+  const keep = sel.value;
+  let use = list.filter(i => matchFind(i.name, q));
+  const miss = !!q && !use.length;
+  if (miss) use = list;
+  sel.innerHTML = use.length
+    ? use.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')
+    : '<option value="">— ไม่มีสินค้าสำหรับที่นี่ —</option>';
+  if (keep && use.some(i => i.name === keep)) sel.value = keep;
+  const hint = document.getElementById(findId + '-n');
+  if (hint) {
+    hint.textContent = !q ? ''
+      : miss ? 'ไม่เจอ "' + q + '" — แสดงทั้งหมด ' + use.length + ' รายการ'
+      : 'เจอ ' + use.length + ' รายการ';
+  }
 }
 
 function syncUnits() {
@@ -873,8 +904,10 @@ function viewPack(v) {
     <p class="lead">เอาของดิบมาเสียบไม้หรือจัดใส่ถุง ระบบตัดของดิบแล้วเพิ่มของที่แพ็คแล้วให้</p>
 
     <label class="fld">แพ็คเป็นอะไร</label>
-    <select id="k-out" onchange="syncPack()">${outs.map(i =>
-      `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}</select>
+    <input id="k-find" type="search" autocomplete="off" placeholder="พิมพ์ค้นหา เช่น หมูพัน"
+           oninput="fillPackOuts()" style="margin-bottom:6px">
+    <select id="k-out" onchange="syncPack()"></select>
+    <div class="sub" id="k-find-n"></div>
 
     <div class="row2">
       <div><label class="fld" id="k-lbl-packs">ได้กี่แพ็ค</label>
@@ -898,6 +931,11 @@ function viewPack(v) {
     ${outs.length ? '' : '<p class="note">— ยังไม่มีรายการให้แพ็ค —</p>'}
   </div>`;
 
+  fillPackOuts();
+}
+
+function fillPackOuts() {
+  fillSelect('k-out', 'k-find', packOutputs());
   syncPack();
 }
 
