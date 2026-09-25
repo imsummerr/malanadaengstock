@@ -1786,6 +1786,12 @@ function intakeAccounting_(what) {
  *    เคยพิมพ์ URL นี้ออกมาแล้วบอกว่า "เอาไปใส่ใน LINE" ซึ่งผิด แก้แล้ว
  */
 function intakeWebhookHint_() {
+  // ที่เจ้าของกรอกไว้เองเชื่อถือได้ที่สุด เอามาก่อนเสมอ
+  var saved = String(intakeProp_('INTAKE_WEBHOOK_URL', '')).trim();
+  if (/\/exec$/.test(saved)) {
+    return '✅ Webhook URL ที่ต้องเอาไปใส่ใน LINE Developers Console:\n  ' + saved;
+  }
+
   var url = '';
   try { url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
 
@@ -1793,11 +1799,15 @@ function intakeWebhookHint_() {
     return '✅ Webhook URL ที่ต้องเอาไปใส่ใน LINE Developers Console:\n  ' + url;
   }
 
+  // getUrl() คืน /dev ได้ทั้งที่มี deployment /exec อยู่จริง — รุ่นใหม่ของ
+  // Apps Script เป็นแบบนี้ประจำ เลยห้ามฟันธงว่า "ยังไม่ได้ deploy"
+  // ไม่งั้นจะไล่แก้ผิดจุด ทั้งที่ deployment ปกติดี
   var head = /\/dev$/.test(url)
-    ? '⚠️ ตัวนี้เป็น URL ทดสอบ (/dev) — เอาไปใส่ใน LINE ไม่ได้\n' +
-      '   ' + url + '\n' +
-      '   /dev ต้อง login ด้วยบัญชี Google ก่อน LINE เข้าไม่ถึง บอทจะเงียบสนิท\n\n'
-    : '⚠️ ยังไม่ได้ Deploy เป็นเว็บแอป — LINE ยิงเข้ามาไม่ได้\n\n';
+    ? 'ℹ️  ตรงนี้บอกไม่ได้ว่า URL จริงคืออะไร (ได้มาเป็น /dev)\n' +
+      '   ไม่ได้แปลว่ายังไม่ได้ deploy — เช็คของจริงที่ ping ข้างล่าง\n' +
+      '   เอา /exec ไปใส่ใน Script Property ชื่อ INTAKE_WEBHOOK_URL\n' +
+      '   แล้วรอบหน้าจะเช็คให้อัตโนมัติ ไม่ต้องเดา\n\n'
+    : 'ℹ️  ยังหา URL ของเว็บแอปไม่เจอจากในโค้ด\n\n';
 
   return head +
     'เอา URL ที่ลงท้าย /exec มาจากตรงนี้แทน:\n' +
@@ -1985,6 +1995,20 @@ function diagnoseLineIntake() {
     Logger.log('       บอทเก็บเฉพาะบรรทัดที่ขึ้นต้นด้วย "ค่า" / ชื่อตรงชีตสินค้า / บอกหน่วยเงินชัด');
   }
   Logger.log(info + 'อ่านรูป: โหมด "' + intakeImageMode_() + '"');
+
+  // 7) ของจริง — ยิงเข้า /exec แล้วดูว่า deployment นั้นมีไฟล์ครบไหม
+  //    เป็นข้อเดียวที่ตอบได้ว่า "ที่แก้โค้ดไปถึง LINE แล้วหรือยัง"
+  Logger.log('');
+  intakeCheckDeployed_();
+
+  // 8) LINE เคยยิงมาถึงจริงหรือยัง — แยก "ฝั่งเราพัง" ออกจาก "LINE ไม่ได้ส่ง"
+  var lastHit = intakeProp_('INTAKE_LAST_HIT', '');
+  Logger.log(lastHit
+    ? ok + 'LINE เคยยิงมาถึงสคริปต์แล้ว ล่าสุด ' + lastHit
+    : bad + 'LINE ยังไม่เคยยิงมาถึงสคริปต์นี้เลย\n' +
+      '       → Webhook URL ใน developers.line.biz ไม่ตรงกับ /exec ข้างบน\n' +
+      '       → หรือยังไม่ได้เปิด Use webhook\n' +
+      '       → หรือ manager.line.biz → การตั้งค่า → การตอบกลับ → Webhook ยังปิดอยู่');
 
   Logger.log('\n─────────────────────────────────');
   Logger.log('ถ้าทุกข้อผ่านแล้วบอทยังเงียบ:');
