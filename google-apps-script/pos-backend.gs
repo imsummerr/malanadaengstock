@@ -2038,6 +2038,12 @@ function handleStockWaste_(body) {
  * ยอดที่นับได้กลายเป็นยอดตั้งต้นใหม่เสมอ (ไม่มีตัวเลือกไม่ปรับ)
  * เพราะยอดขายไม่ได้ถูกหักออกจากสต็อกทีละบิล การนับจริงจึงเป็นอย่างเดียวที่ทำให้ยอดกลับมาตรง
  */
+/** ของที่ลงได้ที่สถานที่นี้ — ครัวกลางเห็นของดิบ สาขาเห็นของหน้าร้าน ช่องว่าง = ทุกที่ */
+function stockItemsAt_(loc) {
+  var want = String(loc || '').trim() === CENTRAL ? SCOPE_CENTRAL : SCOPE_SHOP;
+  return getStockItems_().filter(function (it) { return !it.scope || it.scope === want; });
+}
+
 function handleStockCount_(body) {
   var session = checkToken_(body.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -2048,7 +2054,9 @@ function handleStockCount_(body) {
   }
 
   var rows = body.rows || [];
-  var items = getStockItems_();
+  // นับเฉพาะของที่มีที่นี่ — ตรงกับที่หน้าเว็บโชว์ (itemsFor ใน stock.html)
+  // ถ้าเอาทุกรายการ สาขาจะโดนถามหาของดิบที่อยู่แค่ครัวกลาง แล้วบันทึกไม่ได้เลย
+  var items = stockItemsAt_(loc);
   if (!items.length) return { success: false, message: 'ยังไม่มีรายการสินค้าในชีต "' + SHEET_ITEMS + '"' };
 
   var got = {};
