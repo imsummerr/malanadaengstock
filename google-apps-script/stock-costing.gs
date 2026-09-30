@@ -42,20 +42,99 @@ function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENT
  * ใช้วิธีขีดเส้นแทน อยากย้อนดูของเก่าก็แค่เลื่อนวันกลับ
  * ตั้งด้วย setStartDate('2026-10-01') · ล้างเส้นด้วย clearStartDate()
  */
-function costStartDate_() {
-  var v = PropertiesService.getScriptProperties().getProperty('ACC_START_DATE');
+function costStartDate_(loc) {
+  var st = costStarts_();
+  if (!loc) return st.all;
+  return Math.max(st.all, st.byLoc[String(loc).trim()] || 0);
+}
+
+/**
+ * วันเริ่มนับทั้งหมด อ่านครั้งเดียวต่อรอบ
+ * ถูกเรียกทุกแถวของทุกชีต ถ้าไปอ่าน Script Property ทุกครั้งจะช้ามาก
+ *
+ *   all    ขีดเส้นทั้งระบบ (ACC_START_DATE)
+ *   byLoc  ขีดเส้นเฉพาะที่ (ACC_START_BY_LOC) — เช่นสาขาเริ่มเดือนใหม่
+ *          แต่ครัวกลางยังเดินต่อ ไม่ต้องทิ้งประวัติครัวกลางไปด้วย
+ */
+function costStarts_() {
+  return cached_('cost:starts', function () {
+    var props = PropertiesService.getScriptProperties();
+    var byLoc = {}, raw = {};
+    try { raw = JSON.parse(props.getProperty('ACC_START_BY_LOC') || '{}') || {}; } catch (e) {}
+    Object.keys(raw).forEach(function (k) { byLoc[String(k).trim()] = costYmdTime_(raw[k]); });
+    return { all: costYmdTime_(props.getProperty('ACC_START_DATE')), byLoc: byLoc, raw: raw };
+  });
+}
+function costYmdTime_(v) {
   v = String(v || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 0;
   var d = new Date(v + 'T00:00:00');
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
-/** แถวนี้เกิดก่อนวันเริ่มนับใหม่หรือเปล่า */
-function costBefore_(v) {
-  var start = costStartDate_();
+/** แถวนี้เกิดก่อนวันเริ่มนับของที่นั้นหรือเปล่า — ไม่บอกที่ = ดูเส้นทั้งระบบ */
+function costBefore_(v, loc) {
+  var start = costStartDate_(loc);
   if (!start) return false;
   var t = costTime_(v);
   return t > 0 && t < start;
+}
+
+/**
+ * เริ่มนับใหม่เฉพาะที่ เช่น setLocationStart('ตลาดทรัพย์พัฒนา', '2026-10-01')
+ *
+ * ของสาขานั้นก่อนวันนี้ (รับของ ขาย ค่าใช้จ่าย นับสต็อก จ่ายคืน) ไม่ถูกนำมาคิด
+ * ครัวกลางไม่โดนด้วย ของที่ครัวกลางส่งออกไปก่อนวันนี้ยังตัดจากครัวกลางตามปกติ
+ * แค่ไม่ไปเป็นหนี้ของสาขา เพราะสาขาเริ่มนับใหม่แล้ว
+ *
+ * แล้วให้สาขานับสต็อกในวันนั้นก่อนเปิดขาย = ยอดตั้งต้น
+ * ระบบคิดมูลค่าให้จากต้นทุนล่าสุดที่รู้ ไม่นับเป็นค่าใช้จ่ายวัตถุดิบ
+ */
+function setLocationStart(loc, ymd) {
+  loc = String(loc || '').trim();
+  var v = String(ymd || '').trim();
+  if (!loc || !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    Logger.log('ใช้แบบนี้: setLocationStart(\'ตลาดทรัพย์พัฒนา\', \'2026-10-01\')');
+    return;
+  }
+  var props = PropertiesService.getScriptProperties();
+  var raw = {};
+  try { raw = JSON.parse(props.getProperty('ACC_START_BY_LOC') || '{}') || {}; } catch (e) {}
+  raw[loc] = v;
+  props.setProperty('ACC_START_BY_LOC', JSON.stringify(raw));
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  Logger.log('ตั้งให้ ' + loc + ' เริ่มนับใหม่ตั้งแต่ ' + v + '\n' +
+             'ยอดขาย ค่าใช้จ่าย ของเข้า และการนับสต็อกของที่นี่ก่อนวันนั้น จะไม่ถูกนำมาคิด\n' +
+             'ครัวกลางเดินต่อตามปกติ · แถวเก่ายังอยู่ในชีตครบ ไม่ได้ลบ\n\n' +
+             'วันที่ ' + v + ' ให้นับสต็อกที่ ' + loc + ' ก่อนเปิดขาย = ยอดตั้งต้น\n' +
+             'แล้วนับอีกรอบหลังปิดร้าน = ได้ต้นทุนของที่ใช้ไปวันนั้น');
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+}
+
+/** ยกเลิกเส้นของที่นั้น กลับไปใช้เส้นทั้งระบบ */
+function clearLocationStart(loc) {
+  loc = String(loc || '').trim();
+  var props = PropertiesService.getScriptProperties();
+  var raw = {};
+  try { raw = JSON.parse(props.getProperty('ACC_START_BY_LOC') || '{}') || {}; } catch (e) {}
+  delete raw[loc];
+  props.setProperty('ACC_START_BY_LOC', JSON.stringify(raw));
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  Logger.log('ยกเลิกวันเริ่มนับของ ' + loc + ' แล้ว');
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+}
+
+/** เมนู — ถามชื่อสาขากับวันที่ แล้วตั้งให้ */
+function promptLocationStart() {
+  var ui = SpreadsheetApp.getUi();
+  var a = ui.prompt('เริ่มนับใหม่เฉพาะสาขา',
+    'ชื่อสาขา (ตรงกับที่ใช้ในระบบ)', ui.ButtonSet.OK_CANCEL);
+  if (a.getSelectedButton() !== ui.Button.OK) return;
+  var b = ui.prompt('เริ่มนับใหม่เฉพาะสาขา',
+    'วันที่เริ่ม เป็น yyyy-MM-dd เช่น 2026-10-01', ui.ButtonSet.OK_CANCEL);
+  if (b.getSelectedButton() !== ui.Button.OK) return;
+  setLocationStart(a.getResponseText(), b.getResponseText());
+  ui.alert('ตั้งแล้ว — วันนั้นให้นับสต็อกก่อนเปิดขายเป็นยอดตั้งต้น');
 }
 
 /** ขีดเส้นเริ่มนับใหม่ เช่น setStartDate('2026-10-01') */
@@ -66,6 +145,7 @@ function setStartDate(ymd) {
     return;
   }
   PropertiesService.getScriptProperties().setProperty('ACC_START_DATE', v);
+  if (typeof cacheClear_ === 'function') cacheClear_();
   Logger.log('ตั้งวันเริ่มนับใหม่เป็น ' + v + '\n' +
              'ยอดขาย ค่าใช้จ่าย และของที่เคลื่อนไหวก่อนวันนี้ จะไม่ถูกนำมาคิดอีก\n' +
              'แถวเก่ายังอยู่ในชีตครบ ไม่ได้ลบ — เลื่อนวันกลับเมื่อไหร่ก็เห็นเหมือนเดิม');
@@ -75,6 +155,7 @@ function setStartDate(ymd) {
 /** ยกเลิกเส้น กลับไปนับทุกอย่างตั้งแต่แถวแรก */
 function clearStartDate() {
   PropertiesService.getScriptProperties().deleteProperty('ACC_START_DATE');
+  if (typeof cacheClear_ === 'function') cacheClear_();
   Logger.log('ยกเลิกวันเริ่มนับใหม่แล้ว — กลับไปนับทุกอย่างตั้งแต่แถวแรก');
   if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
 }
@@ -82,7 +163,10 @@ function clearStartDate() {
 /** ดูว่าตอนนี้ขีดเส้นไว้วันไหน */
 function showStartDate() {
   var v = PropertiesService.getScriptProperties().getProperty('ACC_START_DATE');
-  Logger.log(v ? 'นับตั้งแต่ ' + v + ' เป็นต้นไป' : 'ยังไม่ได้ขีดเส้น — นับทุกอย่างตั้งแต่แถวแรก');
+  Logger.log(v ? 'ทั้งระบบ: นับตั้งแต่ ' + v + ' เป็นต้นไป'
+               : 'ทั้งระบบ: ยังไม่ได้ขีดเส้น — นับทุกอย่างตั้งแต่แถวแรก');
+  var raw = costStarts_().raw;
+  Object.keys(raw).forEach(function (k) { Logger.log(k + ': นับตั้งแต่ ' + raw[k]); });
 }
 function costTz_()      { return (typeof TZ === 'string' && TZ) ? TZ : 'Asia/Bangkok'; }
 
@@ -132,7 +216,7 @@ function costPaidByMsg_() {
  * แล้วปิดท้ายด้วยการนับ เพราะการนับคือ "สรุปว่าตกลงเหลือเท่าไหร่"
  * ถ้าเอาการนับไปไว้ก่อนของที่เข้าเวลาเดียวกัน ของที่เพิ่งเข้าจะถูกนับทับหาย
  */
-function costEvents_() {
+function costEvents_(all) {
   var ev = [];
   var central = costCentral_();
   var paid = costPaidByMsg_();
@@ -214,9 +298,21 @@ function costEvents_() {
     });
   }
 
-  // ตัดของก่อนวันเริ่มนับใหม่ออกตั้งแต่ต้นทาง จะได้ไม่ต้องไปกรองซ้ำทุกที่
-  var start = costStartDate_();
-  if (start) ev = ev.filter(function (e) { return !(e.t > 0 && e.t < start); });
+  // ตัดของก่อนวันเริ่มนับออกตั้งแต่ต้นทาง — แต่ละที่มีเส้นของตัวเองได้
+  // all = ขอทุกแถวไม่ตัด ใช้ตอนหาราคาทุนล่าสุด (ของเก่าก็บอกราคาได้)
+  if (!all) {
+    ev = ev.filter(function (e) {
+      if (!(e.t > 0)) return true;
+      if (e.type === 'ส่งเข้าร้าน') {
+        // ส่งของมีสองฝั่ง ครัวกลางยังไม่เริ่ม = ทิ้งทั้งคู่
+        if (e.t < costStartDate_(central)) return false;
+        // ครัวกลางเริ่มแล้วแต่สาขายังไม่เริ่ม = ตัดออกจากครัวกลาง แต่ไม่ไปเป็นของสาขา
+        if (e.t < costStartDate_(e.loc)) e.preStart = true;
+        return true;
+      }
+      return !(e.t < costStartDate_(e.loc));
+    });
+  }
   ev.sort(function (a, b) { return (a.t - b.t) || (a.step - b.step); });
   return ev;
 }
@@ -236,10 +332,13 @@ function costReplay_() {
   return cached_('cost:replay', costReplayRaw_);
 }
 
-function costReplayRaw_() {
+function costReplayRaw_(all) {
   var central = costCentral_();
   var lay = {}, used = {}, sent = {}, moved = {}, warn = [], log = [];
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
+  // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
+  // ไม่งั้นนับวันแรกแล้วต้นทุนเป็น 0 กำไรวันนั้นจะดูดีเกินจริงทั้งก้อน
+  var book = all ? {} : costPriceBook_();
 
   function box(loc, item) {
     if (!lay[loc]) lay[loc] = {};
@@ -290,10 +389,11 @@ function costReplayRaw_() {
              short: costQty_(qty), parts: parts };
   }
   function guessCost(loc, item) {
-    return lastCost[loc + '|' + item] || lastCost[central + '|' + item] || 0;
+    return lastCost[loc + '|' + item] || lastCost[central + '|' + item] ||
+           book[loc + '|' + item] || book[central + '|' + item] || 0;
   }
 
-  costEvents_().forEach(function (e) {
+  costEvents_(all).forEach(function (e) {
     if (e.type === 'ซื้อเข้า') {
       // ซื้อผ่านไลน์จะมีราคามาด้วย · กรอกในเว็บไม่มี ต้องเดาจากราคาล่าสุด
       var unit = e.paid > 0 ? e.paid / e.qty : guessCost(e.loc, e.item);
@@ -315,6 +415,11 @@ function costReplayRaw_() {
         }
       });
       if (e.qty > 0) put(e.loc, e.item, e.qty, sum / e.qty);
+
+    } else if (e.type === 'ส่งเข้าร้าน' && e.preStart) {
+      // ส่งไปก่อนสาขาเริ่มนับใหม่ — ออกจากครัวกลางจริง แต่ไม่ใช่หนี้รอบนี้ของสาขา
+      var t0 = take(central, e.item, e.qty);
+      moved[e.item] = costBaht_((moved[e.item] || 0) + t0.value);
 
     } else if (e.type === 'ส่งเข้าร้าน') {
       // กินชั้นครัวกลางตามลำดับที่ซื้อมา แล้วยกไปตั้งที่สาขาในราคาเดิมเป๊ะ
@@ -351,8 +456,14 @@ function costReplayRaw_() {
         var t4 = take(e.loc, e.item, diff);
         noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
       } else if (diff < -0.00001) {
+        // นับได้มากกว่าในระบบ — รวมถึงการนับวันแรกหลังเริ่มนับใหม่ (ยอดตั้งต้น)
+        // ไม่ใช่ค่าใช้จ่าย ใส่มูลค่าตามต้นทุนล่าสุดที่รู้
         var add = -diff;
         var c = guessCost(e.loc, e.item);
+        if (!(c > 0) && !all) {
+          warn.push({ when: e.t, loc: e.loc, item: e.item,
+                      msg: 'นับได้เกินระบบแต่ไม่รู้ราคาทุน — คิดเป็น 0' });
+        }
         put(e.loc, e.item, add, c);
         noteItem(e.loc, e.item, 'นับเกิน', add, costBaht_(add * c), e.t);
       }
@@ -360,7 +471,13 @@ function costReplayRaw_() {
   });
 
   log.sort(function (a, b) { return a.t - b.t; });
-  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn, log: log };
+  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn, log: log,
+           lastCost: lastCost };
+}
+
+/** ราคาทุนล่าสุดของทุกอย่าง จากประวัติทั้งหมด ไม่สนเส้นเริ่มนับ */
+function costPriceBook_() {
+  return cached_('cost:prices', function () { return costReplayRaw_(true).lastCost; });
 }
 
 /* ═══════════════════ เงินที่สาขาจ่ายคืนแล้ว ═══════════════════ */
@@ -372,8 +489,8 @@ function costPaidBack_() {
   if (!sh || sh.getLastRow() < 2) return out;
   var map = ensureCols_(sh, COST_PAY_COLS);
   sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
-    if (costBefore_(r[map['วันที่']])) return;
     var loc = String(r[map['สาขา']] || '').trim();
+    if (costBefore_(r[map['วันที่']], loc)) return;
     var baht = Number(r[map['จำนวนเงิน']]) || 0;
     if (!loc || !baht) return;
     out[loc] = costBaht_((out[loc] || 0) + baht);
@@ -401,7 +518,7 @@ function costIncome_() {
     var iLoc = h.indexOf('สาขา'), iNet = h.indexOf('ยอดสุทธิ'), iDate = h.indexOf('วันที่');
     if (iLoc !== -1 && iNet !== -1) {
       for (var r = 1; r < v.length; r++) {
-        if (iDate !== -1 && costBefore_(v[r][iDate])) continue;
+        if (iDate !== -1 && costBefore_(v[r][iDate], v[r][iLoc])) continue;
         add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
       }
     }
@@ -422,7 +539,7 @@ function costIncome_() {
     if (jLoc !== -1 && jData !== -1) {
       var jDate = hd.indexOf('วันที่');
       for (var d = 1; d < vd.length; d++) {
-        if (jDate !== -1 && costBefore_(vd[d][jDate])) continue;
+        if (jDate !== -1 && costBefore_(vd[d][jDate], vd[d][jLoc])) continue;
         // ยอดที่แอปแจ้งแม่นกว่าการเดาจากรายการราคา เพราะราคาบนแอปตั้งสูงกว่าหน้าร้าน
         var amt = jAmt === -1 ? 0 : Number(vd[d][jAmt]) || 0;
         if (!amt) {
@@ -464,7 +581,7 @@ function costOutgo_() {
   var iDate = h.indexOf('วันที่');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
-    if (iDate !== -1 && costBefore_(v[r][iDate])) continue;
+    if (iDate !== -1 && costBefore_(v[r][iDate], v[r][iLoc])) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
@@ -716,6 +833,7 @@ function onOpen() {
       .addSeparator()
       .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')
       .addItem('⚠️ เริ่มใหม่ทั้งระบบ (ของ + เงิน)', 'resetEverything')
+      .addItem('🗓️ เริ่มนับใหม่เฉพาะสาขา (ตั้งยอดตั้งต้น)', 'promptLocationStart')
       .addItem('ดูวันเริ่มนับ', 'showStartDate')
       .addToUi();
   } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
