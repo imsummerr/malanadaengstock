@@ -124,6 +124,23 @@ function clearLocationStart(loc) {
   if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
 }
 
+/**
+ * เมนู — เริ่มนับใหม่ทุกที่พร้อมกัน (ครัวกลาง + ทุกสาขา) ตั้งแต่วันที่ที่ใส่
+ * ไม่ล้างอะไรทิ้ง แค่ขีดเส้น — วันนั้นทุกที่นับสต็อกก่อนเริ่มงาน = ยอดตั้งต้น
+ * มูลค่ายอดตั้งต้นคิดจากราคาทุนล่าสุดที่เคยซื้อ (ดูประวัติก่อนเส้นได้)
+ */
+function promptStartDate() {
+  var ui = SpreadsheetApp.getUi();
+  var a = ui.prompt('เริ่มนับใหม่ทุกที่พร้อมกัน',
+    'วันที่เริ่ม เป็น yyyy-MM-dd เช่น 2026-10-01', ui.ButtonSet.OK_CANCEL);
+  if (a.getSelectedButton() !== ui.Button.OK) return;
+  var v = String(a.getResponseText() || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { ui.alert('รูปแบบวันไม่ถูก ต้องเป็น 2026-10-01'); return; }
+  setStartDate(v);
+  ui.alert('ตั้งแล้ว — วันที่ ' + v + ' ให้ครัวกลางและทุกสาขานับสต็อกก่อนเริ่มงาน\n' +
+           'แล้วนับอีกรอบตอนปิดร้าน');
+}
+
 /** เมนู — ถามชื่อสาขากับวันที่ แล้วตั้งให้ */
 function promptLocationStart() {
   var ui = SpreadsheetApp.getUi();
@@ -841,6 +858,7 @@ function onOpen() {
       .addSeparator()
       .addItem('⚠️ ล้างสต็อก — เริ่มระบบใหม่เท่านั้น', 'resetStockToZero')
       .addItem('⚠️ เริ่มใหม่ทั้งระบบ (ของ + เงิน)', 'resetEverything')
+      .addItem('🗓️ เริ่มนับใหม่ทุกที่พร้อมกัน (ตั้งยอดตั้งต้น)', 'promptStartDate')
       .addItem('🗓️ เริ่มนับใหม่เฉพาะสาขา (ตั้งยอดตั้งต้น)', 'promptLocationStart')
       .addItem('ดูวันเริ่มนับ', 'showStartDate')
       .addToUi();
