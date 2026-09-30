@@ -1170,6 +1170,17 @@ var ITEM_COLS = ['สินค้า', 'หน่วยย่อย', 'หน่
 //   วัตถุดิบ = ซื้อมาเป็นโล ยังแพ็คไม่ได้ มีเฉพาะครัวกลาง
 //   ของแพ็ค = แพ็คเสร็จแล้ว นับเป็นแพ็ค ส่งร้านได้
 //   ของใช้   = ช้อน ถุง ผงปรุง ไม่ได้ขายเป็นชิ้น
+/**
+ * ของที่นับเป็น "ระดับ" แทนตัวเลข — ต้มอยู่ในหม้อ/เปิดถุงใช้ไปแล้ว นับเป็นกี่โลไม่ได้
+ * นับสต็อกให้เลือกว่าเหลือแค่ไหน เอาไว้บอกว่าต้องเติมหรือยัง
+ * ยอดตัวเลขเลยไม่ถูกรีเซ็ตจากการนับ ต้นทุนคิดตอนของเข้าสาขาเลย (ใช้ไปทันที)
+ */
+var LEVEL_ITEMS = ['กระดูกหมู', 'น้ำดำ'];
+var LEVELS = ['เหลือน้อย ต้องเติม', 'กลาง ต้องเติม', 'มาก ไม่ต้องเติม'];
+var LEVEL_OK = 'มาก ไม่ต้องเติม';
+var KIND_LEVEL_COUNT = 'เช็คระดับ';
+function isLevelItem_(name) { return LEVEL_ITEMS.indexOf(String(name || '').trim()) !== -1; }
+
 var KIND_RAW    = 'วัตถุดิบ';
 var KIND_PACKED = 'ของแพ็ค';
 var KIND_SUPPLY = 'ของใช้';
@@ -1452,7 +1463,8 @@ function getStockItemsRaw_() {
       raws:     rawNames_(v[i][map['วัตถุดิบ']]),
       autoRaws: autoRaws_(v[i][map['วัตถุดิบ']]),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
-      scope:    String(v[i][map['ใช้ที่']] || '').trim()
+      scope:    String(v[i][map['ใช้ที่']] || '').trim(),
+      level:    isLevelItem_(name)
     });
   }
   return out;
@@ -1560,6 +1572,8 @@ function stockBalancesRaw_() {
   //    (ชื่อสินค้ามีเว้นวรรคได้ ถ้าต่อ string แล้ว split จะเพี้ยน)
   var lastCount = {};
   readMoves_(SHEET_COUNT).forEach(function (m) {
+    // เช็คระดับไม่มีตัวเลข ถ้าเอามาเป็นจุดตั้งต้น ยอดจะกลายเป็น 0 ทุกครั้งที่นับ
+    if (m.kind === KIND_LEVEL_COUNT) return;
     if (!lastCount[m.loc]) lastCount[m.loc] = {};
     var t = timeOf_(m.when);
     var cur = lastCount[m.loc][m.item];
@@ -2038,6 +2052,26 @@ function handleStockWaste_(body) {
  * ยอดที่นับได้กลายเป็นยอดตั้งต้นใหม่เสมอ (ไม่มีตัวเลือกไม่ปรับ)
  * เพราะยอดขายไม่ได้ถูกหักออกจากสต็อกทีละบิล การนับจริงจึงเป็นอย่างเดียวที่ทำให้ยอดกลับมาตรง
  */
+/** ระดับล่าสุดที่นับไว้ ของที่นับเป็นระดับ — loc → item → { level, t } */
+function latestLevels_() {
+  var sh = sheet_(SHEET_COUNT);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  var map = ensureCols_(sh, MOVE_COLS);
+  sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
+    if (String(r[map['ประเภท']] || '').trim() !== KIND_LEVEL_COUNT) return;
+    var loc = String(r[map['สาขา']] || '').trim();
+    var item = String(r[map['รายการ']] || '').trim();
+    var t = timeOf_(r[map['วันที่เวลา']]);
+    if (typeof costBefore_ === 'function' && costBefore_(r[map['วันที่เวลา']], loc)) return;
+    if (!out[loc]) out[loc] = {};
+    if (!out[loc][item] || t >= out[loc][item].t) {
+      out[loc][item] = { level: String(r[map['หมายเหตุ']] || '').trim(), t: t };
+    }
+  });
+  return out;
+}
+
 /** ของที่ลงได้ที่สถานที่นี้ — ครัวกลางเห็นของดิบ สาขาเห็นของหน้าร้าน ช่องว่าง = ทุกที่ */
 function stockItemsAt_(loc) {
   var want = String(loc || '').trim() === CENTRAL ? SCOPE_CENTRAL : SCOPE_SHOP;
@@ -2064,6 +2098,7 @@ function handleStockCount_(body) {
   var missing = items.filter(function (it) {
     var r = got[it.name];
     if (!r) return true;
+    if (it.level) return LEVELS.indexOf(String(r.level || '').trim()) === -1;
     var blank = function (v) { return v === '' || v == null; };
     return blank(r.packs) && blank(r.rem) && blank(r.pieces);
   }).map(function (it) { return it.name; });
@@ -2080,9 +2115,21 @@ function handleStockCount_(body) {
   var now = new Date();
   var diffs = [], out = [];
   var counts = [];   // ส่งต่อให้ stock-audit.gs เทียบของหายกับเงิน
+  var refill = [];   // ของที่นับเป็นระดับ แล้วบอกว่าต้องเติม
 
   items.forEach(function (it) {
     var r = got[it.name];
+    if (it.level) {
+      // เก็บระดับไว้ในหมายเหตุ ไม่มีตัวเลข — ยอดคงเหลือกับต้นทุนไม่เอาแถวนี้ไปคิด
+      var lv = String(r.level || '').trim();
+      out.push({
+        'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name,
+        'รายการ': it.name, 'จำนวน': '', 'หน่วย': '', 'ประเภท': KIND_LEVEL_COUNT,
+        'หมายเหตุ': lv
+      });
+      if (lv !== LEVEL_OK) refill.push('• ' + it.name + ' — ' + lv);
+      return;
+    }
     var counted = toBase_(r.packs, r.rem, r.pieces, it);
     var sys = Number(before[it.name]) || 0;
     var diff = round_(counted - sys);
@@ -2104,7 +2151,8 @@ function handleStockCount_(body) {
             'นับครบ ' + items.length + ' รายการ โดย ' + session.name + '\n' +
             Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm') + '\n\n' +
             (diffs.length ? 'ที่ไม่ตรงกับระบบ ' + diffs.length + ' รายการ\n' + diffs.join('\n')
-                          : 'ตรงกับระบบทุกรายการ 🎉');
+                          : 'ตรงกับระบบทุกรายการ 🎉') +
+            (refill.length ? '\n\n🔔 ต้องเติม\n' + refill.join('\n') : '');
   var line = stockNotify_(loc, msg);
 
   // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
@@ -2119,7 +2167,7 @@ function handleStockCount_(body) {
   var balNow = {};
   counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
   checkLowStock_(items.map(function (it) { return it.name; }), loc, balNow);
-  return { success: true, counted: items.length, diffs: diffs.length,
+  return { success: true, counted: items.length, diffs: diffs.length, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
            shrink: shrink };
 }
@@ -2191,6 +2239,7 @@ function handleStockBootstrap_(p) {
   // ยอดคงเหลือเป็นข้อมูลของเจ้าของร้าน ไม่ส่งให้พนักงานเลย
   // ซ่อนแค่ฝั่งหน้าเว็บไม่พอ เปิด Network ในเบราว์เซอร์ก็อ่านคำตอบได้
   var last = owner ? lastCountInfo_() : {};
+  var lv = owner ? latestLevels_() : {};
   var stock = !owner ? [] : locations.filter(function (loc) {
     return stockCanUseLoc_(session, loc);
   }).map(function (loc) {
@@ -2199,7 +2248,13 @@ function handleStockBootstrap_(p) {
     return {
       name: loc,
       counted: lc ? { when: Utilities.formatDate(new Date(lc.t), TZ, 'd/M/yyyy HH:mm'), n: lc.n } : null,
-      rows: items.filter(function (it) { return m[it.name]; }).map(function (it) {
+      rows: items.filter(function (it) {
+        return it.level ? !!(lv[loc] && lv[loc][it.name]) : m[it.name];
+      }).map(function (it) {
+        if (it.level) {
+          var x = lv[loc][it.name];
+          return { item: it.name, base: 0, text: x.level, low: x.level !== LEVEL_OK, level: true };
+        }
         var have = Number(m[it.name]) || 0;
         var lowPacks = lowPacksFor_(it, loc);
         var limit = lowPacks > 0 ? lowPacks * it.perPack * perStickOf_(it) : 0;
@@ -2216,6 +2271,7 @@ function handleStockBootstrap_(p) {
     role: session.role, stockRole: stockRoleOf_(session),
     name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock,
+    levels: LEVELS,
     // กลุ่มวัตถุดิบ — หน้าเว็บเอาไปทำช่องเลือกว่าจะใช้หมูอะไรพัน
     rawGroups: (function () {
       var g = {};

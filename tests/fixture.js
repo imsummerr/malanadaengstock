@@ -29,6 +29,7 @@ function fresh() {
   // ล็อกอินเป็นเจ้าของไว้ก่อน แต่ละเทสต์เปลี่ยนเองได้
   g.checkToken_ = () => ({ role: 'owner', branch: '', branches: [], name: 'เจ้าของ' });
   g.__env.PROPS.LINE_GROUPS = JSON.stringify({ 'ครัวกลาง': 'Ccentral', [SHOP]: 'Cshop' });
+  g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'test-token';
   return g;
 }
 

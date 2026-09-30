@@ -8,23 +8,64 @@ function webList(g, loc) {
   const want = loc === g.CENTRAL ? g.SCOPE_CENTRAL : g.SCOPE_SHOP;
   return g.getStockItems_().filter(i => !i.scope || i.scope === want);
 }
+function rowsFor(g, loc, levels) {
+  return webList(g, loc).map(i => i.level
+    ? { item: i.name, level: (levels && levels[i.name]) || 'มาก ไม่ต้องเติม' }
+    : { item: i.name, packs: '', rem: 0, pieces: '' });
+}
 
 section('สาขานับครบตามที่หน้าเว็บโชว์ ต้องบันทึกได้');
 let g = fresh();
-const shopRows = webList(g, SHOP).map(i => ({ item: i.name, packs: '', rem: 0, pieces: '' }));
-let r = g.handleStockCount_({ token: 't', location: SHOP, rows: shopRows });
+let r = g.handleStockCount_({ token: 't', location: SHOP, rows: rowsFor(g, SHOP) });
 eq('บันทึกได้', r.success, true);
 eq('ไม่ถามหาของดิบที่อยู่แค่ครัวกลาง', /ขาด/.test(r.message || ''), false);
-eq('นับครบตามรายการของสาขา', r.counted, shopRows.length);
+eq('นับครบตามรายการของสาขา', r.counted, webList(g, SHOP).length);
 
 section('ครัวกลางนับครบ ต้องบันทึกได้');
 g = fresh();
-const cRows = webList(g, g.CENTRAL).map(i => ({ item: i.name, packs: '', rem: 0, pieces: '' }));
-r = g.handleStockCount_({ token: 't', location: g.CENTRAL, rows: cRows });
+r = g.handleStockCount_({ token: 't', location: g.CENTRAL, rows: rowsFor(g, g.CENTRAL) });
 eq('บันทึกได้', r.success, true);
 
 section('ยังนับไม่ครบ ต้องไม่ให้บันทึก');
-r = g.handleStockCount_({ token: 't', location: SHOP, rows: shopRows.slice(1) });
+r = g.handleStockCount_({ token: 't', location: SHOP, rows: rowsFor(g, SHOP).slice(1) });
 eq('ไม่ให้บันทึก', r.success, false);
+
+section('กระดูกหมู น้ำดำ นับเป็นระดับ');
+g = fresh();
+eq('กระดูกหมูเป็นของนับระดับ', g.findStockItem_('กระดูกหมู').level, true);
+eq('น้ำดำเป็นของนับระดับ', g.findStockItem_('น้ำดำ').level, true);
+eq('ดอลลี่ไม่ใช่', g.findStockItem_('ดอลลี่').level, false);
+// ซื้อน้ำดำ 9 ถุงเข้าครัวกลาง ส่งไปสาขาหมด แล้วนับเป็นระดับ — ยอดตัวเลขต้องไม่ถูกล้าง
+push(g, g.INTAKE_SHEET, { 'รายการ': 'น้ำดำ', 'จำนวนเงิน': 677.7, 'messageId': 'nd' });
+push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(19), 'สาขา': g.CENTRAL, 'รายการ': 'น้ำดำ',
+  'จำนวน': 9, 'ประเภท': 'ของเข้าครัวกลาง', 'messageId': 'nd' });
+push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(20), 'สาขา': SHOP, 'รายการ': 'น้ำดำ',
+  'จำนวน': 9, 'ประเภท': 'ของเข้าร้าน' });
+const noLevel = rowsFor(g, SHOP).map(x => x.item === 'น้ำดำ' ? { item: 'น้ำดำ', packs: '', rem: 3 } : x);
+r = g.handleStockCount_({ token: 't', location: SHOP, rows: noLevel });
+eq('ไม่เลือกระดับ = นับไม่ครบ', r.success, false);
+r = g.handleStockCount_({ token: 't', location: SHOP,
+  rows: rowsFor(g, SHOP, { 'น้ำดำ': 'เหลือน้อย ต้องเติม', 'กระดูกหมู': 'กลาง ต้องเติม' }) });
+eq('เลือกระดับแล้วบันทึกได้', r.success, true);
+eq('บอกว่าต้องเติม 2 อย่าง', r.refill, 2);
+const sentText = g.__env.SENT.map(x => (x.messages || []).map(m => m.text).join('\n')).join('\n');
+eq('LINE บอกรายการที่ต้องเติม', /🔔 ต้องเติม[\s\S]*น้ำดำ — เหลือน้อย ต้องเติม/.test(sentText), true);
+g.cacheClear_();
+eq('ยอดตัวเลขน้ำดำไม่ถูกล้างเป็น 0', g.stockBalances_()[SHOP]['น้ำดำ'], 9);
+const lv = g.latestLevels_()[SHOP];
+eq('จำระดับล่าสุดไว้', lv['น้ำดำ'].level, 'เหลือน้อย ต้องเติม');
+g.checkToken_ = () => ({ role: 'owner', branch: '', branches: [], name: 'เจ้าของ' });
+const boot = g.handleStockBootstrap_({ token: 't' }).data;
+const shopRows = boot.stock.find(x => x.name === SHOP).rows;
+const nd = shopRows.find(x => x.item === 'น้ำดำ');
+eq('หน้าสต็อกโชว์ระดับแทนตัวเลข', nd && nd.text, 'เหลือน้อย ต้องเติม');
+eq('เหลือน้อยขึ้นเป็นเตือน', nd && nd.low, true);
+eq('ส่งตัวเลือกระดับไปให้หน้าเว็บ', boot.levels, ['เหลือน้อย ต้องเติม', 'กลาง ต้องเติม', 'มาก ไม่ต้องเติม']);
+const cs = g.costSummary_();
+eq('ระดับไม่ไปรีเซ็ตต้นทุน ไม่มีคำเตือน', cs.warn.filter(w => w.item === 'น้ำดำ').length, 0);
+// ของที่นับเป็นระดับ นับเป็นตัวเลขไม่ได้ ต้นทุนเลยลงเป็นใช้ไปตั้งแต่ถึงสาขา
+eq('น้ำดำถึงสาขา = ใช้ไปทันที 677.7', cs.used[SHOP]['ใช้ไป'], 677.7);
+eq('ไม่ค้างเป็นสต็อกที่สาขา', (cs.stock[SHOP] || { total: 0 }).total, 0);
+eq('แต่ยังเป็นหนี้ตามปกติ', cs.owed[SHOP]['ค้างชำระ'], 677.7);
 
 process.exit(done().fail ? 1 : 0);

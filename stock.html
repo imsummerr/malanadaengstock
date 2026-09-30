@@ -144,6 +144,10 @@
     .counthead { display: grid; grid-template-columns: 1fr 72px 72px 72px; gap: 6px;
                  font-size: 11.5px; color: var(--muted); font-weight: 700; padding-bottom: 6px; }
     .counthead span:not(:first-child) { text-align: center; }
+    /* สาขานับแค่แพ็คกับไม้ ไม่มีช่องชิ้น */
+    .nopc .countrow, .nopc .counthead { grid-template-columns: 1fr 80px 80px; }
+    /* ของที่นับเป็นระดับ (กระดูกหมู น้ำดำ) — ช่องเลือกกินทุกคอลัมน์ตัวเลข */
+    .countrow .lvsel { grid-column: 2 / -1; padding: 9px 10px; font-size: 14px; }
     .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; }
     .progress > div { height: 100%; background: var(--green); width: 0; transition: width .2s; }
 
@@ -219,7 +223,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-25d';
+const PAGE_BUILD = '2026-09-30a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -384,6 +388,12 @@ const buyItems = loc => itemsFor(loc).filter(i => !isPacked(i));
 // ของเสียตัดวัตถุดิบได้ด้วย — ของแช่แข็งละลายแล้วเหลือน้อยกว่าที่ซื้อ
 // ส่วนที่หายไปคือน้ำแข็ง ต้องตัดออก ไม่งั้นยอดครัวกลางบวมค้างไว้ตลอด
 const wasteItems  = loc => itemsFor(loc);
+
+/**
+ * ช่อง "ชิ้น" มีเฉพาะครัวกลาง — สาขานับแค่แพ็คกับไม้
+ * ลูกชิ้นที่หลุดจากไม้ที่สาขาไม่ได้นับทีละลูก ปล่อยช่องไว้ก็มีแต่จะกรอกผิด
+ */
+const piecesAt = loc => loc === D.central;
 
 /** สินค้าที่ลงได้ที่สถานที่นี้ */
 function itemsFor(loc) {
@@ -735,9 +745,13 @@ function syncUnits() {
   // ลูกชิ้นเสียบไม้ละหลายชิ้น ต้องมีช่องกรอกลูกที่ยังไม่ได้เสียบ
   const wp = document.getElementById('wrap-pieces');
   if (wp) {
-    wp.classList.toggle('hidden', !hasPieces(it));
-    if (!hasPieces(it)) document.getElementById('f-pieces').value = '';
-    else document.getElementById('lbl-pieces').textContent =
+    const locEl = document.getElementById('f-loc');
+    const loc = locEl ? locEl.value : D.central;
+    // ของเสียที่สาขานับแค่แพ็คกับไม้ เหมือนตอนเช็คสต็อก
+    const showPc = hasPieces(it) && !(tab === 'waste' && !piecesAt(loc));
+    wp.classList.toggle('hidden', !showPc);
+    if (!showPc) document.getElementById('f-pieces').value = '';
+    if (showPc) document.getElementById('lbl-pieces').textContent =
            'เศษ (ชิ้น) — ' + perStickOf(it) + ' ชิ้น = 1 ' + it.subUnit;
   }
   const pk = document.getElementById('f-packs');
@@ -1159,8 +1173,8 @@ function viewCount(v) {
     <p class="note" id="c-prog">กำลังโหลดรายการ…</p>
   </div>
 
-  <div class="card">
-    <div class="counthead"><span>สินค้า</span><span>แพ็ค</span><span>ไม้</span><span>ชิ้น</span></div>
+  <div class="card" id="c-card">
+    <div class="counthead" id="c-head"></div>
     <div id="c-rows"></div>
     <button class="key" id="c-zero" onclick="fillRestZero()">ใส่ 0 ให้ที่ยังไม่ได้นับ</button>
     <button class="key btn-red submit" id="c-btn" onclick="submitCount()" disabled>บันทึกผลนับ</button>
@@ -1192,8 +1206,20 @@ function fillCountRows() {
   const box = document.getElementById('c-rows');
   if (!box) return;
   const list = countItems();
+  const locEl = document.getElementById('c-loc');
+  const pc = piecesAt(locEl ? locEl.value : D.central);
+  document.getElementById('c-head').innerHTML =
+    '<span>สินค้า</span><span>แพ็ค</span><span>ไม้</span>' + (pc ? '<span>ชิ้น</span>' : '');
+  document.getElementById('c-card').classList.toggle('nopc', !pc);
 
-  box.innerHTML = list.length ? list.map((it, i) => `
+  box.innerHTML = list.length ? list.map((it, i) => it.level ? `
+    <div class="countrow" id="cr-${i}">
+      <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
+      <select id="clv-${i}" class="lvsel" onchange="countChanged(${i})">
+        <option value="">— เหลือแค่ไหน —</option>
+        ${(D.levels || []).map(l => `<option>${esc(l)}</option>`).join('')}
+      </select>
+    </div>` : `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
@@ -1201,9 +1227,9 @@ function fillCountRows() {
              ${it.perPack > 1 ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">
       <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
              placeholder="${esc(it.subUnit)}" oninput="countChanged(${i})" onblur="carryCount(${i})">
-      <input id="cpc-${i}" type="number" inputmode="numeric" min="0" step="1"
+      ${pc ? `<input id="cpc-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${hasPieces(it) ? 'ชิ้น' : '–'}"
-             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">
+             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">` : ''}
     </div>`).join('')
     : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
@@ -1211,8 +1237,9 @@ function fillCountRows() {
     row: document.getElementById('cr-' + i),
     p:   document.getElementById('cp-' + i),
     r:   document.getElementById('cr2-' + i),
-    c:   document.getElementById('cpc-' + i)
-  })).filter(x => x.row && x.p && x.r);
+    c:   document.getElementById('cpc-' + i),
+    lv:  document.getElementById('clv-' + i)
+  })).filter(x => x.row && (x.lv || (x.p && x.r)));
 
   paintCount();
 }
@@ -1220,12 +1247,13 @@ function fillCountRows() {
 /** ทดหน่วยในแถวนับสต็อก */
 function carryCount(i) {
   const x = CROWS[i];
-  if (!x) return;
+  if (!x || x.lv) return;
   if (carryUnits(x.p, x.r, x.c, countItems()[i])) countChanged(i);
 }
 
 /** แถวนี้นับแล้วหรือยัง */
-const crFilled = x => x.p.value !== '' || x.r.value !== '' || (x.c && x.c.value !== '');
+const crFilled = x => x.lv ? x.lv.value !== ''
+                           : (x.p.value !== '' || x.r.value !== '' || (x.c && x.c.value !== ''));
 
 /** พิมพ์ทีละช่อง — แตะแค่แถวที่เปลี่ยน ไม่ต้องไล่ทั้งหน้า */
 function countChanged(i) {
@@ -1242,8 +1270,11 @@ function countChanged(i) {
 /** ที่เหลือคือไม่มีของ — ใส่ 0 ให้ทีเดียว ไม่ต้องไล่จิ้มทีละช่อง */
 function fillRestZero() {
   let added = 0;
-  CROWS.forEach(x => {
+  const pick = [];
+  CROWS.forEach((x, i) => {
     if (crFilled(x)) return;
+    // ระดับเดาแทนไม่ได้ ต้องให้คนดูของจริงแล้วเลือกเอง
+    if (x.lv) { pick.push(countItems()[i].name); return; }
     if (!x.p.disabled) x.p.value = 0;
     x.r.value = 0;
     if (x.c && !x.c.disabled) x.c.value = 0;
@@ -1252,7 +1283,9 @@ function fillRestZero() {
   });
   CDONE += added;
   paintCountBar();
-  if (added) toast('ใส่ 0 ให้ ' + added + ' รายการแล้ว');
+  if (pick.length) toast((added ? 'ใส่ 0 ให้ ' + added + ' รายการแล้ว<br>' : '') +
+                         'เลือกระดับให้ ' + esc(pick.join(', ')) + ' ด้วย', 5000);
+  else if (added) toast('ใส่ 0 ให้ ' + added + ' รายการแล้ว');
 }
 
 function paintCount() {
@@ -1264,6 +1297,13 @@ function paintCount() {
     if (!cell) return;
     // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
     // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
+    if (it.level) {
+      // ของที่นับเป็นระดับ ตัวเลขในระบบไม่มีความหมาย บอกแค่ว่านับครั้งก่อนเป็นยังไง
+      const st = (D.stock || []).find(x => x.name === loc);
+      const prev = st && st.rows.find(r => r.item === it.name);
+      cell.innerHTML = isOwner() && prev ? 'ครั้งก่อน: ' + esc(prev.text) : '&nbsp;';
+      return;
+    }
     cell.innerHTML = isOwner()
       ? 'ระบบว่ามี ' + esc(fmtPack(balOf(loc, it.name), it))
       : '&nbsp;';
@@ -1304,11 +1344,12 @@ function paintCountBar() {
 
 async function submitCount() {
   const list = countItems();
-  const rows = CROWS.map((x, i) => ({
-    item: list[i].name, packs: x.p.value, rem: x.r.value, pieces: x.c ? x.c.value : ''
-  }));
+  const rows = CROWS.map((x, i) => x.lv
+    ? { item: list[i].name, level: x.lv.value }
+    : { item: list[i].name, packs: x.p.value, rem: x.r.value, pieces: x.c ? x.c.value : '' });
   if (!rows.length) return toast('ไม่มีสินค้าให้นับที่นี่');
-  const missing = rows.filter(r => r.packs === '' && r.rem === '' && r.pieces === '');
+  const missing = rows.filter(r => r.level !== undefined ? r.level === ''
+                                  : r.packs === '' && r.rem === '' && r.pieces === '');
   if (missing.length) {
     toast('ยังนับไม่ครบ ขาดอีก ' + missing.length + ' รายการ<br>' +
           '<span style="opacity:.8;font-size:12.5px">' + esc(missing.slice(0, 3).map(m => m.item).join(', ')) +
@@ -1322,7 +1363,8 @@ async function submitCount() {
     const r = await apiPost({ action: 'stockCount', location: document.getElementById('c-loc').value, rows });
     toast('บันทึกแล้ว ✅ นับครบ ' + r.counted + ' รายการ<br>' +
           '<span style="opacity:.8;font-size:12.5px">' +
-          (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') + '</span>', 5500);
+          (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') +
+          (r.refill ? '<br>🔔 ต้องเติม ' + r.refill + ' อย่าง' : '') + '</span>', 5500);
     await loadData();
     go('stock');
   } catch (e) {

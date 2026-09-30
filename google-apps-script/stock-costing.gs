@@ -291,6 +291,8 @@ function costEvents_(all) {
       if (!item) return;
       // ล้างยอดตั้งต้น ไม่ใช่ของที่ถูกใช้ไป จึงไม่คิดเป็นค่าใช้จ่ายวัตถุดิบ
       var kindC = String(r[mapC['ประเภท']] || '').trim();
+      // เช็คระดับไม่มีตัวเลข ถ้าเอามาคิดจะกลายเป็นนับได้ 0 แล้วตัดเป็นใช้ไปหมด
+      if (typeof KIND_LEVEL_COUNT === 'string' && kindC === KIND_LEVEL_COUNT) return;
       ev.push({ t: costTime_(r[mapC['วันที่เวลา']]), step: 5,
                 type: kindC === 'ล้างยอด' ? 'ล้างยอด' : 'เช็คสต็อก',
                 loc: String(r[mapC['สาขา']] || '').trim(), item: item,
@@ -434,6 +436,12 @@ function costReplayRaw_(all) {
       // ยกทั้งชั้นไปตั้งที่สาขา ราคาต่อหน่วยของแต่ละชั้นเท่าเดิมเป๊ะ
       t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost); });
       if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost);
+      // ของที่นับเป็นระดับ (กระดูกหมู น้ำดำ) นับเป็นตัวเลขไม่ได้ ต้นทุนจึงไม่มีวัน
+      // ถูกตัดจากการนับ — ถือว่าใช้ไปทันทีที่ถึงสาขา ไม่งั้นค้างเป็นสต็อกตลอดไป
+      if (typeof isLevelItem_ === 'function' && isLevelItem_(e.item)) {
+        var tl = take(e.loc, e.item, e.qty);
+        noteItem(e.loc, e.item, 'ใช้ไป', tl.qty, tl.value, e.t);
+      }
       // ของออกจากครัวกลางแล้วเป็นหนี้ทันทีเต็มจำนวน — จะขายได้หรือทิ้งก็หนี้เท่าเดิม
       sent[e.loc] = costBaht_((sent[e.loc] || 0) + value);
       moved[e.item] = costBaht_((moved[e.item] || 0) + value);
