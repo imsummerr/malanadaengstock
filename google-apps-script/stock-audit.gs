@@ -202,6 +202,11 @@ function auditPrevCountTime_(loc, now) {
   var best = 0;
   for (var i = 0; i < rows.length; i++) {
     if (rows[i].loc !== loc) continue;
+    // เช็คระดับไม่มีตัวเลข ไม่ใช่รอบนับ
+    if (typeof KIND_LEVEL_COUNT === 'string' && rows[i].kind === KIND_LEVEL_COUNT) continue;
+    // นับก่อนวันเริ่มนับใหม่ไม่ใช่ "รอบก่อน" — รอบแรกหลังเส้นคือรอบฐาน
+    // ไม่งั้นจะไปเทียบกับยอดเดือนก่อนแล้วขึ้นว่านับเกินเป็นร้อยชิ้น
+    if (typeof costBefore_ === 'function' && costBefore_(rows[i].when, loc)) continue;
     var t = auditTime_(rows[i].when);
     if (t && t < cutoff && t > best) best = t;
   }

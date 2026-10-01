@@ -2113,6 +2113,14 @@ function handleStockCount_(body) {
 
   var before = stockBalances_()[loc] || {};
   var now = new Date();
+  // รอบแรกหลังเริ่มนับใหม่ = ยอดตั้งต้น ไม่ได้เทียบกับอะไร
+  // ถ้าเอายอดระบบมาเทียบ จะขึ้นว่า "ไม่ตรง" ทุกรายการ ทั้งที่ไม่มีอะไรผิด
+  var isBase = !readMoves_(SHEET_COUNT).some(function (m) {
+    if (m.loc !== loc || m.kind === KIND_LEVEL_COUNT) return false;
+    if (typeof costBefore_ === 'function' && costBefore_(m.when, loc)) return false;
+    return timeOf_(m.when) < now.getTime() - 60000;
+  });
+  var baseLines = [];
   var diffs = [], out = [];
   var counts = [];   // ส่งต่อให้ stock-audit.gs เทียบของหายกับเงิน
   var refill = [];   // ของที่นับเป็นระดับ แล้วบอกว่าต้องเติม
@@ -2142,12 +2150,21 @@ function handleStockCount_(body) {
       'ไม้ต่อแพ็ค': it.perPack, 'ประเภท': 'เช็คสต็อก',
       'หมายเหตุ': 'ยอดระบบ ' + sys + ' ' + baseUnitOf_(it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff
     });
+    if (isBase && counted > 0) baseLines.push('• ' + it.name + '  ' + fmtPack_(counted, it));
     if (diff !== 0) diffs.push('• ' + it.name + '  นับได้ ' + fmtPack_(counted, it) +
                                '  (ระบบ ' + fmtPack_(sys, it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff + ' ' + baseUnitOf_(it) + ')');
   });
   appendRows_(sh, map, out);          // เขียนทีเดียว ไม่ใช่แถวละครั้ง
 
-  var msg = '📋 เช็คสต็อกรายสัปดาห์ — ' + loc + '\n\n' +
+  var msg = isBase
+    ? '📋 ตั้งยอดตั้งต้น — ' + loc + '\n\n' +
+      'นับครบ ' + items.length + ' รายการ โดย ' + session.name + '\n' +
+      Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm') + '\n\n' +
+      'รอบนี้เป็นยอดตั้งต้น ไม่ได้เทียบกับระบบ ไม่นับเป็นของหาย\n' +
+      'นับรอบหน้าเมื่อไหร่ ระบบจะเริ่มคิดของที่ใช้ไปจากยอดนี้\n\n' +
+      'มีของ ' + baseLines.length + ' รายการ\n' + baseLines.join('\n') +
+      (refill.length ? '\n\n🔔 ต้องเติม\n' + refill.join('\n') : '')
+    : '📋 เช็คสต็อกรายสัปดาห์ — ' + loc + '\n\n' +
             'นับครบ ' + items.length + ' รายการ โดย ' + session.name + '\n' +
             Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm') + '\n\n' +
             (diffs.length ? 'ที่ไม่ตรงกับระบบ ' + diffs.length + ' รายการ\n' + diffs.join('\n')
@@ -2158,7 +2175,8 @@ function handleStockCount_(body) {
   // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
   // ส่งไม่สำเร็จหรือไม่มีไฟล์นั้น ก็ไม่ทำให้การนับล้มเหลว — ของลงชีตแล้ว
   var shrink = null;
-  if (typeof auditAfterCount_ === 'function') {
+  // รอบฐานไม่มีอะไรให้เทียบ ข้อความตั้งยอดตั้งต้นบอกไปแล้ว ไม่ต้องส่งซ้ำ
+  if (!isBase && typeof auditAfterCount_ === 'function') {
     try { shrink = auditAfterCount_(loc, counts, now); }
     catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
   }
@@ -2167,7 +2185,8 @@ function handleStockCount_(body) {
   var balNow = {};
   counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
   checkLowStock_(items.map(function (it) { return it.name; }), loc, balNow);
-  return { success: true, counted: items.length, diffs: diffs.length, refill: refill.length,
+  return { success: true, counted: items.length, diffs: isBase ? 0 : diffs.length,
+           base: isBase, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
            shrink: shrink };
 }

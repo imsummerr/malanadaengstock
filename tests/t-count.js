@@ -68,4 +68,32 @@ eq('น้ำดำถึงสาขา = ใช้ไปทันที 677.7'
 eq('ไม่ค้างเป็นสต็อกที่สาขา', (cs.stock[SHOP] || { total: 0 }).total, 0);
 eq('แต่ยังเป็นหนี้ตามปกติ', cs.owed[SHOP]['ค้างชำระ'], 677.7);
 
+section('นับรอบแรกหลังเริ่มนับใหม่ = ยอดตั้งต้น ไม่เทียบกับรอบเก่า');
+g = fresh();
+const today = g.formatDate ? null : null;
+const ymd = (d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(d.getDate()).padStart(2, '0'))(new Date());
+// รอบนับเก่าก่อนเส้น — ห้ามเอามาเป็น "รอบก่อน"
+push(g, g.SHEET_COUNT, { 'วันที่เวลา': new Date(Date.now() - 8 * 86400000), 'สาขา': SHOP,
+  'รายการ': 'ดอลลี่', 'จำนวน': 0, 'ประเภท': 'เช็คสต็อก' });
+g.setStartDate(ymd);
+g.__env.SENT.length = 0;
+const baseRows = rowsFor(g, SHOP).map(x => x.item === 'ดอลลี่' ? { item: 'ดอลลี่', packs: '', rem: 7, pieces: '' } : x);
+r = g.handleStockCount_({ token: 't', location: SHOP, rows: baseRows });
+let txt = g.__env.SENT.map(x => (x.messages || []).map(m => m.text).join('\n')).join('\n---\n');
+eq('บอกว่าเป็นยอดตั้งต้น', r.base, true);
+eq('ข้อความขึ้นว่าตั้งยอดตั้งต้น', /📋 ตั้งยอดตั้งต้น/.test(txt), true);
+eq('ไม่ขึ้นว่าไม่ตรงกับระบบ', /ไม่ตรงกับระบบ/.test(txt), false);
+eq('ไม่ส่งข้อความเทียบของหายที่อ้างรอบเก่า', /ช่วงที่เทียบ|นับได้เกิน/.test(txt), false);
+eq('ส่งไลน์ข้อความเดียว', g.__env.SENT.length, 1);
+eq('รายการที่มีของถูกลิสต์ไว้', /ดอลลี่  7 ไม้/.test(txt), true);
+// นับรอบสองหลังจากนั้น — ต้องเป็นการนับปกติ ไม่ใช่ฐานซ้ำ
+g.cacheClear_();
+const rows2 = g.__env.SHEETS[g.SHEET_COUNT].rows;
+const iT = g.__env.SHEETS[g.SHEET_COUNT].headers.indexOf('วันที่เวลา');
+rows2.forEach(rw => { if (rw[iT] instanceof Date && rw[iT].getTime() > Date.now() - 600000) rw[iT] = new Date(Date.now() - 3600000); });
+g.cacheClear_();
+r = g.handleStockCount_({ token: 't', location: SHOP, rows: rowsFor(g, SHOP) });
+eq('รอบสองไม่ใช่ฐาน', r.base, false);
+
 process.exit(done().fail ? 1 : 0);
