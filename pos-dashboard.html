@@ -673,9 +673,16 @@ function render() {
   document.getElementById('hdr-sub').textContent =
     (range.key === 'all' ? 'ทั้งหมด' : range.from + ' ถึง ' + range.to) + ' · ' + auth.name;
 
+  // เฉลี่ยต่อวัน — หารด้วยจำนวนวันที่ขายจริง ไม่ใช่จำนวนวันในปฏิทิน
+  // วันที่ร้านปิดไม่มีแถวใน byDate อยู่แล้ว จะได้ไม่มาถ่วงค่าเฉลี่ยให้ต่ำลง
+  const sellDays  = (stats.byDate || []).length;
+  const avgPerDay = sellDays ? stats.revenue / sellDays : 0;
+
   document.getElementById('kpi').innerHTML = [
     ['ออเดอร์', stats.orders.toLocaleString('th-TH'), 'บิล', '🧾', ''],
     ['ยอดขายสุทธิ', baht(stats.revenue), 'บาท', '💰', ' hero'],
+    ['ยอดเฉลี่ย/วัน' + (sellDays ? ' (ขาย ' + sellDays + ' วัน)' : ''),
+      baht(avgPerDay), 'บาท', '📅', ''],
     ['ยอดเฉลี่ย/บิล', baht(stats.avgTicket), 'บาท', '📈', ''],
     ['ไม้ที่ขายได้', stats.sticks.toLocaleString('th-TH'), 'ไม้', '🍢', ''],
     ['ส่วนลดที่ให้ไป', baht(stats.discount), 'บาท', '🎁', ''],
