@@ -630,6 +630,19 @@ function intakeParseText_(text) {
  * วิธีคิด: ดึง "ตัวเลข + หน่วย" ออกให้หมดก่อน ที่เหลือคือชื่อของ
  * เลขที่ไม่มีหน่วยติดมา ถือเป็นราคาก่อน (คนพิมพ์ "หมูสันคอ 350" = 350 บาท)
  */
+/** ชื่อสินค้าที่มีตัวเลขในชื่อ ยาวสุดก่อน — กันเลขในชื่อถูกอ่านเป็นจำนวน */
+function intakeNumberedNames_() {
+  if (typeof getStockItems_ !== 'function') return [];
+  var seen = {}, out = [];
+  try {
+    getStockItems_().forEach(function (it) {
+      var n = String(it.name || '').replace(/\s*\(ดิบ\)\s*$/, '').trim();
+      if (/\d/.test(n) && !seen[n]) { seen[n] = true; out.push(n); }
+    });
+  } catch (e) {}
+  return out.sort(function (a, b) { return b.length - a.length; });
+}
+
 function intakeParseLine_(line) {
   var text = String(line || '').trim();
   if (!text) return null;
@@ -660,6 +673,18 @@ function intakeParseLine_(line) {
     text = text.replace(INTAKE_PERKG_RE, ' ').trim();
     if (!text) return null;
   }
+
+  // ชื่อสินค้าที่มีตัวเลขอยู่ในชื่อ ("มาม่า 25" "ถ้วย 2 ออน") เก็บไว้ก่อน
+  // ไม่งั้นเลขในชื่อจะถูกอ่านเป็นราคาหรือจำนวน แล้วชื่อเหลือแค่ "มาม่า"
+  var kept = [];
+  intakeNumberedNames_().forEach(function (nm) {
+    var pat = nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    // ตามด้วยหน่วยทันที ("มาม่า 15 ห่อ") = เลขนั้นคือจำนวน ไม่ใช่ชื่อ
+    var re0 = new RegExp(pat + '(?![\\d.,])(?!\\s*(?:' + INTAKE_UNIT_RE + ')(?![ก-๙]))');
+    if (!re0.test(text)) return;
+    text = text.replace(re0, ' §' + String.fromCharCode(65 + kept.length) + '§ ');
+    kept.push(nm);
+  });
 
   var baht = 0, gram = 0, qty = 0, unit = '', bare = [], counts = [];
   var saidMoney = false, saidUnit = false;
@@ -694,6 +719,7 @@ function intakeParseLine_(line) {
   var name = text.replace(intakeUnitRe_(), ' ')
                  .replace(/แบ่งได้|ตัดได้|ทำได้|รวมเป็น|ทั้งหมด|ได้|รวม|เป็น/g, ' ')
                  .replace(/[\s:：\-–—=+/()]+/g, ' ').trim();
+  name = name.replace(/§([A-Z])§/g, function (_, k) { return kept[k.charCodeAt(0) - 65]; }).trim();
   if (!name) return null;
 
   // ไม่มีตัวเลขเลย = เป็นประโยคคุยกันเฉย ๆ ไม่ใช่รายการของ
@@ -807,6 +833,9 @@ var INTAKE_ALIAS = {
   'เส้นมันเทศ': 'มันเทศ', 'เส้นอุด้ง': 'อุด้ง', 'วุ้นเส้น': 'วุ้นเส้นหม่าล่า',
   'แป้งต็อก': 'ต็อกแท่งเล็ก', 'ต็อก': 'ต็อกแท่งเล็ก',
   'มาม่า': 'มาม่าเปล่า (ดิบ)', 'มาม่าเปล่า': 'มาม่าเปล่า (ดิบ)',
+  'มาม่า15': 'มาม่า 15 (ดิบ)', 'มาม่า20': 'มาม่า 20 (ดิบ)', 'มาม่า25': 'มาม่า 25 (ดิบ)',
+  'มาม่า35': 'มาม่า 35 (ดิบ)', 'มาม่า45': 'มาม่า 45 (ดิบ)',
+  'มาม่าส้ม': 'มาม่า 35 (ดิบ)', 'มาม่าชมพู': 'มาม่า 35 (ดิบ)',
   'ฟองม้วน': 'ฟองเต้าหู้ม้วน', 'ฟองเต้าหู้': 'ฟองเต้าหู้ม้วน',
   // ซื้อเข้าครัวกลางคือนมผง ส่วนนมข้นจืดคือถุงที่แบ่งแล้ว ไม่ได้ซื้อมา
   'นม': 'นมผง', 'นมสด': 'นมผง',
