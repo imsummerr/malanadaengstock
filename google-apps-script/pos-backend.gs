@@ -2052,6 +2052,63 @@ function handleStockWaste_(body) {
  * ยอดที่นับได้กลายเป็นยอดตั้งต้นใหม่เสมอ (ไม่มีตัวเลือกไม่ปรับ)
  * เพราะยอดขายไม่ได้ถูกหักออกจากสต็อกทีละบิล การนับจริงจึงเป็นอย่างเดียวที่ทำให้ยอดกลับมาตรง
  */
+/**
+ * แก้ในชีตได้เอง — พนักงานลงของเสีย/ของเข้า/นับสต็อกผิด แก้ในหน้าเว็บไม่ได้
+ * เจ้าของเปิดชีตแล้วแก้ช่อง แพ็ค / เศษ / เศษ(ชิ้น) / รายการ ได้เลย
+ * ระบบคิดช่อง "จำนวน" (ตัวที่ใช้คิดยอดจริง) ใหม่ให้ทันที
+ *
+ * ไม่มีตัวนี้ แก้แค่ช่องแพ็ค/เศษ ยอดจะไม่ขยับ เพราะยอดคิดจากช่อง "จำนวน"
+ * ซึ่งเป็นหน่วยย่อยสุด (ชิ้น/ไม้/กก.) คนทั่วไปคำนวณเองแล้วผิดง่าย
+ * ลบทั้งแถว = เหมือนไม่เคยลง ยอดกลับมาเอง ไม่ต้องทำอะไรเพิ่ม
+ *
+ * เป็น simple trigger ทำงานเองทุกครั้งที่มีคนแก้ชีต ไม่ต้องตั้งค่า
+ */
+function onEdit(e) {
+  try { stockSheetEdited_(e); } catch (err) { Logger.log('onEdit: ' + err.message); }
+}
+
+function stockSheetEdited_(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet();
+  var name = sh.getName();
+  if ([SHEET_WASTE, SHEET_INCOMING, SHEET_COUNT].indexOf(name) === -1) return;
+
+  var r0 = e.range.getRow(), nr = e.range.getNumRows();
+  var c0 = e.range.getColumn(), nc = e.range.getNumColumns();
+  if (r0 + nr - 1 < 2) return;                       // แก้แค่หัวตาราง
+
+  var width = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, width).getValues()[0].map(function (h) { return String(h).trim(); });
+  var col = function (h) { return head.indexOf(h); };
+  var watch = ['แพ็ค', 'เศษ', 'เศษ(ชิ้น)', 'รายการ'].map(col).filter(function (i) { return i !== -1; });
+  var touched = watch.some(function (i) { return i + 1 >= c0 && i + 1 <= c0 + nc - 1; });
+  if (!touched || col('จำนวน') === -1) return;
+
+  var from = Math.max(r0, 2), to = r0 + nr - 1;
+  var rows = sh.getRange(from, 1, to - from + 1, width).getValues();
+  var stamp = Utilities.formatDate(new Date(), TZ, 'd/M HH:mm');
+  rows.forEach(function (row, k) {
+    var kind = col('ประเภท') === -1 ? '' : String(row[col('ประเภท')] || '').trim();
+    if (kind === KIND_LEVEL_COUNT || kind === 'ล้างยอด') return;
+    var it = findStockItem_(String(row[col('รายการ')] || '').trim());
+    if (!it) return;
+    var val = function (h) { return col(h) === -1 ? 0 : row[col(h)]; };
+    var qty = toBase_(val('แพ็ค'), val('เศษ'), val('เศษ(ชิ้น)'), it);
+    var old = row[col('จำนวน')];
+    var r = from + k;
+    if (Number(old) === qty) return;
+    sh.getRange(r, col('จำนวน') + 1).setValue(qty);
+    if (col('หน่วย') !== -1) sh.getRange(r, col('หน่วย') + 1).setValue(baseUnitOf_(it));
+    if (col('ไม้ต่อแพ็ค') !== -1) sh.getRange(r, col('ไม้ต่อแพ็ค') + 1).setValue(it.perPack);
+    if (col('ชิ้นต่อไม้') !== -1) sh.getRange(r, col('ชิ้นต่อไม้') + 1).setValue(perStickOf_(it));
+    if (col('หมายเหตุ') !== -1) {
+      var note = String(row[col('หมายเหตุ')] || '');
+      sh.getRange(r, col('หมายเหตุ') + 1)
+        .setValue((note ? note + ' · ' : '') + 'แก้ในชีต ' + stamp + ' (เดิม ' + old + ')');
+    }
+  });
+}
+
 /** ระดับล่าสุดที่นับไว้ ของที่นับเป็นระดับ — loc → item → { level, t } */
 function latestLevels_() {
   var sh = sheet_(SHEET_COUNT);

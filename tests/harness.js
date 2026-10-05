@@ -79,7 +79,8 @@ function makeEnv() {
         setValue(v) { write([[v]]); return this; },
         clearContent() { write(read().map(r => r.map(() => ''))); return this; },
         clear() { return this.clearContent(); },
-        getRow: () => r, getColumn: () => c, getNumRows: () => nr, getNumColumns: () => nc
+        getRow: () => r, getColumn: () => c, getNumRows: () => nr, getNumColumns: () => nc,
+        getSheet: () => sheetObj(name)
       });
     }
     return {
