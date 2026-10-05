@@ -379,7 +379,9 @@ function costEvents_(all) {
   // all = ขอทุกแถวไม่ตัด ใช้ตอนหาราคาทุนล่าสุด (ของเก่าก็บอกราคาได้)
   if (!all) {
     ev = ev.filter(function (e) {
-      if (!(e.t > 0)) return true;
+      // แถวที่ไม่มีวันที่ (เช่นพิมพ์เพิ่มเองในชีตแล้วลืมใส่วัน) บอกไม่ได้ว่าอยู่ก่อนหรือหลังเส้น
+      // ถ้าเก็บไว้มันจะถูกเรียงไปอยู่หน้าสุด แล้วค้างเป็นสต็อกผีหลังเริ่มนับใหม่ — ถือว่าอยู่ก่อนเส้น
+      if (!(e.t > 0)) return !costStartDate_(e.loc || central);
       if (e.type === 'ส่งเข้าร้าน') {
         // ส่งของมีสองฝั่ง ครัวกลางยังไม่เริ่ม = ทิ้งทั้งคู่
         if (e.t < costStartDate_(central)) return false;
@@ -470,6 +472,16 @@ function costReplayRaw_(all) {
            book[loc + '|' + item] || book[central + '|' + item] || 0;
   }
 
+  // รอบนับแรกหลังเส้นเริ่มนับของสาขา = ยอดตั้งต้น
+  // ของพวกนั้นครัวกลางส่งไปก่อนเริ่มนับ สาขาไม่ได้จ่ายคืน จึงไม่ใช่ต้นทุนของสาขา → มูลค่า 0
+  // (ครัวกลางยังตีมูลค่ายอดตั้งต้นตามราคาที่ซื้อมาเหมือนเดิม เพราะเป็นเงินของครัวกลางเอง)
+  var baseAt = {};
+  function isBranchBase(e) {
+    if (all || e.loc === central || !costStartDate_(e.loc)) return false;
+    if (baseAt[e.loc] === undefined) baseAt[e.loc] = e.t;
+    return Math.abs(e.t - baseAt[e.loc]) <= 60000;
+  }
+
   costEvents_(all).forEach(function (e) {
     if (e.type === 'ซื้อเข้า') {
       // ซื้อผ่านไลน์จะมีราคามาด้วย · กรอกในเว็บไม่มี ต้องเดาจากราคาล่าสุด
@@ -535,6 +547,7 @@ function costReplayRaw_(all) {
       // นับได้เท่าไหร่คือเท่านั้น ส่วนที่หายไประหว่างสองรอบนับคือของที่ใช้ไป
       var have = total(e.loc, e.item);
       var diff = costQty_(have - e.qty);
+      var base = isBranchBase(e);
       if (diff > 0.00001) {
         var t4 = take(e.loc, e.item, diff);
         noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
@@ -542,8 +555,8 @@ function costReplayRaw_(all) {
         // นับได้มากกว่าในระบบ — รวมถึงการนับวันแรกหลังเริ่มนับใหม่ (ยอดตั้งต้น)
         // ไม่ใช่ค่าใช้จ่าย ใส่มูลค่าตามต้นทุนล่าสุดที่รู้
         var add = -diff;
-        var c = guessCost(e.loc, e.item);
-        if (!(c > 0) && !all) {
+        var c = base ? 0 : guessCost(e.loc, e.item);
+        if (!(c > 0) && !all && !base) {
           warn.push({ when: e.t, loc: e.loc, item: e.item,
                       msg: 'นับได้เกินระบบแต่ไม่รู้ราคาทุน — คิดเป็น 0' });
         }
