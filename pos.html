@@ -500,16 +500,12 @@
         <div class="note">วันนี้จ่ายไป <b id="exp-today" class="digits">0</b> ฿</div>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:-4px 0 14px;">
-        ค่าใช้จ่ายของร้าน เช่น ค่าที่ ค่าไม้เสียบ — จ่ายเงินสด โอน หรือบัตรก็บันทึกตรงนี้
+        เงินสดที่หยิบจากลิ้นชักไปจ่าย เช่น ค่าที่ ค่าน้ำแข็ง — บันทึกไว้จะได้รู้ว่าปลายวันเหลือเงินเท่าไหร่
       </p>
 
       <div class="card opt-card">
         <h3 id="head-exptype">📌 ประเภท <span class="req">* ต้องเลือก</span></h3>
         <div class="chips" id="exp-type-chips"></div>
-
-        <h3 style="margin-top:16px;">💳 จ่ายด้วย</h3>
-        <div class="chips" id="exp-method-chips"></div>
-        <p class="note" style="margin:6px 0 0;">โอน/บัตร ไม่ได้หยิบเงินจากลิ้นชัก — ตอนนับเงินปิดร้านจะไม่หักให้</p>
 
         <h3 style="margin-top:16px;">💵 จำนวนเงิน</h3>
         <input id="exp-amount" class="login-input digits" type="number" min="0" step="1" inputmode="decimal"
@@ -1134,12 +1130,6 @@ const SAUCES = ['น้ำจิ้มงา', 'น้ำจิ้มสุก�
 // ประเภทเงินสดที่จ่ายออกจากร้าน ต้องตรงกับ EXPENSE_TYPES ใน pos-backend.gs
 const EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
 // จ่ายด้วยอะไร — เงินสดเท่านั้นที่ออกจากลิ้นชัก (ตรงกับ isCashExpense_ ใน pos-backend.gs)
-// บัตรลงเป็น "บัตรเครดิต" ให้ตรงกับที่ไลน์ลง จะได้ไปรวมในรอบบัตรเครดิตเดียวกัน
-const EXPENSE_METHODS = [
-  { label: 'เงินสด', value: 'เงินสด' },
-  { label: 'โอน', value: 'โอน' },
-  { label: 'บัตร', value: 'บัตรเครดิต' }
-];
 
 // เมนูเดลิเวอรี่ — เพิ่มเองในแอปได้ (ปุ่ม "เพิ่มเมนู") ค่าที่เพิ่มจะจำไว้ในเครื่อง
 const DEFAULT_DELIVERY_MENU = ['อุด้ง', 'หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวม'];
@@ -2052,20 +2042,12 @@ function renderExpenseChips() {
   document.getElementById('exp-type-chips').innerHTML = EXPENSE_TYPES.map(t =>
     '<button onclick="pickExpenseType(\'' + t + '\')" data-opt="' + t +
     '" class="chip key">' + t + '</button>').join('');
-  document.getElementById('exp-method-chips').innerHTML = EXPENSE_METHODS.map(m =>
-    '<button onclick="pickExpenseMethod(\'' + m.value + '\')" data-opt="' + m.value +
-    '" class="chip key">' + m.label + '</button>').join('');
-  pickExpenseMethod('เงินสด');
 }
 
-let expenseMethod = 'เงินสด';
-function pickExpenseMethod(m) {
-  expenseMethod = m;
-  document.querySelectorAll('#exp-method-chips .chip')
-    .forEach(el => el.classList.toggle('on', el.dataset.opt === m));
-}
-
-/** แถวเก่าที่ไม่มีวิธีจ่าย = เงินสด */
+/**
+ * หน้าร้านลงแต่เงินสดที่หยิบจากลิ้นชัก — ที่โอน/รูดบัตรลงทางไลน์ (ดู line-intake.gs)
+ * แถวที่ไม่มีวิธีจ่าย = เงินสด · ถ้ามีรายการจากไลน์ปนมา ไม่เอาไปหักเงินสดในลิ้นชัก
+ */
 function isCashPay(p) { const m = String(p || '').trim(); return m === '' || m === 'เงินสด'; }
 
 function pickExpenseType(t) {
@@ -2230,7 +2212,7 @@ async function saveExpense() {
     branch: auth.branch || '',
     staff: auth.name || '',
     type: expenseType,
-    method: expenseMethod,
+    method: 'เงินสด',
     note: document.getElementById('exp-note').value.trim(),
     amount: amount
   };
@@ -2302,7 +2284,6 @@ function resetExpenseForm() {
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-note').value = '';
   document.querySelectorAll('#exp-type-chips .chip').forEach(el => el.classList.remove('on'));
-  pickExpenseMethod('เงินสด');      // ส่วนใหญ่จ่ายเงินสด กลับไปค่าเริ่มต้นทุกครั้ง
   refreshExpense();
 }
 
