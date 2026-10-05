@@ -26,7 +26,11 @@ var SESSION_HOURS = 26;              // token หมดอายุกี่ช�
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
                                      // ช่วงห่างที่ยาวที่สุดคือเกือบ 24 ชม. ตั้ง 26 ไว้เผื่อ
                                      // ไม่ให้ฝั่ง Server หมดอายุก่อนจนเด้งออกกลางวันขาย
-var MAMA_PRICES   = [10, 15, 20, 35, 45];
+var MAMA_PRICES   = [15, 20, 25, 35, 45];    // ราคาที่ขายอยู่ตอนนี้ ต้องตรงกับ pos.html
+// ทุกคอลัมน์มาม่าในชีตบิล ตามลำดับคอลัมน์จริง — 10฿ เลิกขายแล้วแต่บิลเก่ายังมี
+// 25฿ เพิ่มทีหลังเลยไปอยู่ท้ายสุด ห้ามย้ายไปแทรกกลาง คอลัมน์ข้อมูลเก่าจะเลื่อน
+var MAMA_COLS_MAIN = [10, 15, 20, 35, 45];
+var MAMA_COLS_ALL  = [10, 15, 20, 25, 35, 45];
 var STICK_PRICES  = [10, 15];
 
 // สินค้าอื่นที่ขายเป็นชิ้น ไม่ใช่ไม้และไม่ใช่มาม่า
@@ -87,7 +91,8 @@ var ORDER_HEADERS = [
   'วิธีชำระเงิน', 'order_id',
   // ต่อท้ายไว้ ไม่แทรกกลาง เพื่อไม่ให้คอลัมน์ของข้อมูลเก่าเลื่อนความหมาย
   'ของอื่น', 'รวมของอื่น', 'ยอดของอื่น',
-  'ใช้แต้ม (ไม้)', 'ส่วนลดแต้ม'
+  'ใช้แต้ม (ไม้)', 'ส่วนลดแต้ม',
+  'มาม่า 25฿'
 ];
 
 /**
@@ -485,7 +490,7 @@ function handleOrder_(body) {
     var stickQty = {}; STICK_PRICES.forEach(function (p) { stickQty[p] = 0; });
     (o.sticks || []).forEach(function (s) { stickQty[s.price] = Number(s.qty) || 0; });
 
-    var mamaQty = {}; MAMA_PRICES.forEach(function (p) { mamaQty[p] = 0; });
+    var mamaQty = {}; MAMA_COLS_ALL.forEach(function (p) { mamaQty[p] = 0; });
     (o.mama || []).forEach(function (m) { mamaQty[m.price] = Number(m.qty) || 0; });
 
     // ของอื่น เก็บเป็นข้อความสรุปช่องเดียว เพิ่มเมนูใหม่แล้วไม่ต้องเพิ่มคอลัมน์อีก
@@ -512,7 +517,7 @@ function handleOrder_(body) {
     ];
     STICK_PRICES.forEach(function (p) { row.push(stickQty[p]); });
     row.push(Number(o.stickCount) || 0, Number(o.stickAmount) || 0);
-    MAMA_PRICES.forEach(function (p) { row.push(mamaQty[p]); });
+    MAMA_COLS_MAIN.forEach(function (p) { row.push(mamaQty[p]); });
     row.push(Number(o.mamaCount) || 0, Number(o.mamaAmount) || 0);
     row.push(Number(o.subtotal) || 0, Number(o.discount) || 0, Number(o.total) || 0);
     row.push(o.soup || '', o.spice || '', o.sauce || '', Number(o.sauceCount) || 0,
@@ -520,6 +525,7 @@ function handleOrder_(body) {
     row.push(extraText.join(', '), extraCount, extraAmount);
     // ลูกค้าเอาแต้มมาแลกไม้ฟรี — เก็บทั้งจำนวนไม้และเงินที่หักไป
     row.push(Number(o.redeemSticks) || 0, Number(o.redeemAmount) || 0);
+    row.push(mamaQty[25]);          // มาม่า 25฿ — คอลัมน์ท้ายสุด
 
     var orderNo = nextOrderNo_(sheet, row[0]);
     row[2] = orderNo;
@@ -898,7 +904,7 @@ function handleBills_(p) {
       var q = num_(r[idx['ไม้ ' + price + '฿']]);
       if (q > 0) sticks.push({ price: price, qty: q });
     });
-    MAMA_PRICES.forEach(function (price) {
+    MAMA_COLS_ALL.forEach(function (price) {
       var q = num_(r[idx['มาม่า ' + price + '฿']]);
       if (q > 0) mama.push({ price: price, qty: q });
     });
@@ -2578,8 +2584,6 @@ var PACK_SIZE = 10;
 var PACK_SIZE_EXCEPTION = {
   'ไก่': 20,
   // มาม่าซื้อมาเป็นแพ็คของโรงงาน ไม่ได้แบ่งเอง — แพ็คละ 4 ห่อทั้งสองสี
-  'มาม่า 35 ชมพู': 4,
-  'มาม่า 35 ส้ม': 4,
   // น้ำจิ้มเทใส่กระปุก ส่งไปเป็นแพ็คเท่าแพ็คกระปุกที่ซื้อมา
   // ฟองเต้าหู้ม้วนนับเป็นอัน แพ็คส่งร้านละ 12 อัน ไม่ใช่ 10 เหมือนตัวอื่น
   'ฟองเต้าหู้ม้วน': 12,
@@ -2640,8 +2644,7 @@ var RAW_BAG = { 'มันเทศ': 'อัน',
  */
 var RAW_PACK = {
   'ฟองเต้าหู้ม้วน': { unit: 'อัน', packUnit: 'แพ็ค', per: 12 },
-  'มาม่า 35 ส้ม':   { unit: 'ห่อ', packUnit: 'แพ็ค', per: 4 },
-  'มาม่า 35 ชมพู':  { unit: 'ห่อ', packUnit: 'แพ็ค', per: 4 }
+
 };
 
 /**
@@ -2734,9 +2737,7 @@ var BAG_ITEMS = [
   ['กะหล่ำ',                '',             ''],
   ['เห็ดเข็ม',              '',             ''],
   ['ราเมง',                '',             ''],
-  ['มาม่า',                '',             ''],
-  ['มาม่า 35 ส้ม',         '',             ''],
-  ['มาม่า 35 ชมพู',        '',             ''],
+  ['มาม่าเปล่า',            '',             ''],
   ['ฟองเต้าหู้ม้วน',        '',             ''],
   ['อุด้ง',                '',             ''],
   ['ต็อกแท่งเล็ก',          '',             ''],
@@ -2750,7 +2751,6 @@ var BAG_ITEMS = [
 
 /** ของในกลุ่ม "ใส่ถุง" ที่จริง ๆ ตักใส่ถ้วย ไม่ได้ใส่ถุง */
 var BAG_UNIT = {
-  'มาม่า 35 ส้ม': 'ห่อ', 'มาม่า 35 ชมพู': 'ห่อ',
   'ฟองเต้าหู้ม้วน': 'อัน',
   // สาขาชั่งกะหล่ำเป็นโล
   'กะหล่ำ': 'กก.'
@@ -2793,10 +2793,7 @@ var FILL_ITEMS = [
 /** หน่วยแพ็คของของที่เทใส่ภาชนะ — ไม่ได้ใส่ = "แพ็ค" */
 var FILL_PACK_UNIT = {};
 
-var PRICE_EXCEPTION = {
-  'มาม่า 35 ส้ม': 35,
-  'มาม่า 35 ชมพู': 35
-};
+var PRICE_EXCEPTION = {};
 
 /**
  * แคตตาล็อกทั้งหมด — ของแพ็ค + ของดิบที่มันใช้
@@ -3082,11 +3079,10 @@ var ITEM_RENAME = {
   'เส้นมันเทศ':          'มันเทศ',
   'เส้นอุด้ง':            'อุด้ง',
   'วุ้นเส้น':             'วุ้นเส้นหม่าล่า',
-  'มาม่า(เส้นเปล่า)':      'มาม่า',
-  'มาม่า35 ส้ม':          'มาม่า 35 ส้ม',
-  'มาม่า35ส้ม':           'มาม่า 35 ส้ม',
-  'มาม่า35 ชมพู':         'มาม่า 35 ชมพู',
-  'มาม่า35ชมพู':          'มาม่า 35 ชมพู',
+  // มาม่าเหลือตัวเดียว ไม่แยกสี/ราคาแล้ว
+  'มาม่า':               'มาม่าเปล่า',
+  'มาม่า (ดิบ)':          'มาม่าเปล่า (ดิบ)',
+  'มาม่า(เส้นเปล่า)':      'มาม่าเปล่า',
   'เต้าหู้ปลาสี่เหลี่ยม':    'เต้าหู้ปลา',
   'ข้าวโพด':             'ข้าวโพดฝัก',
   'ข้าวโพดฝักใหญ่':       'ข้าวโพดฝัก',
