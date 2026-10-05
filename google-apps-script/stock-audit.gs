@@ -262,8 +262,13 @@ function auditSales_(loc, fromStamp, toStamp) {
   // เงินที่ไม่ได้อยู่ในลิ้นชัก — ลูกค้าสแกน/โอนเข้าบัญชี กับค่าใช้จ่ายที่หยิบเงินสดไปจ่าย
   // เงินสดคือ "เงินสด" (หรือช่องว่างของแถวเก่า) อย่างเดียว — โอน / ไทยช่วยไทย ไม่เข้าลิ้นชัก
   out.transfer = 0; out.cashSales = 0; out.expCash = 0; out.expOther = 0; out.expenses = [];
-  out.byMethod = {};
+  out.byMethod = {}; out.redeem = 0; out.untracked = 0;
   scan((typeof SHEET_ORDERS === 'string') ? SHEET_ORDERS : 'POS_Orders', function (r, idx) {
+    // ไม้ที่แลกแต้ม — ของออกจากสต็อกแต่ไม่ได้เงิน (ยอดสุทธิหักไปแล้ว แต่ไม่อยู่ในช่องส่วนลด)
+    if (idx['ส่วนลดแต้ม'] !== undefined) out.redeem += n(r[idx['ส่วนลดแต้ม']]);
+    // มาม่าแยกราคา/ของอื่น (สาหร่ายแผ่น) ไม่มีในสต็อก — ได้เงินแต่ไม่ได้ออกจากยอดนับ
+    if (idx['ยอดมาม่า'] !== undefined) out.untracked += n(r[idx['ยอดมาม่า']]);
+    if (idx['ยอดของอื่น'] !== undefined) out.untracked += n(r[idx['ยอดของอื่น']]);
     var how = idx['วิธีชำระเงิน'] !== undefined ? String(r[idx['วิธีชำระเงิน']] || '').trim() : '';
     var net = n(r[idx['ยอดสุทธิ']]);
     if (!how || how === 'เงินสด') { out.cashSales += net; return; }
@@ -279,6 +284,8 @@ function auditSales_(loc, fromStamp, toStamp) {
                         amount: amt, cash: !how || how === 'เงินสด' });
   });
   out.transfer = auditRound_(out.transfer);
+  out.redeem = auditRound_(out.redeem);
+  out.untracked = auditRound_(out.untracked);
   out.cashSales = auditRound_(out.cashSales);
   out.expCash = auditRound_(out.expCash);
   out.expOther = auditRound_(out.expOther);
@@ -703,7 +710,8 @@ function resetLowStockFlags() {
  * ทำอันไหนก่อนก็ได้ พออีกอันเข้ามา ระบบเทียบให้ทันที แล้วแจ้งเข้ากลุ่มไลน์นับสต็อก
  *
  *   ขายไปตามสต็อก  = Σ (ยกมา + ของเข้า − ของเสีย − นับได้ตอนปิด) × ราคาขาย
- *   เงินสดที่ควรมี = ขายไปตามสต็อก − เดลิเวอรี่ − ส่วนลด − ลูกค้าโอน/ไทยช่วยไทย − ค่าใช้จ่ายเงินสด + เงินทอนตั้งต้น
+ *   เงินสดที่ควรมี = ขายไปตามสต็อก + มาม่า/ของอื่นที่ไม่มีในสต็อก − เดลิเวอรี่ − ส่วนลด − แลกแต้ม
+ *                  − ลูกค้าโอน/ไทยช่วยไทย − ค่าใช้จ่ายเงินสด + เงินทอนตั้งต้น
  *
  *   เดลิเวอรี่ / ลูกค้าโอน / ไทยช่วยไทย — ของออกจริง แต่เงินไม่ได้เข้าลิ้นชัก
  *   ค่าใช้จ่ายที่โอนจ่าย ไม่ได้หยิบจากลิ้นชัก จึงไม่หัก
@@ -861,7 +869,8 @@ function cashCheck_(loc, day, opt) {
   var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
   var dlv = auditRound_(s.dlvPieces * perStick);
   var flt = cashProp_('CASH_FLOAT', 0);
-  var expected = auditRound_(u.value - dlv - s.discount - s.transfer - s.expCash + flt);
+  var expected = auditRound_(u.value + s.untracked - dlv - s.discount - s.redeem -
+                             s.transfer - s.expCash + flt);
   var noCash = cash.cash == null;
   var diff = noCash ? 0 : auditRound_(cash.cash - expected);
   var gap = cashProp_('CASH_GAP_BAHT', 0);
@@ -875,8 +884,10 @@ function cashCheck_(loc, day, opt) {
   L.push('ช่วง ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
   L.push('');
   L.push('ขายไปตามสต็อก ' + u.sticks + ' ชิ้น   ' + auditBaht_(u.value) + ' บาท');
+  if (s.untracked) L.push('+ มาม่า/ของอื่นที่ไม่ได้นับสต็อก   ' + auditBaht_(s.untracked));
   if (dlv)        L.push('− เดลิเวอรี่ ' + s.dlvPieces + ' ชิ้น   ' + auditBaht_(dlv));
   if (s.discount) L.push('− ส่วนลด   ' + auditBaht_(s.discount));
+  if (s.redeem)   L.push('− แลกแต้ม   ' + auditBaht_(s.redeem));
   Object.keys(s.byMethod || {}).forEach(function (k) {
     L.push('− ' + (/โอน|สแกน/.test(k) ? 'ลูกค้าโอน' : k) + '   ' + auditBaht_(s.byMethod[k]));
   });
@@ -889,7 +900,7 @@ function cashCheck_(loc, day, opt) {
   L.push('เทียบ POS: ขายเงินสด ' + auditBaht_(s.cashSales) + ' บาท (ทั้งหมด ' + s.orders + ' บิล)' +
          ' → ควรมี ' + auditBaht_(posExpected));
   if (!ok || noCash) {
-    var gapPos = auditRound_(u.value - s.gross - dlv);
+    var gapPos = auditRound_(u.value - (s.gross - s.untracked) - dlv);
     if (Math.abs(gapPos) >= 10) {
       L.push(gapPos > 0
         ? '👉 ของออกมากกว่าที่กด POS ' + auditBaht_(gapPos) + ' บาท — ขายแล้วไม่ได้กด / ลงของเสียไม่ครบ / ของหาย'

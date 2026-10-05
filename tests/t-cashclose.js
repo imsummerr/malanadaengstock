@@ -132,15 +132,38 @@ eq('น้ำจิ้มงาเป็น 0', b['น้ำจิ้มงา (
 eq('ดอลลี่ยังอยู่ 5', b['ดอลลี่'], 5);
 eq('สาขายังมีน้ำจิ้ม 7', g.stockBalances_()[SHOP]['น้ำจิ้มงา (กระปุก)'], 7);
 
+section('สาหร่ายแผ่น (ไม่มีในสต็อก) บวกเพิ่ม · ไม้แลกแต้มหักออก');
+g = setup(true);
+push(g, g.SHEET_ORDERS, { 'วันที่': ymd(at(70)), 'เวลา': hms(at(70)), 'สาขา': SHOP,
+  'ยอดรวม': 30, 'ส่วนลด': 0, 'ยอดสุทธิ': 20, 'รวมไม้': 1, 'ยอดไม้': 10,
+  'รวมของอื่น': 1, 'ยอดของอื่น': 20, 'ใช้แต้ม (ไม้)': 1, 'ส่วนลดแต้ม': 10, 'วิธีชำระเงิน': 'เงินสด' });
+r = g.cashCheck_(SHOP, g.cashBizDay_(Date.now()), { silent: true });
+eq('150 + สาหร่าย 20 − แลกแต้ม 10 = 160', r.expected, 160);
+eq('บอกบรรทัดแลกแต้ม', /− แลกแต้ม   10/.test(r.text), true);
+eq('บอกบรรทัดของที่ไม่ได้นับสต็อก', /\+ มาม่า\/ของอื่นที่ไม่ได้นับสต็อก   20/.test(r.text), true);
+
+section('ชีสขาย 15 บาท ตัวเดียว');
+g = fresh();
+eq('ชีส 15', g.findStockItem_('ชีส').price, 15);
+eq('ต็อก 10', g.findStockItem_('ต็อกแท่งเล็ก').price, 10);
+eq('ฟองเต้าหู้ม้วน 10', g.findStockItem_('ฟองเต้าหู้ม้วน').price, 10);
+{
+  const S0 = g.__env.SHEETS[g.SHEET_ITEMS];
+  const p0 = S0.headers.indexOf('ราคาขาย/หน่วยย่อย');
+  S0.rows.find(r => r[0] === 'ชีส')[p0] = 10;     // ชีตจริงตอนนี้ยังเป็น 10
+  g.cacheClear_(); g.applyItemCatalogue(); g.cacheClear_();
+  eq('fixItemList แก้ชีส 10 ในชีตเป็น 15', g.findStockItem_('ชีส').price, 15);
+}
+
 section('ราคา 15 บาทที่กรอกเองในชีต ไม่ถูก fixItemList เขียนทับ');
 g = fresh();
 const S = g.__env.SHEETS[g.SHEET_ITEMS];
 const pi = S.headers.indexOf('ราคาขาย/หน่วยย่อย');
-S.rows.find(r => r[0] === 'ชีส')[pi] = 15;
+S.rows.find(r => r[0] === 'เห็ดเข็ม')[pi] = 15;
 g.cacheClear_();
 g.applyItemCatalogue();
 g.cacheClear_();
-eq('ชีสยังเป็น 15', g.findStockItem_('ชีส').price, 15);
+eq('เห็ดเข็มที่กรอก 15 เองยังเป็น 15', g.findStockItem_('เห็ดเข็ม').price, 15);
 eq('ตัวอื่นยังเป็น 10', g.findStockItem_('ดอลลี่').price, 10);
 S.rows.find(r => r[0] === 'ดอลลี่')[pi] = '';
 g.cacheClear_(); g.applyItemCatalogue(); g.cacheClear_();
