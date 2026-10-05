@@ -2929,6 +2929,10 @@ function applyItemCatalogue() {
       added.push(it.name);
       return;
     }
+    // ราคาที่เจ้าของกรอกเองในชีต (เช่น ของ 15 บาท) ห้ามเขียนทับกลับเป็น 10
+    // เขียนให้เฉพาะช่องที่ยังว่าง หรือของที่ตั้งราคาไว้ใน PRICE_EXCEPTION
+    var priceCell = sh.getRange(row, map['ราคาขาย/หน่วยย่อย'] + 1).getValue();
+    if (Number(priceCell) > 0 && PRICE_EXCEPTION[it.name] === undefined) delete vals['ราคาขาย/หน่วยย่อย'];
     Object.keys(vals).forEach(function (k) {
       if (k === 'สินค้า') return;
       sh.getRange(row, map[k] + 1).setValue(vals[k]);

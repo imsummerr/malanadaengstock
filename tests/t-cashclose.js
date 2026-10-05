@@ -132,4 +132,18 @@ eq('น้ำจิ้มงาเป็น 0', b['น้ำจิ้มงา (
 eq('ดอลลี่ยังอยู่ 5', b['ดอลลี่'], 5);
 eq('สาขายังมีน้ำจิ้ม 7', g.stockBalances_()[SHOP]['น้ำจิ้มงา (กระปุก)'], 7);
 
+section('ราคา 15 บาทที่กรอกเองในชีต ไม่ถูก fixItemList เขียนทับ');
+g = fresh();
+const S = g.__env.SHEETS[g.SHEET_ITEMS];
+const pi = S.headers.indexOf('ราคาขาย/หน่วยย่อย');
+S.rows.find(r => r[0] === 'ชีส')[pi] = 15;
+g.cacheClear_();
+g.applyItemCatalogue();
+g.cacheClear_();
+eq('ชีสยังเป็น 15', g.findStockItem_('ชีส').price, 15);
+eq('ตัวอื่นยังเป็น 10', g.findStockItem_('ดอลลี่').price, 10);
+S.rows.find(r => r[0] === 'ดอลลี่')[pi] = '';
+g.cacheClear_(); g.applyItemCatalogue(); g.cacheClear_();
+eq('ช่องว่างเติมราคาเริ่มต้นให้', g.findStockItem_('ดอลลี่').price, 10);
+
 module.exports = done();
