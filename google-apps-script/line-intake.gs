@@ -446,9 +446,11 @@ function intakeHelpText_() {
          '   ค่าที่ 200\n' +
          '   ค่าแก๊ส 450\n' +
          '   ค่าไม้เสียบ 300\n\n' +
-         '🏪 ค่าใช้จ่ายของสาขา — เติมชื่อสาขาท้ายบรรทัด\n' +
-         '   ค่าแก๊ส 450 ทรัพย์พัฒนา\n' +
-         '   (พิมพ์ในกลุ่มนี้ได้เลย ลงเป็นค่าใช้จ่ายของสาขานั้น)\n\n' +
+         '🏪 ค่าใช้จ่ายของสาขา — เขียนชื่อสาขาเป็นหัวไว้บรรทัดแรก\n' +
+         '   ค่าใช้จ่าย ทรัพย์พัฒนา\n' +
+         '   ค่าแก๊ส 450\n' +
+         '   ค่าถุง 9\n' +
+         '   (หรือเติมท้ายบรรทัดเดียว: ค่าแก๊ส 450 ทรัพย์พัฒนา)\n\n' +
          '💳 รูดบัตร — เติมคำว่า "บัตร" ท้ายบรรทัดนั้น\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
          '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
@@ -578,6 +580,21 @@ function intakeBranchOf_(text) {
   return { loc: '', text: t };
 }
 
+/**
+ * บรรทัดหัว "ค่าใช้จ่าย ตลาดทรัพย์พัฒนา" (หรือแค่ "ทรัพย์พัฒนา") — ไม่มีตัวเลข มีแต่ชื่อสาขา
+ * ค่าใช้จ่ายบรรทัดถัด ๆ ไปเป็นของสาขานั้นหมด จนกว่าจะเจอหัวใหม่ ("ครัวกลาง" = กลับมาครัวกลาง)
+ * คืน null = ไม่ใช่บรรทัดหัว · '' = หัวครัวกลาง · ชื่อสาขา = หัวสาขา
+ */
+function intakeBranchHeader_(line) {
+  var t = String(line || '').replace(/[^\u0E00-\u0E7Fa-zA-Z0-9\s]/g, ' ').trim();
+  if (!t || /\d/.test(t)) return null;
+  var rest = function (x) { return String(x).replace(/ค่าใช้จ่าย|รายจ่าย|ของ|ให้|สำหรับ|\s/g, ''); };
+  var b = intakeBranchOf_(t);
+  if (b.loc) return rest(b.text) === '' ? b.loc : null;
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
+  return rest(t) === central ? '' : null;
+}
+
 /** ขึ้นต้นด้วย "ค่า" = ค่าใช้จ่ายรายวัน ไม่ใช่ของที่ซื้อเข้าสต็อก */
 function intakeIsExpense_(name) { return /^ค่า/.test(String(name || '').trim()); }
 
@@ -633,11 +650,14 @@ function intakeParseText_(text) {
   // วิธีจ่ายที่บอกมาจะได้ลามเฉพาะในบรรทัดเดียวกัน ไม่ลามทั้งข้อความ
   var out = [];
   var rows = clean.split(/[\n\r]+/);
+  var headBranch = '';     // บรรทัดหัว "ค่าใช้จ่าย ทรัพย์พัฒนา" — ใช้กับบรรทัดถัดไปทั้งหมด
   for (var r = 0; r < rows.length && out.length < INTAKE_MAX_ITEMS; r++) {
+    var head = intakeBranchHeader_(intakeStripPrefix_(rows[r]) !== null ? intakeStripPrefix_(rows[r]) : rows[r]);
+    if (head !== null) { headBranch = head; continue; }
     var cols = rows[r].split(/[,;]+/);
     for (var c = 0; c < cols.length && out.length < INTAKE_MAX_ITEMS; c++) {
       var one = intakeParseLine_(cols[c]);
-      if (one) { one.line = r; out.push(one); }
+      if (one) { one.line = r; one.headBranch = headBranch; out.push(one); }
     }
   }
 
@@ -664,7 +684,9 @@ function intakeParseText_(text) {
   for (i = 0; i < out.length; i++) {
     if (out[i].branch && branchOf[out[i].line] === undefined) branchOf[out[i].line] = out[i].branch;
   }
-  for (i = 0; i < out.length; i++) out[i].branch = out[i].branch || branchOf[out[i].line] || '';
+  for (i = 0; i < out.length; i++) {
+    out[i].branch = out[i].branch || branchOf[out[i].line] || out[i].headBranch || '';
+  }
 
   return out;
 }
@@ -1527,6 +1549,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   });
 
   var buyLines = [], expLines = [], stockLines = [], rndLines = [], unitWarns = [];
+  var expByLoc = {}, expLocs = [];   // ค่าใช้จ่ายแยกหัวตามสาขา — ไม่ต้องเขียนชื่อสาขาทุกบรรทัด
   var packWarns = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
@@ -1560,8 +1583,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           it.baht || 0, ctx.msgId + '-' + i, it.pay
         ]);
         expTotal += it.baht || 0;
-        expLines.push('• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay) +
-                      (expLoc !== ctx.location ? '  → ' + expLoc : ''));
+        var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay);
+        expLines.push(expLine);
+        if (!expByLoc[expLoc]) { expByLoc[expLoc] = []; expLocs.push(expLoc); }
+        expByLoc[expLoc].push(expLine);
 
       } else {
         if (!buySheet) { buySheet = intakeSheet_(); buySeq = intakeSeqOf_(buySheet, date); }
@@ -1669,7 +1694,11 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
 
   var blocks = [];
   if (buyLines.length)   blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
-  if (expLines.length)   blocks.push('🧾 ค่าใช้จ่าย\n' + expLines.join('\n'));
+  // ของที่นี่ขึ้นก่อน แล้วค่อยสาขาอื่น — หัวบอกชื่อสาขา ไม่ต้องบอกทุกบรรทัด
+  expLocs.sort(function (a, b) { return (a === ctx.location ? 0 : 1) - (b === ctx.location ? 0 : 1); });
+  expLocs.forEach(function (loc) {
+    blocks.push('🧾 ค่าใช้จ่าย' + (loc !== ctx.location ? ' ' + loc : '') + '\n' + expByLoc[loc].join('\n'));
+  });
   if (rndLines.length)   blocks.push('🧪 ลองสูตร (ไม่เข้าสต็อก)\n' + rndLines.join('\n'));
   if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));
 
