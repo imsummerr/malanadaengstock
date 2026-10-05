@@ -122,8 +122,26 @@ function setLocationStart(loc, ymd) {
  * ยอดขาย ค่าใช้จ่าย ของเสียก่อนหน้านั้นไม่นำมาคิด ยอดขายเริ่มนับวันรุ่งขึ้น
  * ไม่ต้องนับสต็อกใหม่ก่อนเปิดร้าน
  */
+/** สาขาที่ใช้ตอนรันจากหน้า Apps Script (กด ▶ ที่ useLatestCountAsBase) */
+var LATEST_BASE_BRANCH = 'ตลาดทรัพย์พัฒนา';
+
+/**
+ * แบบไม่ต้องมีกล่องถาม — เลือกฟังก์ชันนี้ในหน้า Apps Script แล้วกด ▶ ได้เลย
+ * (รันจากหน้า Apps Script เรียกกล่องถามในชีตไม่ได้ จะขึ้น "Cannot call getUi")
+ * ผลดูที่ "บันทึกการดำเนินการ" ด้านล่าง
+ */
+function useLatestCountAsBase() {
+  var r = startFromLatestCount_(LATEST_BASE_BRANCH);
+  Logger.log(r
+    ? '✅ ' + LATEST_BASE_BRANCH + ' — ยอดตั้งต้น = ที่นับเมื่อ ' + r.label +
+      '\nยอดขาย/ค่าใช้จ่าย/ของเสีย นับตั้งแต่หลังจากนั้น'
+    : '❌ ไม่เจอยอดนับสต็อกของ "' + LATEST_BASE_BRANCH + '"');
+}
+
 function promptStartFromLatestCount() {
-  var ui = SpreadsheetApp.getUi();
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); }
+  catch (e) { useLatestCountAsBase(); return; }   // รันจากหน้า Apps Script — ไม่มีกล่องถาม
   var a = ui.prompt('ใช้ยอดนับล่าสุดเป็นฐาน', 'ชื่อสาขา (ตรงกับที่ใช้ในระบบ)', ui.ButtonSet.OK_CANCEL);
   if (a.getSelectedButton() !== ui.Button.OK) return;
   var loc = String(a.getResponseText() || '').trim();

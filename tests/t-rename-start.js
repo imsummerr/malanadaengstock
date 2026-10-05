@@ -55,4 +55,11 @@ eq('ยอดตอนนี้ = 22:38', g.stockBalances_()[SHOP]['ดอลล
 eq('ปิดร้านรอบหน้าเทียบกับ 22:38', g.cashCountTimes_(SHOP).length, 1);
 eq('ตั้งแบบใส่วันอย่างเดียวยังได้', g.costYmdTime_('2026-10-06'), new Date(2026, 9, 6).getTime());
 
+section('รันจากหน้า Apps Script (ไม่มีกล่องถาม) ก็ตั้งได้');
+g = fresh();
+push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(5, 22, 38), 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': 12, 'ประเภท': 'เช็คสต็อก' });
+g.promptStartFromLatestCount();
+eq('ตั้งเส้นที่ 22:38', JSON.parse(g.__env.PROPS.ACC_START_BY_LOC)[SHOP], '2026-10-05 22:38');
+eq('บอกผลใน log', g.__env.LOG.some(l => /✅ ตลาดทรัพย์พัฒนา — ยอดตั้งต้น = ที่นับเมื่อ 5\/10\/2026 22:38/.test(l)), true);
+
 module.exports = done();
