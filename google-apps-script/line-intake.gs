@@ -446,6 +446,9 @@ function intakeHelpText_() {
          '   ค่าที่ 200\n' +
          '   ค่าแก๊ส 450\n' +
          '   ค่าไม้เสียบ 300\n\n' +
+         '🏪 ค่าใช้จ่ายของสาขา — เติมชื่อสาขาท้ายบรรทัด\n' +
+         '   ค่าแก๊ส 450 ทรัพย์พัฒนา\n' +
+         '   (พิมพ์ในกลุ่มนี้ได้เลย ลงเป็นค่าใช้จ่ายของสาขานั้น)\n\n' +
          '💳 รูดบัตร — เติมคำว่า "บัตร" ท้ายบรรทัดนั้น\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
          '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
@@ -541,6 +544,40 @@ function intakePayOf_(text) {
   return { method: '', text: t };
 }
 
+/**
+ * ป้ายสาขาท้ายบรรทัด — ค่าใช้จ่ายของสาขาแต่พิมพ์ในกลุ่มครัวกลาง
+ *   ค่าแก๊ส 450 ทรัพย์พัฒนา   → ค่าใช้จ่ายของสาขาตลาดทรัพย์พัฒนา
+ * รับทั้งชื่อเต็ม ชื่อที่ไม่มี "ตลาด" นำหน้า และ "สาขา..." นำหน้า
+ * ใช้กับค่าใช้จ่ายเท่านั้น ของที่ซื้อเข้าสต็อกยังเข้าครัวกลางเสมอ (ส่งสาขาผ่านแพ็คของ)
+ */
+function intakeBranchTags_() {
+  var groups = {};
+  try { if (typeof stockLineGroups_ === 'function') groups = stockLineGroups_() || {}; } catch (e) {}
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
+  var out = [];
+  Object.keys(groups).forEach(function (loc) {
+    loc = String(loc).trim();
+    if (!loc || loc === central) return;
+    var short = loc.replace(/^ตลาด\s*/, '');
+    [loc, short, 'สาขา' + loc, 'สาขา' + short, 'สาขา ' + short].forEach(function (w) {
+      if (w.length >= 3) out.push({ word: w, loc: loc });
+    });
+  });
+  return out.sort(function (a, b) { return b.word.length - a.word.length; });
+}
+
+/** ตัดป้ายสาขาออกจากข้อความ — คืน loc = '' ถ้าไม่ได้บอกมา */
+function intakeBranchOf_(text) {
+  var t = String(text || '');
+  var tags = intakeBranchTags_();
+  for (var i = 0; i < tags.length; i++) {
+    var at = t.indexOf(tags[i].word);
+    if (at === -1) continue;
+    return { loc: tags[i].loc, text: (t.slice(0, at) + ' ' + t.slice(at + tags[i].word.length)).trim() };
+  }
+  return { loc: '', text: t };
+}
+
 /** ขึ้นต้นด้วย "ค่า" = ค่าใช้จ่ายรายวัน ไม่ใช่ของที่ซื้อเข้าสต็อก */
 function intakeIsExpense_(name) { return /^ค่า/.test(String(name || '').trim()); }
 
@@ -622,6 +659,13 @@ function intakeParseText_(text) {
     out[i].pay = out[i].pay || toldOf[out[i].line] || pay;
   }
 
+  // ป้ายสาขาก็เหมือนวิธีจ่าย — บอกท้ายบรรทัดครั้งเดียว ใช้กับทุกรายการในบรรทัดนั้น
+  var branchOf = {};
+  for (i = 0; i < out.length; i++) {
+    if (out[i].branch && branchOf[out[i].line] === undefined) branchOf[out[i].line] = out[i].branch;
+  }
+  for (i = 0; i < out.length; i++) out[i].branch = out[i].branch || branchOf[out[i].line] || '';
+
   return out;
 }
 
@@ -654,6 +698,11 @@ function intakeParseLine_(line) {
   // ตัดคำว่า "บัตร" / "โอน" ออกก่อน ไม่งั้นมันจะไปติดอยู่ในชื่อของ
   var pay = intakePayOf_(text);
   text = pay.text.trim();
+  if (!text) return null;
+
+  // "ทรัพย์พัฒนา" ท้ายบรรทัด = ค่าใช้จ่ายของสาขานั้น — ตัดออกไม่ให้ไปติดในชื่อ
+  var branch = intakeBranchOf_(text);
+  text = branch.text;
   if (!text) return null;
 
   // เช่นเดียวกับ "ทดลอง" / "ลองสูตร" — ตัดออกไม่งั้นชื่อจะเป็น "ทดลอง ปลาดอลลี่"
@@ -729,6 +778,7 @@ function intakeParseLine_(line) {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     perKg: perKg,                                     // คนพิมพ์บอกมาเอง ใช้แทนที่จะหาร
     pay: pay.method, expense: intakeIsExpense_(name),
+    branch: branch.loc,                               // ป้ายสาขา ใช้กับค่าใช้จ่าย
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
     saidMoney: saidMoney, saidUnit: saidUnit
@@ -1502,14 +1552,16 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         if (!expSheet) { expSheet = intakeExpenseSheet_(); expSeq = intakeSeqOf_(expSheet, date); }
         expSeq++;
         var type = intakeExpenseType_(it.raw);
+        var expLoc = it.branch || ctx.location;
         expRows.push([
           date, time, 'E' + stamp + '-' + ('00' + expSeq).slice(-3),
-          ctx.location, ctx.who, type,
+          expLoc, ctx.who, type,
           intakeNorm_(it.raw) === intakeNorm_(type) ? '' : it.raw,
           it.baht || 0, ctx.msgId + '-' + i, it.pay
         ]);
         expTotal += it.baht || 0;
-        expLines.push('• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay));
+        expLines.push('• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay) +
+                      (expLoc !== ctx.location ? '  → ' + expLoc : ''));
 
       } else {
         if (!buySheet) { buySheet = intakeSheet_(); buySeq = intakeSeqOf_(buySheet, date); }
