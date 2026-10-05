@@ -1367,8 +1367,8 @@ function refresh() {
   document.getElementById('btn-pay').disabled =
     (t.total <= 0 && !group.length) || (t.total > 0 && missing.length > 0);
   // พักบิลได้ตั้งแต่เลือกของแล้ว ไม่ต้องรอเลือกน้ำซุป/ความเผ็ด/น้ำจิ้มครบ
-  // ระหว่างรวมบิลไม่ให้พัก — ถ้วยก่อนหน้าจะค้างอยู่โดยไม่มีใครเห็น
-  document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0 || group.length > 0);
+  // ระหว่างรวมบิล พัก = พักทั้งบิล (ทุกถ้วยไปด้วยกัน)
+  document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0 && !group.length);
   document.getElementById('btn-bowl').classList.toggle('hidden', t.total <= 0);
   fitBottomPad();
 }
@@ -2321,10 +2321,16 @@ function snapshotOrder() {
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-/** พักบิลปัจจุบัน แล้วเริ่มออเดอร์ใหม่ */
+/** พักบิลปัจจุบัน แล้วเริ่มออเดอร์ใหม่ — รวมบิลอยู่ก็พักไปทั้งบิล ถ้วยไม่แยกกัน */
 function holdOrder(silent) {
-  if (totals().total <= 0) { if (!silent) toast('ยังไม่ได้เลือกของ'); return false; }
+  if (totals().total <= 0 && !group.length) { if (!silent) toast('ยังไม่ได้เลือกของ'); return false; }
   const snap = snapshotOrder();
+  if (group.length) {
+    snap.group = group.map(b => ({ snap: b.snap, rec: b.rec }));
+    snap.total = payTotal();
+    group = [];
+    renderGroup();
+  }
   const list = getHeld();
   // ถ้ากำลังแก้บิลที่พักไว้อยู่ ให้ทับใบเดิม ไม่ใช่เพิ่มใบใหม่
   const at = resumedHeldId ? list.findIndex(h => h.id === resumedHeldId) : -1;
@@ -2342,6 +2348,12 @@ function openHeld() { renderHeld(); showScreen('held'); }
 
 function heldSummary(h) {
   const parts = [];
+  if (h.group && h.group.length) {
+    parts.push('🧾 รวมบิล ' + (h.group.length + (h.stickCount || h.mamaCount || h.extraCount ? 1 : 0)) + ' ถ้วย');
+    const sticks = h.group.reduce((s, b) => s + (b.rec.stickCount || 0), 0) + (h.stickCount || 0);
+    if (sticks) parts.push(sticks + ' ไม้');
+    return parts.join(' · ');
+  }
   if (h.stickCount) parts.push(h.stickCount + ' ไม้');
   if (h.mamaCount) parts.push('มาม่า ' + h.mamaCount);
   if (h.extraCount) parts.push('ของอื่น ' + h.extraCount);
@@ -2359,7 +2371,9 @@ function renderHeld() {
   }
   box.innerHTML = list.map(h => {
     const chosen = [h.soup, h.spice, h.sauce].filter(Boolean).join(' · ');
-    const waiting = REQUIRED.filter(r => !h[r.field]).map(r => r.label);
+    // รวมบิลที่ถ้วยล่าสุดยังว่าง = ไม่มีอะไรค้างเลือก
+    const lastEmpty = h.group && h.group.length && !(h.stickCount || h.mamaCount || h.extraCount);
+    const waiting = lastEmpty ? [] : REQUIRED.filter(r => !h[r.field]).map(r => r.label);
     return '<div class="bill bill-pend">' +
       '<div class="bill-head" style="cursor:default;">' +
         '<div style="min-width:0;flex:1;">' +
@@ -2391,9 +2405,9 @@ function resumeHeld(id) {
   const h = list.find(x => x.id === id);
   if (!h) { renderHeld(); return; }
 
-  // ของที่ค้างอยู่ในตะกร้าตอนนี้ ห้ามหาย — พักเก็บไว้ให้ก่อน
+  // ของที่ค้างอยู่ในตะกร้าตอนนี้ (รวมถึงบิลรวมที่กำลังทำ) ห้ามหาย — พักเก็บไว้ให้ก่อน
   let parked = false;
-  if (totals().total > 0) parked = holdOrder(true);
+  if (totals().total > 0 || group.length) parked = holdOrder(true);
 
   clearOrder();
   STICK_PRICES.forEach(p => { order.sticks[p] = Number(h.sticks[p]) || 0; });
@@ -2408,6 +2422,8 @@ function resumeHeld(id) {
   order.soup = h.soup || ''; order.spice = h.spice || ''; order.sauce = h.sauce || '';
   order.method = '';
   resumedHeldId = h.id;
+  group = (h.group || []).map(b => ({ snap: b.snap, rec: b.rec }));
+  renderGroup();
 
   refreshChips();
   refresh();
