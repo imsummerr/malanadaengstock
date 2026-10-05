@@ -325,11 +325,11 @@
         </div>
       </div>
 
-      <div class="sec-head" style="margin-top:20px;">
-        <h2>🍜 มาม่า</h2>
-        <div class="note">รวม <b id="mama-count" class="digits">0</b> ห่อ</div>
+      <!-- มาม่าเลิกขายแยกราคาแล้ว (มาม่าเปล่าขายไม้ละ 10฿) — ซ่อนไว้ ไม่ลบ เพื่อให้โค้ดเดิมยังอ้างถึงได้ -->
+      <div hidden>
+        <b id="mama-count">0</b>
+        <div id="mama-grid"></div>
       </div>
-      <div class="grid-mama" id="mama-grid"></div>
 
       <div class="sec-head" style="margin-top:20px;">
         <h2>🍘 ของอื่น</h2>
@@ -1055,7 +1055,7 @@ const DEFAULT_BRANCH_QR = {
 };
 
 const STICK_PRICES = [10, 15];               // ราคาไม้ (บาท/ไม้)
-const MAMA_PRICES  = [15, 20, 25, 35, 45];   // ราคามาม่า (บาท/ห่อ) ต้องตรงกับ pos-backend.gs
+const MAMA_PRICES  = [];   // ไม่มีปุ่มมาม่าแล้ว — บิลเก่าที่มีมาม่ายังแสดงในประวัติได้ตามปกติ
 // สินค้าอื่นที่ขายเป็นชิ้น ไม่ใช่ไม้และไม่ใช่มาม่า — ไม่เข้าเงื่อนไขส่วนลดไม้
 // เพิ่มเมนูใหม่ได้ที่นี่ ต้องตรงกับ EXTRAS ใน pos-backend.gs
 const EXTRAS = [
