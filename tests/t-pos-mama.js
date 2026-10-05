@@ -18,7 +18,7 @@ eq('มาม่า 2 แพ็ค เข้ามาม่าเปล่า', 
 eq('ถ้วย 2 ออน 100 ใบ ไม่เอา 2 ไปเป็นจำนวน', bal(gi)['ถ้วย 2 ออน'], 100);
 
 section('ชีตบิลจริงยังเป็นหัวตารางเก่า (ไม่มีคอลัมน์ 25฿)');
-const oldHeaders = g.ORDER_HEADERS.filter(h => h !== 'มาม่า 25฿');
+const oldHeaders = g.ORDER_HEADERS.filter(h => h !== 'มาม่า 25฿' && h !== 'รวมบิล');
 g.__env.SHEETS[g.SHEET_ORDERS] = { headers: oldHeaders.slice(), rows: [] };
 // บิลเก่าที่ขายมาม่า 10฿
 const old = new Array(oldHeaders.length).fill('');
@@ -35,7 +35,7 @@ eq('บันทึกบิลได้', r.success, true);
 const sh = g.__env.SHEETS[g.SHEET_ORDERS];
 const last = sh.rows[sh.rows.length - 1];
 const col = h => last[sh.headers.indexOf(h)];
-eq('เพิ่มคอลัมน์ มาม่า 25฿ ไว้ท้ายสุด', sh.headers[sh.headers.length - 1], 'มาม่า 25฿');
+eq('เพิ่มคอลัมน์ มาม่า 25฿ กับ รวมบิล ไว้ท้ายสุด', sh.headers.slice(-2), ['มาม่า 25฿', 'รวมบิล']);
 eq('คอลัมน์เดิมไม่เลื่อน', sh.headers.slice(0, oldHeaders.length), oldHeaders);
 eq('15฿ ลงช่อง 15฿', col('มาม่า 15฿'), 1);
 eq('25฿ ลงช่อง 25฿', col('มาม่า 25฿'), 2);
@@ -50,5 +50,19 @@ const nb = b.find(x => x.orderNo !== 'OLD');
 eq('บิลใหม่อ่านมาม่า 25฿ ได้', (nb.mama || []).map(m => m.price + 'x' + m.qty).sort(), ['15x1', '25x2', '45x1']);
 const ob = b.find(x => x.orderNo === 'OLD');
 eq('บิลเก่ามาม่า 10฿ ยังอ่านได้', (ob.mama || []).map(m => m.price + 'x' + m.qty), ['10x1']);
+
+section('รวมบิล — 2 ถ้วยจ่ายโอนทีเดียว ลงถ้วยละแถว');
+const base = { branch: SHOP, method: 'สแกน/โอนผ่านธนาคาร', subtotal: 0, total: 0 };
+g.handleOrder_({ token: 't', order: Object.assign({}, base, { orderId: 'POS9-1', total: 50, subtotal: 50,
+  sticks: [{ price: 10, qty: 5 }], stickCount: 5, stickAmount: 50, soup: 'น้ำใส', group: 'B9 ถ้วย 1/2' }) });
+g.handleOrder_({ token: 't', order: Object.assign({}, base, { orderId: 'POS9-2', total: 60, subtotal: 60,
+  sticks: [{ price: 10, qty: 6 }], stickCount: 6, stickAmount: 60, soup: 'น้ำดำ', group: 'B9 ถ้วย 2/2' }) });
+const gr = sh.rows.slice(-2).map(r => r[sh.headers.indexOf('รวมบิล')]);
+eq('ช่องรวมบิล', gr, ['B9 ถ้วย 1/2', 'B9 ถ้วย 2/2']);
+eq('วิธีจ่ายเดียวกัน', sh.rows.slice(-2).map(r => r[sh.headers.indexOf('วิธีชำระเงิน')]),
+   ['สแกน/โอนผ่านธนาคาร', 'สแกน/โอนผ่านธนาคาร']);
+const b2 = (g.handleBills_({ token: 't', date: today }).data || {}).bills || [];
+eq('บิลย้อนหลังบอกรวมบิล', b2.filter(x => x.group).map(x => x.group + ' ' + x.total).sort(), ['B9 ถ้วย 1/2 50', 'B9 ถ้วย 2/2 60']);
+eq('บิลปกติไม่มีรวมบิล', b2.find(x => x.orderNo === 'OLD').group, '');
 
 process.exit(done().fail ? 1 : 0);

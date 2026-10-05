@@ -31,6 +31,11 @@
     body { background: var(--bg); color: var(--ink); min-height: 100vh; }
     .digits { font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
     .hidden { display: none !important; }
+    .group-box { margin-bottom: 16px; border: 2px dashed var(--red); }
+    .group-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .group-row { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+                 padding: 8px 0; border-top: 1px solid var(--line, #eee); font-size: 13.5px; }
+    .group-row .g-sub { color: var(--muted); font-size: 12px; }
     .fade-in { animation: fadeIn .25s ease-out; }
     @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
     .pop { animation: pop .32s cubic-bezier(.34,1.56,.64,1); }
@@ -306,6 +311,16 @@
           style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">⏸️ บิลที่พักไว้</button>
       </div>
 
+      <!-- รวมบิล — ลูกค้าคนเดียวสั่งหลายถ้วยแล้วจ่ายทีเดียว -->
+      <div id="group-box" class="card group-box hidden">
+        <div class="group-head">
+          <b>🧾 รวมบิล — <span id="group-n">0</span> ถ้วยรอจ่ายพร้อมกัน</b>
+          <button onclick="cancelGroup()" class="key btn-ghost" style="padding:6px 10px;font-size:12.5px;">ยกเลิกรวมบิล</button>
+        </div>
+        <div id="group-list"></div>
+        <p class="note" style="margin:8px 0 0;">กำลังเลือกถ้วยที่ <b id="group-next">2</b> — ไม่มีถ้วยต่อไปแล้ว กดชำระเงินได้เลย</p>
+      </div>
+
       <div class="sec-head">
         <h2>🍢 ไม้หม่าล่า</h2>
         <div class="note">รวม <b id="stick-count" class="digits">0</b> ไม้</div>
@@ -361,13 +376,19 @@
         <div class="sum-line discount hidden" id="sum-redeem-row">
           <span id="sum-redeem-label">ใช้แต้ม</span><span class="digits" id="sum-redeem">-0 ฿</span>
         </div>
+        <div class="sum-line hidden" id="sum-group-row">
+          <span id="sum-group-label">ถ้วยก่อนหน้า</span><span class="digits" id="sum-group">0 ฿</span>
+        </div>
         <p id="pay-need" class="pay-need hidden"></p>
-        <button onclick="holdOrder()" id="btn-hold" class="key btn-ghost hidden"
-          style="width:100%;padding:11px;font-size:13.5px;margin-bottom:10px;">
-          ⏸️ พักบิลนี้ไว้ก่อน — ค่อยมาคิดเงินทีหลัง</button>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button onclick="holdOrder()" id="btn-hold" class="key btn-ghost hidden"
+            style="flex:1;padding:11px 6px;font-size:13px;">⏸️ พักบิลไว้ก่อน</button>
+          <button onclick="addBowl()" id="btn-bowl" class="key btn-ghost hidden"
+            style="flex:1;padding:11px 6px;font-size:13px;">➕ เพิ่มอีกถ้วย (จ่ายรวม)</button>
+        </div>
         <div class="total-row">
           <div>
-            <div class="total-label">ยอดสุทธิ</div>
+            <div class="total-label" id="sum-total-label">ยอดสุทธิ</div>
             <div class="total-value digits" id="sum-total">0<small> ฿</small></div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -1289,7 +1310,16 @@ function refresh() {
   document.getElementById('mama-count').textContent = t.mamaCount;
   document.getElementById('extra-count').textContent = t.extraCount;
   document.getElementById('sum-subtotal').textContent = t.subtotal.toLocaleString('th-TH') + ' ฿';
-  document.getElementById('sum-total').innerHTML = t.total.toLocaleString('th-TH') + '<small> ฿</small>';
+  // รวมบิลอยู่ — ยอดใหญ่โชว์ยอดที่ต้องเก็บทั้งหมด ถ้วยนี้ดูได้จากบรรทัดยอดรวม/ส่วนลด
+  const gSum = groupTotal();
+  document.getElementById('sum-total').innerHTML = (gSum + t.total).toLocaleString('th-TH') + '<small> ฿</small>';
+  document.getElementById('sum-total-label').textContent =
+    group.length ? 'รวมทั้งบิล (' + (group.length + (t.total > 0 ? 1 : 0)) + ' ถ้วย)' : 'ยอดสุทธิ';
+  document.getElementById('sum-group-row').classList.toggle('hidden', !group.length);
+  if (group.length) {
+    document.getElementById('sum-group-label').textContent = 'ถ้วยก่อนหน้า ' + group.length + ' ถ้วย';
+    document.getElementById('sum-group').textContent = '+' + gSum.toLocaleString('th-TH') + ' ฿';
+  }
 
   // การ์ดใช้แต้ม
   document.getElementById('sub-redeem').textContent =
@@ -1333,9 +1363,13 @@ function refresh() {
   } else {
     needBox.classList.add('hidden');
   }
-  document.getElementById('btn-pay').disabled = t.total <= 0 || missing.length > 0;
+  // รวมบิลอยู่แล้วถ้วยนี้ยังว่าง = จ่ายเฉพาะถ้วยก่อนหน้าได้เลย
+  document.getElementById('btn-pay').disabled =
+    (t.total <= 0 && !group.length) || (t.total > 0 && missing.length > 0);
   // พักบิลได้ตั้งแต่เลือกของแล้ว ไม่ต้องรอเลือกน้ำซุป/ความเผ็ด/น้ำจิ้มครบ
-  document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0);
+  // ระหว่างรวมบิลไม่ให้พัก — ถ้วยก่อนหน้าจะค้างอยู่โดยไม่มีใครเห็น
+  document.getElementById('btn-hold').classList.toggle('hidden', t.total <= 0 || group.length > 0);
+  document.getElementById('btn-bowl').classList.toggle('hidden', t.total <= 0);
   fitBottomPad();
 }
 
@@ -1362,13 +1396,104 @@ function clearOrder() {
   refresh();
 }
 
-function newOrder() {
+/** ล้างถ้วยที่กำลังเลือก (ของ + น้ำซุป/เผ็ด/น้ำจิ้ม) — ถ้วยที่รวมบิลไว้แล้วไม่แตะ */
+function resetBowl() {
   clearOrder();
   resumedHeldId = null;
   order.soup = ''; order.spice = ''; order.sauce = ''; order.method = '';
   refreshChips();
+  refresh();
+}
+
+function newOrder() {
+  group = [];
+  renderGroup();
+  resetBowl();
   clearInterval(countdownTimer);
   showScreen('cart');
+}
+
+/* ════════════════════════════════════════════════════════════
+   รวมบิล — ลูกค้าคนเดียวสั่ง 2 ถ้วยขึ้นไป แล้วจ่ายทีเดียว (เช่น โอนรวม 110)
+   แต่ละถ้วยมีน้ำซุป/ความเผ็ด/น้ำจิ้มของตัวเอง ส่วนลดคิดแยกถ้วยเหมือนจ่ายแยก
+   ลงชีตถ้วยละแถว วิธีจ่ายเดียวกัน ช่อง "รวมบิล" บอกว่าอยู่บิลเดียวกัน
+   ════════════════════════════════════════════════════════════ */
+let group = [];   // ถ้วยที่เลือกเสร็จแล้ว รอจ่ายพร้อมกัน [{ snap, rec }]
+
+function groupTotal() { return group.reduce((s, b) => s + b.rec.total, 0); }
+function payTotal() { return groupTotal() + totals().total; }
+
+/** รายละเอียดของถ้วยที่กำลังเลือก เป็นรูปแบบเดียวกับที่ส่งขึ้น Sheets */
+function bowlRecord() {
+  const t = totals();
+  return {
+    sticks: STICK_PRICES.map(p => ({ price: p, qty: order.sticks[p] })),
+    stickCount: t.stickCount, stickAmount: t.stickAmount,
+    mama: MAMA_PRICES.map(p => ({ price: p, qty: order.mama[p] })),
+    mamaCount: t.mamaCount, mamaAmount: t.mamaAmount,
+    extras: EXTRAS.map((e, i) => ({ name: e.name, price: e.price, qty: order.extras[i] })),
+    extraCount: t.extraCount, extraAmount: t.extraAmount,
+    redeemSticks: t.redeemSticks, redeemAmount: t.redeemAmount,
+    subtotal: t.subtotal, discount: t.discount, total: t.total,
+    soup: order.soup, spice: order.spice,
+    sauce: order.sauce, sauceCount: t.sauceCount
+  };
+}
+
+function addBowl() {
+  const t = totals();
+  if (t.total <= 0) { toast('ยังไม่ได้เลือกของถ้วยนี้'); return; }
+  const missing = missingChoices();
+  if (missing.length) {
+    toast('ถ้วยนี้ยังไม่ได้เลือก ' + missing.join(' · '));
+    document.getElementById(REQUIRED.find(r => !order[r.field]).id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  group.push({ snap: snapshotOrder(), rec: bowlRecord() });
+  clearResumedHeld();     // เปิดมาจากบิลที่พักไว้ — ย้ายมาอยู่ในบิลรวมแล้ว
+  resetBowl();
+  renderGroup();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  toast('เพิ่มถ้วยที่ ' + group.length + ' แล้ว — เลือกของถ้วยที่ ' + (group.length + 1) + ' ต่อได้เลย');
+}
+
+function renderGroup() {
+  const box = document.getElementById('group-box');
+  box.classList.toggle('hidden', !group.length);
+  document.getElementById('group-n').textContent = group.length;
+  document.getElementById('group-next').textContent = group.length + 1;
+  document.getElementById('group-list').innerHTML = group.map((b, i) => {
+    const r = b.rec;
+    const what = [r.stickCount ? r.stickCount + ' ไม้' : '', r.mamaCount ? 'มาม่า ' + r.mamaCount : '',
+                  r.extraCount ? 'ของอื่น ' + r.extraCount : ''].filter(Boolean).join(' · ');
+    return '<div class="group-row"><div style="min-width:0;">' +
+      '<div><b>ถ้วยที่ ' + (i + 1) + '</b> · ' + escapeText(what) + '</div>' +
+      '<div class="g-sub">' + escapeText([r.soup, r.spice, r.sauce].join(' · ')) + '</div></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<b class="digits">' + r.total.toLocaleString('th-TH') + ' ฿</b>' +
+      '<button onclick="removeBowl(' + i + ')" class="key btn-ghost" style="padding:5px 9px;font-size:12px;">เอาออก</button>' +
+      '</div></div>';
+  }).join('');
+  refresh();
+}
+
+/** เอาถ้วยออกจากบิลรวม — ไม่ทิ้ง ย้ายไปไว้ในบิลที่พักไว้ เผื่อเปิดมาคิดเงินแยก */
+function removeBowl(i) {
+  const b = group[i];
+  if (!b) return;
+  group.splice(i, 1);
+  setHeld([b.snap].concat(getHeld()));
+  renderGroup();
+  toast('เอาถ้วยออกแล้ว — ย้ายไปไว้ที่ "บิลที่พักไว้"');
+}
+
+function cancelGroup() {
+  if (!group.length) return;
+  if (!confirm('ยกเลิกรวมบิล?\nถ้วยที่เลือกไว้ ' + group.length + ' ถ้วยจะย้ายไปไว้ที่ "บิลที่พักไว้" ไม่หาย')) return;
+  setHeld(group.map(b => b.snap).reverse().concat(getHeld()));
+  group = [];
+  renderGroup();
+  toast('ยกเลิกรวมบิลแล้ว — ถ้วยที่เลือกไว้อยู่ใน "บิลที่พักไว้"');
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1475,6 +1600,7 @@ function pendingBillsOf(date) {
       redeemSticks: r.redeemSticks, redeemAmount: r.redeemAmount,
       subtotal: r.subtotal, discount: r.discount, total: r.total,
       soup: r.soup, spice: r.spice, sauce: r.sauce, method: r.method,
+      group: r.group || '',
       pending: true
     }));
 }
@@ -1533,6 +1659,7 @@ function renderBills(bills, date, cash) {
     lines.push(row('ความเผ็ด', b.spice || '—'));
     lines.push(row('น้ำจิ้ม', b.sauce || '—'));
     lines.push(row('วิธีชำระเงิน', b.method || '—'));
+    if (b.group) lines.push(row('รวมบิล', b.group));
     if (b.staff) lines.push(row('พนักงาน', b.staff));
     lines.push('<div class="bill-grp">ยอดเงิน</div>');
     lines.push(row('ยอดรวม', (Number(b.subtotal) || 0).toLocaleString('th-TH') + ' ฿'));
@@ -1555,7 +1682,8 @@ function renderBills(bills, date, cash) {
       '<div class="bill-head" onclick="toggleBill(' + i + ')">' +
         '<div style="min-width:0;">' +
           '<div class="bill-no">' + (b.pending ? '⏳ ' : '') + escapeText(b.orderNo) + '</div>' +
-          '<div class="bill-time">' + escapeText(b.time || '') + (qty.length ? ' · ' + qty.join(' · ') : '') + '</div>' +
+          '<div class="bill-time">' + escapeText(b.time || '') + (qty.length ? ' · ' + qty.join(' · ') : '') +
+            (b.group ? ' · 🧾 ' + escapeText(b.group.replace(/^\S+\s/, '')) : '') + '</div>' +
         '</div>' +
         '<div class="bill-sum">' +
           '<div class="bill-amt digits">' + (Number(b.total) || 0).toLocaleString('th-TH') + ' ฿</div>' +
@@ -1804,18 +1932,22 @@ function showScreen(name) {
 
 function goPayment() {
   const t = totals();
-  if (t.total <= 0) return;
-  const missing = missingChoices();
+  if (payTotal() <= 0) return;
+  const missing = t.total > 0 ? missingChoices() : [];
   if (missing.length) {
     toast('ยังไม่ได้เลือก ' + missing.join(' · '));
     document.getElementById(REQUIRED.find(r => !order[r.field]).id).scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
-  document.getElementById('pay-total').innerHTML = t.total.toLocaleString('th-TH') + '<small> ฿</small>';
+  document.getElementById('pay-total').innerHTML = payTotal().toLocaleString('th-TH') + '<small> ฿</small>';
   const parts = [];
-  if (t.stickCount) parts.push(t.stickCount + ' ไม้');
-  if (t.mamaCount) parts.push('มาม่า ' + t.mamaCount + ' ห่อ');
-  if (t.discount) parts.push('ลด ' + t.discount + ' ฿');
+  // รวมบิล — นับไม้/ส่วนลดของทุกถ้วยรวมกัน
+  const all = group.map(b => b.rec).concat(t.total > 0 ? [t] : []);
+  const sum = k => all.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+  if (group.length) parts.push('รวม ' + all.length + ' ถ้วย');
+  if (sum('stickCount')) parts.push(sum('stickCount') + ' ไม้');
+  if (sum('mamaCount')) parts.push('มาม่า ' + sum('mamaCount') + ' ห่อ');
+  if (sum('discount')) parts.push('ลด ' + sum('discount') + ' ฿');
   document.getElementById('pay-summary').textContent = parts.join(' · ');
   showScreen('pay');
 }
@@ -1823,9 +1955,8 @@ function goPayment() {
 function choosePayment(method) {
   order.method = method;
   if (method === 'สแกน/โอนผ่านธนาคาร') {
-    const t = totals();
     document.getElementById('amount-total').innerHTML =
-      t.total.toLocaleString('th-TH') + '<small style="color:#f4a6ad;"> ฿</small>';
+      payTotal().toLocaleString('th-TH') + '<small style="color:#f4a6ad;"> ฿</small>';
     document.getElementById('amount-branch').textContent = auth.branch || '—';
     showScreen('amount');
   } else {
@@ -1835,7 +1966,7 @@ function choosePayment(method) {
 
 /* ── QR รับเงินของสาขา ── */
 function goQR() {
-  const t = totals();
+  const t = { total: payTotal() };   // รวมบิล = QR ยอดเดียวทั้งบิล
   const branch = auth.branch || '';
   const conf = settings.branches[branch] || {};
   document.getElementById('qr-shop').textContent = conf.shopName || 'หม่าล่าหน้าแดง';
@@ -2201,7 +2332,8 @@ function holdOrder(silent) {
   else list.unshift(snap);
   setHeld(list);
   resumedHeldId = null;
-  newOrder();
+  resetBowl();
+  showScreen('cart');
   if (!silent) toast('พักบิลไว้แล้ว — กด "บิลที่พักไว้" เพื่อเปิดขึ้นมาคิดเงินต่อ');
   return true;
 }
@@ -2308,30 +2440,29 @@ function clearResumedHeld() {
 let countdownTimer = null;
 
 function confirmPaid() {
-  const t = totals();
   const now = new Date();
-  const record = {
-    orderId: 'POS' + now.getTime(),
+  // ถ้วยที่รวมบิลไว้ + ถ้วยที่กำลังเลือก (ถ้ามีของ) — จ่ายครั้งเดียว ลงชีตถ้วยละแถว
+  const bowls = group.map(b => b.rec);
+  if (totals().total > 0) bowls.push(bowlRecord());
+  const gid = bowls.length > 1 ? 'B' + now.getTime() : '';
+  const records = bowls.map((b, i) => Object.assign({}, b, {
+    orderId: 'POS' + now.getTime() + (gid ? '-' + (i + 1) : ''),
     datetime: now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false }),
     date: isoDate(now),
     time: now.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false }),
     branch: auth.branch || '',
     staff: auth.name || '',
-    sticks: STICK_PRICES.map(p => ({ price: p, qty: order.sticks[p] })),
-    stickCount: t.stickCount, stickAmount: t.stickAmount,
-    mama: MAMA_PRICES.map(p => ({ price: p, qty: order.mama[p] })),
-    mamaCount: t.mamaCount, mamaAmount: t.mamaAmount,
-    extras: EXTRAS.map((e, i) => ({ name: e.name, price: e.price, qty: order.extras[i] })),
-    extraCount: t.extraCount, extraAmount: t.extraAmount,
-    redeemSticks: t.redeemSticks, redeemAmount: t.redeemAmount,
-    subtotal: t.subtotal, discount: t.discount, total: t.total,
-    soup: order.soup, spice: order.spice, method: order.method,
-    sauce: order.sauce, sauceCount: t.sauceCount
-  };
+    method: order.method,
+    group: gid ? gid + ' ถ้วย ' + (i + 1) + '/' + bowls.length : ''
+  }));
+  const paid = records.reduce((s, r) => s + r.total, 0);
 
   clearResumedHeld();   // บิลนี้คิดเงินไปแล้ว ไม่ต้องค้างอยู่ในรายการที่พักไว้อีก
+  group = [];
+  renderGroup();
 
-  document.getElementById('success-total').textContent = t.total.toLocaleString('th-TH') + ' ฿';
+  document.getElementById('success-total').textContent = paid.toLocaleString('th-TH') + ' ฿' +
+    (records.length > 1 ? ' (' + records.length + ' ถ้วย)' : '');
   document.getElementById('success-method').textContent = order.method;
   document.getElementById('success-order').textContent = '—';
   const sync = document.getElementById('success-sync');
@@ -2339,7 +2470,40 @@ function confirmPaid() {
   sync.className = 'sync';
   showScreen('success');
   startCountdown();
-  saveOrder(record);
+  saveOrders(records);
+}
+
+/** ส่งทุกถ้วยขึ้น Sheets ทีละใบ — ใบไหนส่งไม่ได้เก็บรอส่งในเครื่อง */
+async function saveOrders(records) {
+  const sync = document.getElementById('success-sync');
+  if (isDemo()) {
+    document.getElementById('success-order').textContent = 'ทดลอง';
+    sync.textContent = '🧪 โหมดทดลอง — บิลนี้ไม่ได้บันทึกลง Google Sheets';
+    sync.className = 'sync warn';
+    return;
+  }
+  const nos = [];
+  let queued = 0;
+  for (const record of records) {
+    try {
+      const json = await postApi({ action: 'posOrder', token: auth.token, order: record });
+      if (!(json && json.success)) throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
+      nos.push(json.orderNo || record.orderId);
+    } catch (e) {
+      queuePending(record);
+      queued++;
+    }
+  }
+  document.getElementById('success-order').textContent = nos.join(', ') || '—';
+  if (queued) {
+    sync.textContent = '⏳ ยังส่งขึ้น Sheets ไม่ได้ ' + queued + ' ใบ — เก็บไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเน็ตกลับมา';
+    sync.className = 'sync warn';
+  } else {
+    sync.textContent = '✓ บันทึกลง Google Sheets แล้ว';
+    sync.className = 'sync ok';
+    flushPending();
+    prefetchBills();
+  }
 }
 
 function startCountdown() {
@@ -2351,35 +2515,6 @@ function startCountdown() {
     document.getElementById('success-countdown').textContent = left;
     if (left <= 0) { clearInterval(countdownTimer); newOrder(); }
   }, 1000);
-}
-
-async function saveOrder(record) {
-  const sync = document.getElementById('success-sync');
-
-  // โหมดทดลอง — ไม่ส่งข้อมูลไปไหน และไม่เก็บเข้าคิวรอส่ง
-  if (isDemo()) {
-    document.getElementById('success-order').textContent = 'ทดลอง';
-    sync.textContent = '🧪 โหมดทดลอง — บิลนี้ไม่ได้บันทึกลง Google Sheets';
-    sync.className = 'sync warn';
-    return;
-  }
-
-  try {
-    const json = await postApi({ action: 'posOrder', token: auth.token, order: record });
-    if (json && json.success) {
-      document.getElementById('success-order').textContent = json.orderNo || record.orderId;
-      sync.textContent = '✓ บันทึกลง Google Sheets แล้ว';
-      sync.className = 'sync ok';
-      flushPending();
-      prefetchBills();
-      return;
-    }
-    throw new Error((json && json.message) || 'บันทึกไม่สำเร็จ');
-  } catch (e) {
-    queuePending(record);
-    sync.textContent = '⏳ ยังส่งขึ้น Sheets ไม่ได้ — เก็บไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเน็ตกลับมา';
-    sync.className = 'sync warn';
-  }
 }
 
 /* ── คิวออเดอร์ที่ยังส่งไม่ขึ้น (เน็ตหลุด) ── */
