@@ -333,11 +333,14 @@
         <div id="mama-grid"></div>
       </div>
 
-      <div class="sec-head" style="margin-top:20px;">
-        <h2>🍘 ของอื่น</h2>
-        <div class="note">รวม <b id="extra-count" class="digits">0</b> ชิ้น</div>
+      <!-- ของอื่นยังไม่มีขาย (เลิกขายสาหร่ายแผ่นแล้ว) — เพิ่มใน EXTRAS แล้วส่วนนี้จะโผล่เอง -->
+      <div id="extra-sec" class="hidden">
+        <div class="sec-head" style="margin-top:20px;">
+          <h2>🍘 ของอื่น</h2>
+          <div class="note">รวม <b id="extra-count" class="digits">0</b> ชิ้น</div>
+        </div>
+        <div class="grid-2" id="extra-grid"></div>
       </div>
-      <div class="grid-2" id="extra-grid"></div>
 
       <div class="card opt-card">
         <h3 id="head-soup">🍲 น้ำซุป <span class="req">* ต้องเลือก</span></h3>
@@ -1091,9 +1094,8 @@ const STICK_PRICES = [10, 15];               // ราคาไม้ (บาท
 const MAMA_PRICES  = [];   // ไม่มีปุ่มมาม่าแล้ว — บิลเก่าที่มีมาม่ายังแสดงในประวัติได้ตามปกติ
 // สินค้าอื่นที่ขายเป็นชิ้น ไม่ใช่ไม้และไม่ใช่มาม่า — ไม่เข้าเงื่อนไขส่วนลดไม้
 // เพิ่มเมนูใหม่ได้ที่นี่ ต้องตรงกับ EXTRAS ใน pos-backend.gs
-const EXTRAS = [
-  { name: 'สาหร่ายแผ่น', price: 20 }
-];
+// สาหร่ายแผ่นเลิกขายแล้ว — บิลเก่ายังแสดงในประวัติได้ตามปกติ
+const EXTRAS = [];
 
 // ส่วนลด: ครบทุก ๆ 10 ไม้ ลด 5 บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
 const DISCOUNT = { perSticks: 10, baht: 5 };
@@ -1195,6 +1197,7 @@ function renderMamaGrid() {
     MAMA_PRICES.map(p => qtyCard('mama', p, `มาม่า <span>${p}฿</span>`, '0 ฿')).join('');
 }
 function renderExtraGrid() {
+  document.getElementById('extra-sec').classList.toggle('hidden', !EXTRAS.length);
   document.getElementById('extra-grid').innerHTML =
     EXTRAS.map((e, i) => qtyCard('extra', i, `${e.name} <span>${e.price}฿</span>`, '0 ฿')).join('');
 }
