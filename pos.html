@@ -1134,7 +1134,12 @@ const SAUCES = ['น้ำจิ้มงา', 'น้ำจิ้มสุก�
 // ประเภทเงินสดที่จ่ายออกจากร้าน ต้องตรงกับ EXPENSE_TYPES ใน pos-backend.gs
 const EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
 // จ่ายด้วยอะไร — เงินสดเท่านั้นที่ออกจากลิ้นชัก (ตรงกับ isCashExpense_ ใน pos-backend.gs)
-const EXPENSE_METHODS = ['เงินสด', 'โอน', 'บัตร'];
+// บัตรลงเป็น "บัตรเครดิต" ให้ตรงกับที่ไลน์ลง จะได้ไปรวมในรอบบัตรเครดิตเดียวกัน
+const EXPENSE_METHODS = [
+  { label: 'เงินสด', value: 'เงินสด' },
+  { label: 'โอน', value: 'โอน' },
+  { label: 'บัตร', value: 'บัตรเครดิต' }
+];
 
 // เมนูเดลิเวอรี่ — เพิ่มเองในแอปได้ (ปุ่ม "เพิ่มเมนู") ค่าที่เพิ่มจะจำไว้ในเครื่อง
 const DEFAULT_DELIVERY_MENU = ['อุด้ง', 'หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวม'];
@@ -2048,8 +2053,8 @@ function renderExpenseChips() {
     '<button onclick="pickExpenseType(\'' + t + '\')" data-opt="' + t +
     '" class="chip key">' + t + '</button>').join('');
   document.getElementById('exp-method-chips').innerHTML = EXPENSE_METHODS.map(m =>
-    '<button onclick="pickExpenseMethod(\'' + m + '\')" data-opt="' + m +
-    '" class="chip key">' + m + '</button>').join('');
+    '<button onclick="pickExpenseMethod(\'' + m.value + '\')" data-opt="' + m.value +
+    '" class="chip key">' + m.label + '</button>').join('');
   pickExpenseMethod('เงินสด');
 }
 
