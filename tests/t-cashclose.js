@@ -169,4 +169,13 @@ S.rows.find(r => r[0] === 'ดอลลี่')[pi] = '';
 g.cacheClear_(); g.applyItemCatalogue(); g.cacheClear_();
 eq('ช่องว่างเติมราคาเริ่มต้นให้', g.findStockItem_('ดอลลี่').price, 10);
 
+section('ล้างยอดติดลบจากหน้า Apps Script (ไม่มีกล่องถาม) = ครัวกลาง');
+g = fresh();
+push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(60), 'สาขา': SHOP, 'รายการ': 'น้ำจิ้มงา (กระปุก)',
+  'จำนวน': 7, 'ประเภท': 'ของเข้าร้าน' });
+g.zeroNegativeStock();
+g.cacheClear_();
+eq('ครัวกลางน้ำจิ้มงาเป็น 0', g.stockBalances_()[g.CENTRAL]['น้ำจิ้มงา (กระปุก)'], 0);
+eq('บอกผลใน log', g.__env.LOG.some(l => /✅ ครัวกลาง — ตั้งเป็น 0 แล้ว 1 รายการ/.test(l)), true);
+
 module.exports = done();

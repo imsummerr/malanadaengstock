@@ -3338,17 +3338,24 @@ function zeroOutStock() {
  * แต่ครัวกลางไม่เคยลงว่าทำน้ำจิ้มไว้ ของที่ยอดเป็นบวกไม่แตะ
  */
 function zeroNegativeStock() {
-  var ui = SpreadsheetApp.getUi();
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  // กด ▶ จากหน้า Apps Script ไม่มีกล่องถาม — ล้างที่ครัวกลางเลย แล้วบอกผลใน log
+  if (!ui) { zeroNegativeAt_(CENTRAL, null); return; }
   var r = ui.prompt('ล้างยอดติดลบ', 'สถานที่ (เว้นว่าง = ' + CENTRAL + ')', ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
-  var loc = String(r.getResponseText() || '').trim() || CENTRAL;
+  zeroNegativeAt_(String(r.getResponseText() || '').trim() || CENTRAL, ui);
+}
+
+function zeroNegativeAt_(loc, ui) {
+  var say = function (t) { if (ui) ui.alert(t); else Logger.log(t); };
   var m = stockBalances_()[loc] || {};
   var neg = Object.keys(m).filter(function (k) { return Number(m[k]) < 0; });
-  if (!neg.length) { ui.alert(loc + ' ไม่มีของที่ยอดติดลบ'); return; }
+  if (!neg.length) { say(loc + ' ไม่มีของที่ยอดติดลบ'); return; }
   var unitOf = {};
   getStockItems_().forEach(function (i) { unitOf[i.name] = baseUnitOf_(i); });
   var list = neg.map(function (k) { return '• ' + k + '  ' + m[k] + ' ' + (unitOf[k] || ''); }).join('\n');
-  if (ui.alert('ตั้งเป็น 0 ที่ ' + loc + ' ?', list, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  if (ui && ui.alert('ตั้งเป็น 0 ที่ ' + loc + ' ?', list, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
 
   var sh = sheet_(SHEET_COUNT);
   var map = ensureCols_(sh, MOVE_COLS);
@@ -3358,7 +3365,7 @@ function zeroNegativeStock() {
              'หน่วย': unitOf[k] || '', 'แพ็ค': 0, 'เศษ': 0, 'ประเภท': 'ล้างยอด',
              'หมายเหตุ': 'ล้างยอดติดลบ (เดิม ' + m[k] + ')' };
   }));
-  ui.alert('เรียบร้อย ตั้งเป็น 0 แล้ว ' + neg.length + ' รายการ\n\n' + list);
+  say('✅ ' + loc + ' — ตั้งเป็น 0 แล้ว ' + neg.length + ' รายการ\n\n' + list);
 }
 
 /** ล้างทุกสถานที่ ไม่ต้องแก้ ZERO_LOCATION */
