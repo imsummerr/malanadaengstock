@@ -115,7 +115,7 @@ function makeEnv() {
     console, Date, Math, JSON, Object, Array, String, Number, RegExp, Error, isNaN, parseInt,
     parseFloat, encodeURIComponent, decodeURIComponent,
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => ss, openById: () => ss,
+      getActiveSpreadsheet: () => ss, openById: () => ss, flush() {},
       getUi: () => { throw new Error('no ui in tests'); }
     },
     PropertiesService: {

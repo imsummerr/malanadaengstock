@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-09-30 · เริ่มนับสาขา 1/10 + นับระดับ + รายการใหม่';
+var BACKEND_VERSION = '2026-10-06 · ปิดร้านเทียบเงินสด';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -215,6 +215,11 @@ function doPost(e) {
       case 'posDelivery': return json_(handleDelivery_(body));
       case 'posBills':    return json_(handleBills_(body));
       case 'posExpense':  return json_(handleExpense_(body));
+      case 'posCashClose':
+        if (typeof handleCashClose_ !== 'function') {
+          return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
+        }
+        return json_(handleCashClose_(body));
       case 'stockIn':     return json_(handleStockIn_(body));
       case 'stockToShop': return json_(handleStockToShop_(body));
       case 'stockWaste':  return json_(handleStockWaste_(body));
@@ -257,7 +262,7 @@ function handleVersion_() {
   return {
     success: true,
     version: BACKEND_VERSION,
-    actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense',
+    actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
               'stockPack', 'stockBootstrap'],
     expenseTypes: EXPENSE_TYPES,
@@ -273,6 +278,7 @@ function handleVersion_() {
       'บัญชี · accounting.gs':           typeof accMonthSummary_    === 'function',
       'แจ้งเตือน · line-expiry-alert.gs': typeof notifyExpiringItems === 'function',
       'เตือนนับสต็อก · stock-audit.gs':   typeof remindStockCount    === 'function',
+      'ปิดร้านเทียบเงิน · stock-audit.gs': typeof handleCashClose_    === 'function',
       'ต้นทุน FIFO · stock-costing.gs':   typeof costSummary_        === 'function',
       'รายงานเดือน · monthly-report.gs': typeof monthlyReport       === 'function'
     }
@@ -2244,6 +2250,13 @@ function handleStockCount_(body) {
     catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
   }
 
+  // ปิดร้าน — ถ้าวันนี้กรอกเงินสดใน POS ไว้แล้ว เทียบเงินที่ควรมีกับที่นับได้เลย
+  var cash = null;
+  if (typeof cashCheckAfterCount_ === 'function') {
+    try { cash = cashCheckAfterCount_(loc, now); }
+    catch (e) { Logger.log('cashCheckAfterCount_: ' + e.message); }
+  }
+
   // ยอดหลังนับ = ตัวที่นับได้ ไม่ต้องไปไล่อ่านทุกชีตใหม่อีกรอบ
   var balNow = {};
   counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
@@ -2251,7 +2264,7 @@ function handleStockCount_(body) {
   return { success: true, counted: items.length, diffs: isBase ? 0 : diffs.length,
            base: isBase, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
-           shrink: shrink };
+           shrink: shrink, cashChecked: !!(cash && cash.expected != null) };
 }
 
 /** ข้อมูลตั้งต้นของหน้าสต็อก — รายการสินค้า สถานที่ และยอดคงเหลือ */
@@ -3296,6 +3309,35 @@ function allStockLocations_() {
 function zeroOutStock() {
   var want = String(ZERO_LOCATION || '').trim();
   zeroStockAt_(want ? [want] : allStockLocations_());
+}
+
+/**
+ * ตั้งเฉพาะของที่ "ติดลบ" ให้เป็น 0 — เลือกสถานที่จากเมนู
+ * ติดลบ = ส่งออก/ใช้ไปมากกว่าที่เคยลงว่ามี เช่น สาขารับน้ำจิ้มจากครัวกลาง
+ * แต่ครัวกลางไม่เคยลงว่าทำน้ำจิ้มไว้ ของที่ยอดเป็นบวกไม่แตะ
+ */
+function zeroNegativeStock() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('ล้างยอดติดลบ', 'สถานที่ (เว้นว่าง = ' + CENTRAL + ')', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var loc = String(r.getResponseText() || '').trim() || CENTRAL;
+  var m = stockBalances_()[loc] || {};
+  var neg = Object.keys(m).filter(function (k) { return Number(m[k]) < 0; });
+  if (!neg.length) { ui.alert(loc + ' ไม่มีของที่ยอดติดลบ'); return; }
+  var unitOf = {};
+  getStockItems_().forEach(function (i) { unitOf[i.name] = baseUnitOf_(i); });
+  var list = neg.map(function (k) { return '• ' + k + '  ' + m[k] + ' ' + (unitOf[k] || ''); }).join('\n');
+  if (ui.alert('ตั้งเป็น 0 ที่ ' + loc + ' ?', list, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var sh = sheet_(SHEET_COUNT);
+  var map = ensureCols_(sh, MOVE_COLS);
+  var now = new Date();
+  appendRows_(sh, map, neg.map(function (k) {
+    return { 'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': 'ระบบ', 'รายการ': k, 'จำนวน': 0,
+             'หน่วย': unitOf[k] || '', 'แพ็ค': 0, 'เศษ': 0, 'ประเภท': 'ล้างยอด',
+             'หมายเหตุ': 'ล้างยอดติดลบ (เดิม ' + m[k] + ')' };
+  }));
+  ui.alert('เรียบร้อย ตั้งเป็น 0 แล้ว ' + neg.length + ' รายการ\n\n' + list);
 }
 
 /** ล้างทุกสถานที่ ไม่ต้องแก้ ZERO_LOCATION */

@@ -91,7 +91,7 @@ eq('รายการที่มีของถูกลิสต์ไว้'
 g.cacheClear_();
 const rows2 = g.__env.SHEETS[g.SHEET_COUNT].rows;
 const iT = g.__env.SHEETS[g.SHEET_COUNT].headers.indexOf('วันที่เวลา');
-rows2.forEach(rw => { if (rw[iT] instanceof Date && rw[iT].getTime() > Date.now() - 600000) rw[iT] = new Date(Date.now() - 3600000); });
+rows2.forEach(rw => { if (rw[iT] instanceof Date && rw[iT].getTime() > Date.now() - 600000) rw[iT] = new Date(Date.now() - 120000); });
 g.cacheClear_();
 r = g.handleStockCount_({ token: 't', location: SHOP, rows: rowsFor(g, SHOP) });
 eq('รอบสองไม่ใช่ฐาน', r.base, false);

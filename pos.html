@@ -299,7 +299,9 @@
         <button onclick="openBills()" class="key btn-ghost" id="btn-bills"
           style="padding:13px 8px;font-size:14.5px;">🧾 บิลที่ขายไป</button>
         <button onclick="openExpense()" class="key btn-ghost" id="btn-expense"
-          style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">💸 บันทึกค่าใช้จ่าย</button>
+          style="padding:13px 8px;font-size:14.5px;">💸 บันทึกค่าใช้จ่าย</button>
+        <button onclick="openClose()" class="key btn-ghost" id="btn-close"
+          style="padding:13px 8px;font-size:14.5px;">💵 ปิดร้าน นับเงิน</button>
         <button onclick="openHeld()" class="key btn-ghost hidden" id="btn-held"
           style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">⏸️ บิลที่พักไว้</button>
       </div>
@@ -508,6 +510,37 @@
       </div>
 
       <div id="exp-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ ปิดร้าน — พนักงานนับเงินสดในลิ้นชักแล้วกรอก ═══ -->
+  <div id="screen-close" class="screen">
+    <div class="panel fade-in" style="max-width:620px;">
+      <button onclick="showScreen('cart')" class="key back">← กลับหน้าคิดเงิน</button>
+
+      <div class="sec-head">
+        <h2>💵 ปิดร้าน — นับเงินสด</h2>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:-4px 0 14px;">
+        นับเงินสดในลิ้นชักทั้งหมดแล้วกรอกตรงนี้ (ไม่ต้องรวมเงินที่ลูกค้าโอน)<br>
+        ระบบจะเทียบกับสต็อกที่นับตอนเก็บร้านให้เอง ทำอันไหนก่อนก็ได้
+      </p>
+
+      <div class="card opt-card">
+        <h3>💵 เงินสดที่นับได้ <span class="req">*</span></h3>
+        <input id="close-cash" class="login-input digits" type="number" min="0" step="1" inputmode="decimal"
+               placeholder="0" onfocus="this.select()" oninput="refreshClose()"
+               style="width:100%;padding:14px;font-size:22px;font-weight:800;text-align:center;">
+
+        <h3 style="margin-top:16px;">📝 หมายเหตุ <span class="note">(ไม่ใส่ก็ได้)</span></h3>
+        <input id="close-note" class="login-input" type="text" maxlength="120"
+               placeholder="เช่น แบงก์ 1000 ใบนึง / ทอนลูกค้าผิด"
+               style="width:100%;padding:12px;font-size:14px;">
+      </div>
+
+      <button onclick="saveClose()" id="btn-save-close" class="key btn-red"
+        style="width:100%;padding:16px;font-size:16.5px;margin-top:16px;" disabled>✓ บันทึกเงินปิดร้าน</button>
+      <div id="close-status" class="note" style="text-align:center;margin-top:12px;"></div>
     </div>
   </div>
 
@@ -1935,6 +1968,67 @@ function openExpense() {
   refreshExpense();
   showScreen('expense');
   loadExpenses();
+}
+
+/* ── ปิดร้าน: กรอกเงินสดที่นับได้ ──
+   พนักงานไม่เห็นยอดที่ควรมี (Server ไม่ส่งมาให้) จะได้นับจริง ไม่ใช่กรอกให้ตรง
+   ส่งไม่ผ่านไม่เก็บค้างในเครื่อง ให้กดส่งใหม่เอง — ยอดนี้ต้องเป็นตัวล่าสุดที่คนนับ */
+function openClose() {
+  document.getElementById('close-cash').value = '';
+  document.getElementById('close-note').value = '';
+  document.getElementById('close-status').textContent = '';
+  refreshClose();
+  showScreen('close');
+}
+
+function refreshClose() {
+  const v = document.getElementById('close-cash').value.trim();
+  document.getElementById('btn-save-close').disabled = v === '' || Number(v) < 0;
+}
+
+async function saveClose() {
+  const raw = document.getElementById('close-cash').value.trim();
+  const cash = Number(raw);
+  if (raw === '' || !(cash >= 0)) return;
+  if (!confirm('ยืนยันเงินสดที่นับได้ ' + cash.toLocaleString('th-TH') + ' บาท ?')) return;
+
+  const btn = document.getElementById('btn-save-close');
+  const st = document.getElementById('close-status');
+  btn.disabled = true;
+  st.textContent = 'กำลังบันทึก…';
+
+  if (isDemo()) {
+    st.textContent = '🧪 โหมดทดลอง — ไม่ได้บันทึกลง Google Sheets';
+    btn.disabled = false;
+    return;
+  }
+
+  const record = {
+    closeId: 'CLS' + Date.now(),
+    branch: auth.branch || '',
+    staff: auth.name || '',
+    cash: cash,
+    note: document.getElementById('close-note').value.trim()
+  };
+  try {
+    const json = await postApi({ action: 'posCashClose', token: auth.token, close: record });
+    if (json && json.success) {
+      let msg = '✅ ' + (json.message || 'บันทึกแล้ว');
+      if (json.expected != null) {
+        msg += '\n(เจ้าของร้าน) ควรมี ' + Number(json.expected).toLocaleString('th-TH') + ' ฿ · ' +
+               (json.diff === 0 ? 'ตรง' : (json.diff < 0 ? 'ขาด ' : 'เกิน ') +
+                Math.abs(json.diff).toLocaleString('th-TH') + ' ฿');
+      }
+      st.innerText = msg;
+      toast('บันทึกเงินปิดร้าน ' + cash.toLocaleString('th-TH') + ' ฿ แล้ว');
+      document.getElementById('close-cash').value = '';
+      return;
+    }
+    st.textContent = '⚠️ ' + ((json && json.message) || 'บันทึกไม่สำเร็จ') + ' — กดบันทึกใหม่อีกครั้ง';
+  } catch (e) {
+    st.textContent = '⚠️ ส่งไม่ได้ (' + e.message + ') — เช็คอินเทอร์เน็ตแล้วกดบันทึกใหม่';
+  }
+  refreshClose();
 }
 
 /** ค่าใช้จ่ายที่ยังส่งขึ้น Sheets ไม่สำเร็จ — เอามาแสดงด้วย จะได้ไม่ลืม */
