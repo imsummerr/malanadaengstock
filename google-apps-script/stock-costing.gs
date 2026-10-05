@@ -65,10 +65,15 @@ function costStarts_() {
     return { all: costYmdTime_(props.getProperty('ACC_START_DATE')), byLoc: byLoc, raw: raw };
   });
 }
+/**
+ * 'yyyy-MM-dd' = เที่ยงคืนวันนั้น · 'yyyy-MM-dd HH:mm' = ตั้งแต่นาทีนั้น
+ * ใส่เวลาได้เพื่อใช้ "ยอดนับปิดร้านเมื่อคืน" เป็นฐาน แล้วเริ่มนับยอดขายวันรุ่งขึ้น
+ */
+var COST_START_RE = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}):(\d{2}))?$/;
 function costYmdTime_(v) {
-  v = String(v || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 0;
-  var d = new Date(v + 'T00:00:00');
+  var m = String(v || '').trim().match(COST_START_RE);
+  if (!m) return 0;
+  var d = new Date(m[1] + 'T' + (m[2] ? ('0' + m[2]).slice(-2) + ':' + m[3] : '00:00') + ':00');
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
@@ -93,7 +98,7 @@ function costBefore_(v, loc) {
 function setLocationStart(loc, ymd) {
   loc = String(loc || '').trim();
   var v = String(ymd || '').trim();
-  if (!loc || !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+  if (!loc || !COST_START_RE.test(v)) {
     Logger.log('ใช้แบบนี้: setLocationStart(\'ตลาดทรัพย์พัฒนา\', \'2026-10-01\')');
     return;
   }
@@ -109,6 +114,41 @@ function setLocationStart(loc, ymd) {
              'วันที่ ' + v + ' ให้นับสต็อกที่ ' + loc + ' ก่อนเปิดขาย = ยอดตั้งต้น\n' +
              'แล้วนับอีกรอบหลังปิดร้าน = ได้ต้นทุนของที่ใช้ไปวันนั้น');
   if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+}
+
+/**
+ * เมนู — ใช้ยอดที่นับล่าสุดของสาขาเป็นฐาน แล้วเริ่มนับยอดขายใหม่ต่อจากนั้น
+ * เช่น ปิดร้าน 5/10 นับเสร็จ 22:38 → ขีดเส้นที่ 22:38 ยอดนับรอบนั้นคือยอดตั้งต้น
+ * ยอดขาย ค่าใช้จ่าย ของเสียก่อนหน้านั้นไม่นำมาคิด ยอดขายเริ่มนับวันรุ่งขึ้น
+ * ไม่ต้องนับสต็อกใหม่ก่อนเปิดร้าน
+ */
+function promptStartFromLatestCount() {
+  var ui = SpreadsheetApp.getUi();
+  var a = ui.prompt('ใช้ยอดนับล่าสุดเป็นฐาน', 'ชื่อสาขา (ตรงกับที่ใช้ในระบบ)', ui.ButtonSet.OK_CANCEL);
+  if (a.getSelectedButton() !== ui.Button.OK) return;
+  var loc = String(a.getResponseText() || '').trim();
+  var r = startFromLatestCount_(loc);
+  if (!r) { ui.alert('ไม่เจอยอดนับสต็อกของ "' + loc + '"'); return; }
+  ui.alert('ตั้งแล้ว — ' + loc + '\n\nยอดตั้งต้น = ที่นับเมื่อ ' + r.label + '\n' +
+           'ยอดขาย/ค่าใช้จ่าย/ของเสีย นับตั้งแต่หลังจากนั้น\n' +
+           'ไม่ต้องนับสต็อกก่อนเปิดร้าน ปิดร้านแล้วนับตามปกติ');
+}
+
+/** หารอบนับล่าสุด (ไม่ใช่เช็คระดับ/ล้างยอด) แล้วขีดเส้นที่นาทีนั้น */
+function startFromLatestCount_(loc) {
+  loc = String(loc || '').trim();
+  var best = 0;
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    if (m.loc !== loc || m.kind === 'ล้างยอด') return;
+    if (typeof KIND_LEVEL_COUNT === 'string' && m.kind === KIND_LEVEL_COUNT) return;
+    var t = costTime_(m.when);
+    if (t > best) best = t;
+  });
+  if (!best) return null;
+  // ปัดลงเป็นนาที — แถวรอบเดียวกันเขียนพร้อมกันในนาทีนั้น
+  var v = Utilities.formatDate(new Date(best), costTz_(), 'yyyy-MM-dd HH:mm');
+  setLocationStart(loc, v);
+  return { start: v, label: Utilities.formatDate(new Date(best), costTz_(), 'd/M/yyyy HH:mm') };
 }
 
 /** ยกเลิกเส้นของที่นั้น กลับไปใช้เส้นทั้งระบบ */
@@ -862,6 +902,7 @@ function onOpen() {
       .addItem('⚠️ เริ่มใหม่ทั้งระบบ (ของ + เงิน)', 'resetEverything')
       .addItem('🗓️ เริ่มนับใหม่ทุกที่พร้อมกัน (ตั้งยอดตั้งต้น)', 'promptStartDate')
       .addItem('🗓️ เริ่มนับใหม่เฉพาะสาขา (ตั้งยอดตั้งต้น)', 'promptLocationStart')
+      .addItem('🗓️ ใช้ยอดนับล่าสุดของสาขาเป็นฐาน (เริ่มยอดขายใหม่)', 'promptStartFromLatestCount')
       .addItem('ดูวันเริ่มนับ', 'showStartDate')
       .addToUi();
   } catch (e) { /* เปิดจาก trigger ไม่มี UI ข้ามไป */ }
