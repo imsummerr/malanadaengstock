@@ -146,6 +146,9 @@
     .counthead span:not(:first-child) { text-align: center; }
     /* สาขานับแค่แพ็คกับไม้ ไม่มีช่องชิ้น */
     .nopc .countrow, .nopc .counthead { grid-template-columns: 1fr 80px 80px; }
+    /* ครัวกลางมีช่อง "โล" แยก ของชั่งกรอกช่องโล ของแพ็คกรอก แพ็ค/ไม้/ชิ้น */
+    .withkg .countrow, .withkg .counthead { grid-template-columns: 1fr 56px 56px 56px 56px; gap: 4px; }
+    .withkg .countrow input { padding: 9px 4px; font-size: 14.5px; }
     /* ของที่นับเป็นระดับ (กระดูกหมู น้ำดำ) — ช่องเลือกกินทุกคอลัมน์ตัวเลข */
     .countrow .lvsel { grid-column: 2 / -1; padding: 9px 10px; font-size: 14px; }
     .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; }
@@ -223,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-07a';
+const PAGE_BUILD = '2026-10-07b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -1211,9 +1214,14 @@ function fillCountRows() {
   const list = countItems();
   const locEl = document.getElementById('c-loc');
   const pc = piecesAt(locEl ? locEl.value : D.central);
-  document.getElementById('c-head').innerHTML =
-    '<span>สินค้า</span><span>แพ็ค</span><span>ไม้</span>' + (pc ? '<span>ชิ้น</span>' : '');
+  document.getElementById('c-head').innerHTML = pc
+    ? '<span>สินค้า</span><span>โล</span><span>แพ็ค</span><span>ไม้</span><span>ชิ้น</span>'
+    : '<span>สินค้า</span><span>แพ็ค</span><span>ไม้</span>';
   document.getElementById('c-card').classList.toggle('nopc', !pc);
+  document.getElementById('c-card').classList.toggle('withkg', pc);
+  // ของที่ชั่ง (กก./กรัม) — ครัวกลางกรอกในช่อง "โล" ช่องเดียว ช่องแพ็ค/ไม้/ชิ้นปิดไว้
+  const isW = it => /^(กก\.?|กิโล|กรัม)$/.test(String(it.subUnit || '').trim());
+  const off = '<input type="number" placeholder="–" disabled>';
 
   box.innerHTML = list.length ? list.map((it, i) => it.level ? `
     <div class="countrow" id="cr-${i}">
@@ -1225,6 +1233,10 @@ function fillCountRows() {
     </div>` : `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
+      ${pc && isW(it) ? `
+      <input id="cr2-${i}" type="number" inputmode="decimal" min="0" step="any"
+             placeholder="${esc(it.subUnit === 'กรัม' ? 'กรัม' : 'โล')}" oninput="countChanged(${i})" onblur="carryCount(${i})">
+      <input id="cp-${i}" type="number" placeholder="–" disabled>${off}${off}` : `${pc ? off : ''}
       <input id="cp-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${it.perPack > 1 ? esc(it.packUnit) : '–'}"
              ${it.perPack > 1 ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">
@@ -1232,7 +1244,7 @@ function fillCountRows() {
              placeholder="${esc(it.subUnit)}" oninput="countChanged(${i})" onblur="carryCount(${i})">
       ${pc ? `<input id="cpc-${i}" type="number" inputmode="numeric" min="0" step="1"
              placeholder="${hasPieces(it) ? 'ชิ้น' : '–'}"
-             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">` : ''}
+             ${hasPieces(it) ? '' : 'disabled'} oninput="countChanged(${i})" onblur="carryCount(${i})">` : ''}`}
     </div>`).join('')
     : '<p class="note">— ไม่มีสินค้าสำหรับที่นี่ —</p>';
 
