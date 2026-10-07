@@ -551,10 +551,11 @@ function viewMoney(v) {
       </tbody></table>` : '';
 
     // โชว์ครบทุกรายการ — เดิมตัดไว้ 12 แถว แล้วดูเหมือนของหายไป
+    // จำนวนแบบเดียวกับแท็บสต็อกคงเหลือ (แพ็ค/ไม้/ชิ้น) ต้นทุนบอกหน่วยด้วย
     const top = st.rows.map(r => `<tr>
         <td>${esc(r.item)}</td>
-        <td class="num">${r.qty}</td>
-        <td class="num">${baht(r.unit)}</td>
+        <td class="num">${esc(r.text || String(r.qty))}</td>
+        <td class="num">${baht(r.unit)}${r.baseUnit ? '<small>/' + esc(r.baseUnit) + '</small>' : ''}</td>
         <td class="num">${baht(r.value)}</td>
       </tr>`).join('');
 

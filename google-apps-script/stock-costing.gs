@@ -771,7 +771,12 @@ function costSummary_() {
       });
       qty = costQty_(qty); value = costBaht_(value);
       if (qty <= 0.00001 && value === 0) return;
-      rows.push({ item: item, qty: qty, value: value,
+      // จำนวนแบบเดียวกับหน้าสต็อกคงเหลือ (แพ็ค/ไม้/ชิ้น) — เดิมโชว์เลขหน่วยเล็กสุดเฉย ๆ
+      // เต้าชีส 34 (ชิ้น) กับ "1 แพ็ค 7 ไม้" เลยดูเหมือนไม่ตรงกันทั้งที่เป็นยอดเดียวกัน
+      var it = (typeof findStockItem_ === 'function') ? findStockItem_(item) : null;
+      var bu = it && typeof baseUnitOf_ === 'function' ? baseUnitOf_(it) : '';
+      rows.push({ item: item, qty: qty, value: value, baseUnit: bu,
+                  text: it && typeof fmtPack_ === 'function' ? fmtPack_(qty, it) : String(qty),
                   unit: shown > 0 ? shown : costBaht_(qty > 0 ? value / qty : 0) });
       sum += value;
     });
@@ -866,12 +871,12 @@ function buildStockValue() {
   Object.keys(s.stock).forEach(function (loc) {
     if (!s.stock[loc].rows.length) return;      // ไม่มีของก็ไม่ต้องมีแถวรวม
     s.stock[loc].rows.forEach(function (r) {
-      rows.push([loc, r.item, r.qty, r.unit, r.value]);
+      rows.push([loc, r.item, r.text || r.qty, r.qty, r.baseUnit || '', r.unit, r.value]);
     });
-    rows.push([loc, '— รวม —', '', '', s.stock[loc].total]);
+    rows.push([loc, '— รวม —', '', '', '', '', s.stock[loc].total]);
   });
   costWriteSheet_(COST_SHEET_STOCK,
-    ['สถานที่', 'สินค้า', 'คงเหลือ', 'ต้นทุน/หน่วย', 'มูลค่า'], rows,
+    ['สถานที่', 'สินค้า', 'คงเหลือ', 'จำนวน (หน่วยเล็กสุด)', 'หน่วย', 'ต้นทุน/หน่วย', 'มูลค่า'], rows,
     'มูลค่าสต็อกแบบเข้าก่อนออกก่อน · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สั่งใหม่ได้ด้วย buildStockValue()');
