@@ -345,13 +345,20 @@ function auditUsage_(counts) {
   var g = {
     piece: { used: 0, value: 0, items: [] },
     sauce: { used: 0, value: 0, items: [] },
-    other: { used: 0, value: 0, items: [] }
+    other: { used: 0, value: 0, items: [] },
+    free:  { used: 0, value: 0, items: [] }      // ของแถม (กะหล่ำ) — บอกให้รู้ ไม่นับเป็นของหาย
   };
   var overs = [], noPrice = [], rawUnits = [];
 
   (counts || []).forEach(function (c) {
     var it = c.item;
     if (!it) return;
+    if (it.free) {
+      var fu = Math.round((-c.diff) * 1000) / 1000;
+      g.free.used += fu;
+      if (fu > 0) g.free.items.push({ name: it.name, qty: fu, unit: it.subUnit, value: 0 });
+      return;
+    }
     // ยอดเก็บเป็นชิ้นสำหรับของที่ไม้หนึ่งมีหลายชิ้น (เต้าชีส 2 ชิ้น/ไม้) แต่ POS กับราคาเป็น "ต่อไม้"
     // ไม่แปลงก่อน เต้าชีส 30 ชิ้นจะกลายเป็นขาย 30 ไม้ = 300 บาท แทนที่จะเป็น 15 ไม้ = 150
     var per = (typeof perStickOf_ === 'function') ? perStickOf_(it) : 1;
@@ -531,6 +538,11 @@ function auditAfterCount_(loc, counts, now) {
   }
 
   // น้ำจิ้มแถมออกไปจริงแต่ไม่มีเงิน หักแล้วยังขาดแปลว่าถ้วยหายเพิ่ม
+  if (g.free.items.length) {
+    lines.push('');
+    lines.push('ของแถม (ไม่คิดเงิน ไม่นับเป็นของหาย): ' +
+               g.free.items.map(function (x) { return x.name + ' ' + x.qty + ' ' + x.unit; }).join(', '));
+  }
   if (lostSauce > 0) {
     lines.push('');
     lines.push('น้ำจิ้ม  ใช้ไป ' + g.sauce.used + ' ถ้วย' +

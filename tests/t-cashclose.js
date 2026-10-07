@@ -178,6 +178,22 @@ g.cacheClear_();
 eq('ครัวกลางน้ำจิ้มงาเป็น 0', g.stockBalances_()[g.CENTRAL]['น้ำจิ้มงา (กระปุก)'], 0);
 eq('บอกผลใน log', g.__env.LOG.some(l => /✅ ครัวกลาง — ตั้งเป็น 0 แล้ว 1 รายการ/.test(l)), true);
 
+section('กะหล่ำ ของแถม ไม่คิดเงิน');
+{
+  const gk = fresh();
+  const k = gk.findStockItem_('กะหล่ำ');
+  eq('ราคา 0', k.price, 0);
+  eq('เป็นของแถม', k.free, true);
+  eq('สาขานับเป็น กก.', k.subUnit, 'กก.');
+  eq('ของดิบชั่งเป็น กก.', gk.findStockItem_('กะหล่ำ (ดิบ)').subUnit, 'กก.');
+  const u = gk.auditUsage_([{ item: k, counted: 1, sys: 3, diff: -2 },
+                            { item: gk.findStockItem_('ดอลลี่'), counted: 5, sys: 8, diff: -3 }]);
+  eq('กะหล่ำไม่นับเป็นชิ้นที่ออกจากชั้น', u.piece.used, 3);
+  eq('ไม่ขึ้นว่ายังไม่ตั้งราคา', u.noPrice.indexOf('กะหล่ำ'), -1);
+  eq('ไม่ขึ้นว่าหน่วยกิโลต้องแก้', u.rawUnits.indexOf('กะหล่ำ'), -1);
+  eq('บอกว่าแถมไป 2 กก.', u.free.used, 2);
+}
+
 section('ส่งไลน์รวมทีเดียว');
 {
   const gb = fresh();

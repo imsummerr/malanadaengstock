@@ -1197,6 +1197,13 @@ var LEVEL_OK = 'มาก ไม่ต้องเติม';
 var KIND_LEVEL_COUNT = 'เช็คระดับ';
 function isLevelItem_(name) { return LEVEL_ITEMS.indexOf(String(name || '').trim()) !== -1; }
 
+/**
+ * ของแถมลูกค้า ไม่คิดเงิน — ราคา 0 และไม่นับเป็นของหายตอนเทียบกับยอดขาย
+ * (ใช้ไปเท่าไหร่ยังบอกไว้ให้รู้ แต่ไม่เอาไปหักกับ POS)
+ */
+var FREE_ITEMS = ['กะหล่ำ'];
+function isFreeItem_(name) { return FREE_ITEMS.indexOf(String(name || '').trim()) !== -1; }
+
 var KIND_RAW    = 'วัตถุดิบ';
 var KIND_PACKED = 'ของแพ็ค';
 var KIND_SUPPLY = 'ของใช้';
@@ -1502,7 +1509,8 @@ function getStockItemsRaw_() {
       autoRaws: autoRaws_(v[i][map['วัตถุดิบ']]),
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim(),
-      level:    isLevelItem_(name)
+      level:    isLevelItem_(name),
+      free:     isFreeItem_(name)
     });
   }
   return out;
@@ -2915,7 +2923,8 @@ var FILL_PACK_UNIT = {};
 
 /** ของที่ไม่ได้ขาย 10 บาท — ปุ่มไม้ 15฿ ใน POS ใช้กับของพวกนี้ */
 var PRICE_EXCEPTION = {
-  'ชีส': 15
+  'ชีส': 15,
+  'กะหล่ำ': 0        // แถมลูกค้า ไม่คิดเงิน (ดู FREE_ITEMS)
 };
 
 /**
@@ -2949,7 +2958,8 @@ function itemCatalogue_() {
       // ของที่ส่งไปทั้งถุงจากโรงงาน (มาม่าเปล่า) ชั้นบนเรียกว่าถุงตามของจริง
       subUnit: subUnit, packUnit: (RAW_PACK[name] && RAW_PACK[name].packUnit) || 'แพ็ค', perPack: per,
       perStick: PIECES_PER_STICK[name] || 1,
-      price: PRICE_EXCEPTION[name] || PRICE_DEFAULT,
+      // ใส่ 0 ไว้ใน PRICE_EXCEPTION = ของแถม ไม่ใช่ "ไม่ได้ตั้งราคา"
+      price: (name in PRICE_EXCEPTION) ? PRICE_EXCEPTION[name] : PRICE_DEFAULT,
       // กลุ่มเก็บชื่อ @กลุ่ม ไว้ตามเดิม หน้าเว็บจะได้รู้ว่าต้องให้เลือก
       scope: '', raws: bases.map(function (b) {
         return String(b).charAt(0) === RAW_GROUP_MARK ? String(b) : rawName_(b);
