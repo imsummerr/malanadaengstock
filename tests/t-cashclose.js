@@ -178,4 +178,18 @@ g.cacheClear_();
 eq('ครัวกลางน้ำจิ้มงาเป็น 0', g.stockBalances_()[g.CENTRAL]['น้ำจิ้มงา (กระปุก)'], 0);
 eq('บอกผลใน log', g.__env.LOG.some(l => /✅ ครัวกลาง — ตั้งเป็น 0 แล้ว 1 รายการ/.test(l)), true);
 
+section('ส่งไลน์รวมทีเดียว');
+{
+  const gb = fresh();
+  const r = gb.withLineBatch_(() => { gb.stockNotify_(SHOP, 'ก'); gb.stockNotify_(SHOP, 'ข'); gb.stockNotify_(gb.CENTRAL, 'ค'); return { success: true }; });
+  eq('ยิง LINE 2 ครั้ง (แยกกลุ่ม) ไม่ใช่ 3', gb.__env.SENT.length, 2);
+  eq('กลุ่มสาขาได้ 2 ข้อความในครั้งเดียว', gb.__env.SENT[0].messages.map(m => m.text), ['ก', 'ข']);
+  eq('ผลลัพธ์ผ่านกลับมา', r.success, true);
+  gb.__env.SENT.length = 0;
+  gb.withLineBatch_(() => { for (let i = 0; i < 7; i++) gb.stockNotify_(SHOP, 'm' + i); return {}; });
+  eq('เกิน 5 ข้อความแบ่งส่ง', gb.__env.SENT.map(x => x.messages.length), [5, 2]);
+  gb.stockNotify_(SHOP, 'นอกชุด');
+  eq('นอกชุดส่งทันทีเหมือนเดิม', gb.__env.SENT.length, 3);
+}
+
 module.exports = done();

@@ -227,13 +227,28 @@ function auditSales_(loc, fromStamp, toStamp) {
               sauceCups: 0, dlvPieces: 0, dlvOrders: 0 };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  /**
+   * อ่านเฉพาะแถวในช่วงที่ต้องการ — ชีตบิลโตวันละหลายสิบแถว อ่านทั้งชีตทุกครั้งจะช้าขึ้นเรื่อย ๆ
+   * อ่านคอลัมน์วันที่ก่อน (เบา) ไล่จากล่างขึ้นบนหาแถวแรกของช่วง แล้วค่อยอ่านเฉพาะส่วนนั้น
+   * บิลที่ส่งค้างแล้วขึ้นทีหลังอาจวันที่เก่ากว่าแถวข้างบน — เจอแถวเก่ากว่าติดกัน 30 แถวถึงจะหยุด
+   */
   function scan(sheetName, fn) {
     var sh = ss.getSheetByName(sheetName);
-    if (!sh || sh.getLastRow() < 2) return;
-    var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+    var last = sh ? sh.getLastRow() : 0;
+    if (last < 2) return;
+    var width = sh.getLastColumn();
+    var head = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
     var idx = {};
-    v[0].forEach(function (h, i) { idx[String(h).trim()] = i; });
+    head.forEach(function (h, i) { idx[String(h).trim()] = i; });
     if (idx['วันที่'] === undefined) return;
+    var fromDay = String(fromStamp).slice(0, 10), start = last - 1, older = 0;
+    var dates = sh.getRange(2, idx['วันที่'] + 1, last - 1, 1).getDisplayValues();
+    for (var d = dates.length - 1; d >= 0; d--) {
+      var dk = (typeof normDate_ === 'function') ? normDate_(dates[d][0]) : String(dates[d][0]);
+      if (dk && dk < fromDay) { if (++older >= 30) break; } else { older = 0; start = d; }
+    }
+    if (start > last - 2) return;
+    var v = [head].concat(sh.getRange(start + 2, 1, last - 1 - start, width).getDisplayValues());
     for (var i = 1; i < v.length; i++) {
       var stamp = auditRowStamp_(v[i][idx['วันที่']], v[i][idx['เวลา']]);
       if (!stamp || stamp <= fromStamp || stamp > toStamp) continue;
@@ -247,8 +262,20 @@ function auditSales_(loc, fromStamp, toStamp) {
 
   var n = function (x) { return (typeof num_ === 'function') ? num_(x) : (parseFloat(String(x).replace(/,/g, '')) || 0); };
 
+  // เงินที่ไม่ได้อยู่ในลิ้นชัก — ลูกค้าสแกน/โอนเข้าบัญชี กับค่าใช้จ่ายที่หยิบเงินสดไปจ่าย
+  // เงินสดคือ "เงินสด" (หรือช่องว่างของแถวเก่า) อย่างเดียว — โอน / ไทยช่วยไทย ไม่เข้าลิ้นชัก
+  out.transfer = 0; out.cashSales = 0; out.expCash = 0; out.expOther = 0; out.expenses = [];
+  out.byMethod = {}; out.redeem = 0; out.untracked = 0;
+  // อ่านชีตบิลรอบเดียว เก็บทุกอย่างที่ต้องใช้ (เดิมอ่านสองรอบ)
   scan((typeof SHEET_ORDERS === 'string') ? SHEET_ORDERS : 'POS_Orders', function (r, idx) {
     out.orders++;
+    if (idx['ส่วนลดแต้ม'] !== undefined) out.redeem += n(r[idx['ส่วนลดแต้ม']]);
+    if (idx['ยอดมาม่า'] !== undefined) out.untracked += n(r[idx['ยอดมาม่า']]);
+    if (idx['ยอดของอื่น'] !== undefined) out.untracked += n(r[idx['ยอดของอื่น']]);
+    var how = idx['วิธีชำระเงิน'] !== undefined ? String(r[idx['วิธีชำระเงิน']] || '').trim() : '';
+    var net = n(r[idx['ยอดสุทธิ']]);
+    if (!how || how === 'เงินสด') out.cashSales += net;
+    else { out.transfer += net; out.byMethod[how] = auditRound_((out.byMethod[how] || 0) + net); }
     out.gross    += n(r[idx['ยอดรวม']]);
     out.discount += n(r[idx['ส่วนลด']]);
     out.revenue  += n(r[idx['ยอดสุทธิ']]);
@@ -259,22 +286,6 @@ function auditSales_(loc, fromStamp, toStamp) {
   });
   out.pieces = out.sticks + out.mama + out.other;
 
-  // เงินที่ไม่ได้อยู่ในลิ้นชัก — ลูกค้าสแกน/โอนเข้าบัญชี กับค่าใช้จ่ายที่หยิบเงินสดไปจ่าย
-  // เงินสดคือ "เงินสด" (หรือช่องว่างของแถวเก่า) อย่างเดียว — โอน / ไทยช่วยไทย ไม่เข้าลิ้นชัก
-  out.transfer = 0; out.cashSales = 0; out.expCash = 0; out.expOther = 0; out.expenses = [];
-  out.byMethod = {}; out.redeem = 0; out.untracked = 0;
-  scan((typeof SHEET_ORDERS === 'string') ? SHEET_ORDERS : 'POS_Orders', function (r, idx) {
-    // ไม้ที่แลกแต้ม — ของออกจากสต็อกแต่ไม่ได้เงิน (ยอดสุทธิหักไปแล้ว แต่ไม่อยู่ในช่องส่วนลด)
-    if (idx['ส่วนลดแต้ม'] !== undefined) out.redeem += n(r[idx['ส่วนลดแต้ม']]);
-    // มาม่าแยกราคา/ของอื่น (สาหร่ายแผ่น) ไม่มีในสต็อก — ได้เงินแต่ไม่ได้ออกจากยอดนับ
-    if (idx['ยอดมาม่า'] !== undefined) out.untracked += n(r[idx['ยอดมาม่า']]);
-    if (idx['ยอดของอื่น'] !== undefined) out.untracked += n(r[idx['ยอดของอื่น']]);
-    var how = idx['วิธีชำระเงิน'] !== undefined ? String(r[idx['วิธีชำระเงิน']] || '').trim() : '';
-    var net = n(r[idx['ยอดสุทธิ']]);
-    if (!how || how === 'เงินสด') { out.cashSales += net; return; }
-    out.transfer += net;
-    out.byMethod[how] = auditRound_((out.byMethod[how] || 0) + net);
-  });
   scan((typeof SHEET_EXPENSE === 'string') ? SHEET_EXPENSE : 'POS_Expenses', function (r, idx) {
     var amt = n(r[idx['จำนวนเงิน']]);
     var how = idx['วิธีจ่าย'] !== undefined ? String(r[idx['วิธีจ่าย']] || '').trim() : '';

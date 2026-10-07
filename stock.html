@@ -223,7 +223,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-09-30a';
+const PAGE_BUILD = '2026-10-07a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -352,6 +352,7 @@ function doLogout() {
       body: JSON.stringify({ action: 'logout', token })
     }).catch(() => {});
   }
+  clearBootCache();
   auth.token = '';
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-page').classList.remove('hidden');
@@ -828,8 +829,10 @@ async function submitMove(kind) {
     document.getElementById('f-rem').value = '';
     if (pcEl2) pcEl2.value = '';
     document.getElementById('f-note').value = '';
-    await loadData();
-    recalc();
+    btn.disabled = false;
+    btn.innerHTML = c.btn;
+    refreshInBackground(recalc);
+    return;
   } catch (e) {
     if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
     else toast('❌ ' + esc(e.message), 6000);
@@ -1142,8 +1145,7 @@ async function submitPack() {
         const el = document.getElementById(pre + i); if (el) el.value = '';
       });
     });
-    await loadData();
-    calcPack();
+    refreshInBackground(calcPack);
   } catch (e) {
     if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
     else toast('❌ ' + esc(e.message), 6000);
@@ -1366,8 +1368,10 @@ async function submitCount() {
           '<span style="opacity:.8;font-size:12.5px">' +
           (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') +
           (r.refill ? '<br>🔔 ต้องเติม ' + r.refill + ' อย่าง' : '') + '</span>', 5500);
-    await loadData();
+    btn.disabled = false;
+    btn.innerHTML = 'บันทึกผลนับ';
     go('stock');
+    refreshInBackground();
   } catch (e) {
     if (/เวอร์ชันเก่า/.test(e.message)) toastApiError(e.message);
     else toast('❌ ' + esc(e.message), 6000);
@@ -1378,9 +1382,38 @@ async function submitCount() {
 }
 
 /* ════════════════════════════════════════════════════════ */
+/* ── จำข้อมูลรอบก่อนไว้ในเครื่อง เปิดหน้าแล้วโชว์ได้ทันที แล้วค่อยอัปเดตตามหลัง ──
+   หลังบ้าน Apps Script ตื่นช้า (2–5 วิ) ทุกครั้งที่เปิดหน้า ถ้ารอก่อนค่อยโชว์ จะดูเหมือนค้าง
+   แยกตามชื่อคน+สิทธิ์ — เครื่องเดียวกันแต่คนละคนจะไม่เห็นของกันและกัน · ออกจากระบบแล้วลบทิ้ง */
+function bootKey() { return 'stock_boot_' + (auth.role || '') + '_' + (auth.name || ''); }
+function readBootCache() {
+  try { const o = JSON.parse(localStorage.getItem(bootKey()) || 'null'); return o && o.items ? o : null; }
+  catch (e) { return null; }
+}
+function saveBootCache(d) { try { localStorage.setItem(bootKey(), JSON.stringify(d)); } catch (e) {} }
+function clearBootCache() {
+  try { Object.keys(localStorage).filter(k => k.indexOf('stock_boot_') === 0).forEach(k => localStorage.removeItem(k)); }
+  catch (e) {}
+}
+const itemSig = d => (d && d.items || []).map(i => i.name + '|' + i.subUnit + '|' + i.perPack).join(',');
+
+/**
+ * โหลดใหม่ตามหลังหลังบันทึก — ไม่ต้องให้คนรอ ของลงชีตไปแล้ว
+ * หน้าที่ดูยอด (สต็อก/บัญชี) วาดใหม่ให้เลย · หน้ากรอกฟอร์มไม่วาดทับ เดี๋ยวช่องที่พิมพ์อยู่หาย
+ * ยกเว้นรายการสินค้าเปลี่ยน (เพิ่ม/ลบของ) ต้องวาดใหม่ ไม่งั้นนับไม่ครบ
+ */
+function refreshInBackground(after) {
+  const before = itemSig(D);
+  loadData().then(() => {
+    if (tab === 'stock' || itemSig(D) !== before) render();
+    if (after) after();
+  }).catch(() => {});
+}
+
 async function loadData() {
   const r = await apiGet({ action: 'stockBootstrap' });
   D = r.data;
+  saveBootCache(D);
   // เซิร์ฟเวอร์เป็นตัวตัดสินว่าคนนี้ทำที่ไหนได้บ้าง ยึดค่าที่ส่งกลับมาเป็นหลัก
   if (D.branches && D.branches.length) {
     auth.branches = D.branches.slice();
@@ -1403,6 +1436,14 @@ async function showApp() {
   const mine = myTabs();
   if (!mine.some(t => t.id === tab)) tab = mine.length ? mine[0].id : 'waste';
   renderTabs();
+  // มีข้อมูลรอบก่อน = โชว์เลย แล้วอัปเดตตามหลัง (ไม่ต้องจ้องหน้าโหลดทุกครั้ง)
+  const cached = readBootCache();
+  if (cached) {
+    D = cached;
+    render();
+    refreshInBackground();
+    return;
+  }
   document.getElementById('view').innerHTML = '<div class="card"><div class="empty">กำลังโหลด...</div></div>';
   try {
     await loadData();

@@ -220,12 +220,13 @@ function doPost(e) {
         if (typeof handleCashClose_ !== 'function') {
           return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
         }
-        return json_(handleCashClose_(body));
-      case 'stockIn':     return json_(handleStockIn_(body));
-      case 'stockToShop': return json_(handleStockToShop_(body));
-      case 'stockWaste':  return json_(handleStockWaste_(body));
+        return json_(withLineBatch_(function () { return handleCashClose_(body); }));
+      // รวมข้อความไลน์ของแต่ละคำสั่งส่งทีเดียว (บันทึก + ของใกล้หมด ฯลฯ)
+      case 'stockIn':     return json_(withLineBatch_(function () { return handleStockIn_(body); }));
+      case 'stockToShop': return json_(withLineBatch_(function () { return handleStockToShop_(body); }));
+      case 'stockWaste':  return json_(withLineBatch_(function () { return handleStockWaste_(body); }));
       case 'stockCount':  return json_(handleStockCount_(body));
-      case 'stockPack':   return json_(handleStockPack_(body));
+      case 'stockPack':   return json_(withLineBatch_(function () { return handleStockPack_(body); }));
       default:         return json_({ success: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -1274,9 +1275,15 @@ function cacheClear_() { _cache = {}; }
  * ทิ้งเฉพาะที่คำนวณจากข้อมูล จะได้ไม่ต้องไปถาม Spreadsheet ใหม่ทั้งหมด
  * (การถามชีตแต่ละครั้งคือการข้ามไปมาระหว่างสคริปต์กับชีต ซึ่งช้ากว่าคำนวณในหัวมาก)
  */
-function cacheClearData_() {
+function cacheClearData_(keepItems) {
   Object.keys(_cache).forEach(function (k) {
-    if (k.indexOf('sh:') !== 0 && k.indexOf('cols:') !== 0) delete _cache[k];
+    if (k.indexOf('sh:') === 0 || k.indexOf('cols:') === 0) return;
+    // เขียนชีตเคลื่อนไหว (นับ/ของเข้า/ของเสีย) ไม่ได้ทำให้รายการสินค้า กลุ่มไลน์ หรือวันเริ่มนับเปลี่ยน
+    // ไม่ต้องอ่านใหม่ — เดิมล้างหมดแล้วนับสต็อกครั้งหนึ่งอ่านชีตรายการสินค้าซ้ำ 2 รอบ
+    if (keepItems && (k === 'items' || k === 'linegroups' || k === 'cost:starts')) return;
+    // ประวัติการเคลื่อนไหว — แถวใหม่ต่อท้ายเข้าไปในที่จำไว้แล้ว (appendRows_) ไม่ต้องอ่านทั้งชีตใหม่
+    if (keepItems && k.indexOf('moves:') === 0) return;
+    delete _cache[k];
   });
 }
 function cached_(key, fn) {
@@ -1311,7 +1318,23 @@ function appendRows_(sheet, map, list) {
     return row;
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, width).setValues(rows);
-  cacheClearData_();      // ตัวเลขเปลี่ยนแล้ว แต่โครงชีตเหมือนเดิม
+  // ชีตเคลื่อนไหวที่เคยอ่านไว้แล้ว — ต่อท้ายแถวใหม่เข้าไปเลย ไม่ต้องอ่านทั้งชีตใหม่
+  // (ชีตเช็คสต็อกโตวันละร้อยกว่าแถว อ่านซ้ำทุกครั้งที่บันทึกคือส่วนที่ช้าที่สุด)
+  var name = sheet.getName();
+  var movesKey = 'moves:' + name;
+  if (movesKey in _cache) {
+    list.forEach(function (values) {
+      var item = String(values['รายการ'] || '').trim();
+      if (!item) return;
+      _cache[movesKey].push({
+        when: values['วันที่เวลา'], loc: String(values['สาขา'] || '').trim(), item: item,
+        qty: Number(values['จำนวน']) || 0, kind: String(values['ประเภท'] || '').trim()
+      });
+    });
+  }
+  var isMoveSheet = [SHEET_COUNT, SHEET_INCOMING, SHEET_WASTE].indexOf(name) !== -1;
+  if (!isMoveSheet) delete _cache[movesKey];
+  cacheClearData_(isMoveSheet);      // ตัวเลขเปลี่ยนแล้ว แต่โครงชีตเหมือนเดิม
 }
 
 /* ───────────────────────── แปลงหน่วย 2 ระดับ ───────────────────────── */
@@ -1506,9 +1529,10 @@ function readMoves_(sheetName) {
 
 function readMovesRaw_(sheetName) {
   var sh = sheet_(sheetName);
-  if (!sh || sh.getLastRow() < 2) return [];
+  var last = sh ? sh.getLastRow() : 0;          // ถามครั้งเดียว ใช้สองที่
+  if (last < 2) return [];
   var map = ensureCols_(sh, MOVE_COLS);
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var v = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
   var out = [];
   for (var i = 0; i < v.length; i++) {
     var name = String(v[i][map['รายการ']] || '').trim();
@@ -1679,6 +1703,59 @@ function stockLineGroupsRaw_() {
  * ส่งไม่สำเร็จก็ไม่ทำให้การบันทึกล้มเหลว — ของลงชีตแล้วถือว่าบันทึกสำเร็จ
  * คืน { sent, message } ให้ผู้เรียกเอาไปบอกต่อว่าทำไมไม่ได้ส่ง
  */
+/**
+ * รวมข้อความไลน์ไว้ส่งทีเดียว — นับสต็อกครั้งหนึ่งมีได้ถึง 4 ข้อความ
+ * (ผลนับ · ของหาย · เทียบเงิน · ของใกล้หมด) ส่งทีละอันต้องรอ LINE ตอบทีละรอบ ช้าหลายวินาที
+ * LINE รับได้ 5 ข้อความต่อครั้ง เลยเก็บไว้ก่อนแล้วส่งรวม ลำดับข้อความเหมือนเดิม
+ */
+var _lineBatch = null;
+function lineBatchStart_() { _lineBatch = []; }
+
+/** ทำงานแล้วส่งไลน์ที่ค้างรวมทีเดียว — ส่งไม่ผ่านก็บอกผลจริงกลับไป ไม่ใช่บอกว่าส่งแล้ว */
+function withLineBatch_(fn) {
+  lineBatchStart_();
+  var r, f;
+  try { r = fn(); }
+  finally { f = lineBatchFlush_(); }
+  if (r && f && !f.sent) { r.lineSent = false; r.lineMsg = f.message; }
+  return r;
+}
+function lineBatchFlush_() {
+  var q = _lineBatch;
+  _lineBatch = null;
+  if (!q || !q.length) return { sent: true, message: '' };
+  var out = { sent: true, message: '' };
+  var groups = [], byTo = {};
+  q.forEach(function (m) {
+    if (!byTo[m.to]) { byTo[m.to] = { to: m.to, token: m.token, texts: [] }; groups.push(byTo[m.to]); }
+    byTo[m.to].texts.push(m.text);
+  });
+  groups.forEach(function (g) {
+    for (var i = 0; i < g.texts.length; i += 5) {
+      var r = linePushTexts_(g.token, g.to, g.texts.slice(i, i + 5));
+      if (!r.sent) out = r;
+    }
+  });
+  return out;
+}
+function linePushTexts_(token, to, texts) {
+  try {
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: to, messages: texts.map(function (t) {
+        return { type: 'text', text: String(t).slice(0, 5000) };
+      }) }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code !== 200) return { sent: false, message: 'LINE ตอบ ' + code + ': ' + res.getContentText() };
+    return { sent: true, message: '' };
+  } catch (err) {
+    return { sent: false, message: 'แจ้งกลุ่มไม่สำเร็จ: ' + err.message };
+  }
+}
+
 function stockNotify_(location, text) {
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
@@ -1694,20 +1771,11 @@ function stockNotify_(location, text) {
     return { sent: false, message: 'ยังไม่ได้ตั้ง Group ID ของ "' + location + '" — บันทึกแล้วแต่ไม่ได้แจ้งกลุ่ม' };
   }
 
-  var url  = 'https://api.line.me/v2/bot/message/push';
-  var body = { to: to, messages: [{ type: 'text', text: text }] };
-  try {
-    var res = UrlFetchApp.fetch(url, {
-      method: 'post', contentType: 'application/json',
-      headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify(body), muteHttpExceptions: true
-    });
-    var code = res.getResponseCode();
-    if (code !== 200) return { sent: false, message: 'LINE ตอบ ' + code + ': ' + res.getContentText() };
-    return { sent: true, message: '' };
-  } catch (err) {
-    return { sent: false, message: 'แจ้งกลุ่มไม่สำเร็จ: ' + err.message };
+  if (_lineBatch) {                       // กำลังรวมข้อความ — เก็บไว้ส่งทีเดียวตอนจบ
+    _lineBatch.push({ to: to, token: token, text: text });
+    return { sent: true, message: '', queued: true };
   }
+  return linePushTexts_(token, to, [text]);
 }
 
 /**
@@ -2242,6 +2310,9 @@ function handleStockCount_(body) {
             (diffs.length ? 'ที่ไม่ตรงกับระบบ ' + diffs.length + ' รายการ\n' + diffs.join('\n')
                           : 'ตรงกับระบบทุกรายการ 🎉') +
             (refill.length ? '\n\n🔔 ต้องเติม\n' + refill.join('\n') : '');
+  // ข้อความทั้งหมดของการนับรอบนี้ส่งไลน์รวมทีเดียวตอนจบ (เร็วกว่าส่งทีละอัน)
+  lineBatchStart_();
+  try {
   var line = stockNotify_(loc, msg);
 
   // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
@@ -2264,6 +2335,10 @@ function handleStockCount_(body) {
   var balNow = {};
   counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
   checkLowStock_(items.map(function (it) { return it.name; }), loc, balNow);
+  } finally {
+    var flushed = lineBatchFlush_();
+  }
+  line = { sent: flushed.sent, message: flushed.message };
   return { success: true, counted: items.length, diffs: isBase ? 0 : diffs.length,
            base: isBase, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
