@@ -414,6 +414,8 @@ function costEvents_(all) {
   if (shC && shC.getLastRow() > 1) {
     var mapC = ensureCols_(shC, MOVE_COLS);
     var vc = shC.getRange(2, 1, shC.getLastRow() - 1, shC.getLastColumn()).getValues();
+    var hc = shC.getRange(1, 1, 1, shC.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
+    var iCost = hc.indexOf(COUNT_COST_COL), iTo = hc.indexOf(COUNT_CHARGE_COL);
     vc.forEach(function (r) {
       var item = String(r[mapC['รายการ']] || '').trim();
       if (!item) return;
@@ -424,7 +426,10 @@ function costEvents_(all) {
       ev.push({ t: costTime_(r[mapC['วันที่เวลา']]), step: 5,
                 type: kindC === 'ล้างยอด' ? 'ล้างยอด' : 'เช็คสต็อก',
                 loc: String(r[mapC['สาขา']] || '').trim(), item: item,
-                qty: costQty_(r[mapC['จำนวน']]) });
+                qty: costQty_(r[mapC['จำนวน']]),
+                // ตั้งยอดครัวกลาง (setCentralStock_) — ราคาทุนที่บอกมา กับที่ที่รับส่วนที่หายไป
+                cost: iCost === -1 ? 0 : Number(r[iCost]) || 0,
+                chargeTo: iTo === -1 ? '' : String(r[iTo] || '').trim() });
     });
   }
 
@@ -606,17 +611,24 @@ function costReplayRaw_(all) {
       var base = isBranchBase(e);
       if (diff > 0.00001) {
         var t4 = take(e.loc, e.item, diff);
-        noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
+        // ตั้งยอดครัวกลางแล้วบอกว่าส่วนที่หายไปเป็นของสาขาไหน (ส่งไปแล้วไม่ได้ลง)
+        // → เป็นค่าวัตถุดิบของสาขานั้น ไม่ใช่ของครัวกลาง (ไม่ไปเป็นหนี้ที่ต้องจ่ายคืน)
+        if (e.chargeTo && e.chargeTo !== e.loc) {
+          noteItem(e.chargeTo, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
+          bucket(e.chargeTo).ตัดจากครัวกลาง = costBaht_((bucket(e.chargeTo).ตัดจากครัวกลาง || 0) + t4.value);
+        } else {
+          noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
+        }
       } else if (diff < -0.00001) {
         // นับได้มากกว่าในระบบ — รวมถึงการนับวันแรกหลังเริ่มนับใหม่ (ยอดตั้งต้น)
-        // ไม่ใช่ค่าใช้จ่าย ใส่มูลค่าตามต้นทุนล่าสุดที่รู้
+        // ไม่ใช่ค่าใช้จ่าย ใส่มูลค่าตามราคาที่บอกมา หรือต้นทุนล่าสุดที่รู้
         var add = -diff;
-        var c = base ? 0 : guessCost(e.loc, e.item);
+        var c = e.cost > 0 ? e.cost : (base ? 0 : guessCost(e.loc, e.item));
         if (!(c > 0) && !all && !base) {
           warn.push({ when: e.t, loc: e.loc, item: e.item,
                       msg: 'นับได้เกินระบบแต่ไม่รู้ราคาทุน — คิดเป็น 0' });
         }
-        put(e.loc, e.item, add, c);
+        put(e.loc, e.item, add, c, e.cost > 0 ? e.cost : 0);
         noteItem(e.loc, e.item, 'นับเกิน', add, costBaht_(add * c), e.t);
       }
     }
@@ -775,14 +787,16 @@ function costSummary_() {
       // เต้าชีส 34 (ชิ้น) กับ "1 แพ็ค 7 ไม้" เลยดูเหมือนไม่ตรงกันทั้งที่เป็นยอดเดียวกัน
       var it = (typeof findStockItem_ === 'function') ? findStockItem_(item) : null;
       var bu = it && typeof baseUnitOf_ === 'function' ? baseUnitOf_(it) : '';
-      var unit = shown > 0 ? shown : costBaht_(qty > 0 ? value / qty : 0);
+      // ราคาต่อกรัม/ต่ออันเล็กมาก (0.1049) ปัดเป็นสตางค์ไม่ได้ เก็บ 4 ตำแหน่ง
+      var r4 = function (n) { return Math.round((Number(n) || 0) * 10000) / 10000; };
+      var unit = r4(shown > 0 ? shown : (qty > 0 ? value / qty : 0));
       // ต้นทุนต่อหน่วยที่ขาย (ไม้) ไม่ใช่ต่อชิ้น — เต้าชีส 2.88/ชิ้น = 5.77/ไม้
       var per = it && typeof perStickOf_ === 'function' ? perStickOf_(it) : 1;
       rows.push({ item: item, qty: qty, value: value, baseUnit: bu,
                   text: it && typeof fmtPack_ === 'function' ? fmtPack_(qty, it) : String(qty),
                   unit: unit,
                   subUnit: it ? it.subUnit : bu,
-                  unitSub: per > 1 ? costBaht_(qty > 0 ? value / qty * per : unit * per) : unit });
+                  unitSub: per > 1 ? r4(qty > 0 ? value / qty * per : unit * per) : unit });
       sum += value;
     });
     rows.sort(function (a, b) { return b.value - a.value; });
@@ -797,7 +811,8 @@ function costSummary_() {
     var u = rep.used[loc] || {};
     var sent = rep.sent[loc] || 0;
     var paid = back[loc] || 0;
-    var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
+    // ของที่ตัดจากครัวกลางตอนตั้งยอด ไม่ได้ส่งผ่านระบบ จึงไม่ใช่หนี้ที่ต้องจ่ายคืน
+    var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0) - (u['ตัดจากครัวกลาง'] || 0));
     // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนคืนครัวกลางไปแล้ว
     var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
                          ((outgo[loc] || {})['รวม'] || 0) - paid);
@@ -968,6 +983,125 @@ function refreshCostingSheets() {
   buildStockValue();
   buildBranchLedger();
   buildLocationPL();
+}
+
+/* ═══════════════════ ตั้งยอดครัวกลางตามของที่มีจริง ═══════════════════ */
+
+/** ช่องเพิ่มในชีตเช็คสต็อก ใช้เฉพาะตอนตั้งยอดครัวกลาง */
+var COUNT_COST_COL   = 'ต้นทุน/หน่วย';
+var COUNT_CHARGE_COL = 'ส่วนที่หายเป็นค่าวัตถุดิบของ';
+
+/**
+ * ครัวกลางนับของจริงพร้อมราคา — [ชื่อในระบบ, จำนวน(หน่วยเล็กสุด), ราคาทุน/หน่วยเล็กสุด, ที่มา]
+ * ของที่ระบบเคยมีแต่ไม่อยู่ในรายการ = ไม่มีแล้ว (นับเป็น 0)
+ * ส่วนที่หายไปจากครัวกลาง = ส่งไปสาขาแล้วไม่ได้ลง → เป็นค่าวัตถุดิบของสาขา chargeTo
+ * ของที่มีมากกว่าในระบบ ตั้งมูลค่าตามราคาที่บอก (ไม่ใช่ค่าใช้จ่าย)
+ * สต็อกสาขาไม่ถูกแตะ
+ */
+function setCentralStock_(list, chargeTo, who) {
+  var central = costCentral_();
+  var miss = function () {
+    return list.filter(function (x) { return !findStockItem_(x[0]); }).map(function (x) { return x[0]; });
+  };
+  if (miss().length && typeof addSupplyItems === 'function') { addSupplyItems(); cacheClear_(); }
+  if (miss().length) {
+    Logger.log('❌ ไม่มีชื่อนี้ในชีตรายการสินค้า: ' + miss().join(', ') + '\nรัน fixItemList แล้วลองใหม่');
+    return null;
+  }
+  var sh = sheet_(SHEET_COUNT);
+  var map = ensureCols_(sh, MOVE_COLS.concat([COUNT_COST_COL, COUNT_CHARGE_COL]));
+  var now = new Date();
+  var rows = [], listed = {};
+  function row(it, qty, cost, note) {
+    var s = splitUnits_(qty, it), r = {
+      'วันที่เวลา': now, 'สาขา': central, 'ผู้ตรวจ': who || 'เจ้าของร้าน', 'รายการ': it.name,
+      'จำนวน': costQty_(qty), 'หน่วย': baseUnitOf_(it), 'หมายเหตุ': note, 'ประเภท': 'เช็คสต็อก',
+      'แพ็ค': s.packs, 'เศษ': s.sticks, 'เศษ(ชิ้น)': s.pieces,
+      'ไม้ต่อแพ็ค': it.perPack, 'ชิ้นต่อไม้': perStickOf_(it)
+    };
+    r[COUNT_COST_COL] = cost || '';
+    r[COUNT_CHARGE_COL] = chargeTo || '';
+    rows.push(r);
+  }
+  list.forEach(function (x) {
+    var it = findStockItem_(x[0]);
+    listed[it.name] = true;
+    row(it, x[1], x[2], 'ตั้งยอดครัวกลาง' + (x[3] ? ' · ' + x[3] : ''));
+  });
+  // ของที่ระบบยังมีที่ครัวกลาง (ทั้งยอดสต็อกและชั้นต้นทุน) แต่ของจริงไม่มีแล้ว
+  var gone = {};
+  var bal = stockBalances_()[central] || {};
+  Object.keys(bal).forEach(function (k) { if (Math.abs(bal[k]) > 0.00001) gone[k] = 1; });
+  var lay = costReplay_().layers[central] || {};
+  Object.keys(lay).forEach(function (k) {
+    if (lay[k].some(function (l) { return l.qty > 0.00001; })) gone[k] = 1;
+  });
+  Object.keys(gone).forEach(function (k) {
+    if (listed[k]) return;
+    var it = findStockItem_(k);
+    if (it) row(it, 0, 0, 'ตั้งยอดครัวกลาง · ไม่มีแล้ว');
+  });
+  appendRows_(sh, map, rows);
+  SpreadsheetApp.flush();
+  cacheClear_();
+
+  // สรุปว่าตัดอะไรไปเป็นค่าวัตถุดิบสาขาเท่าไหร่
+  var rep = costReplay_(), t = now.getTime(), sum = 0, lines = [];
+  rep.log.forEach(function (l) {
+    if (l.loc !== chargeTo || l.kind !== 'ใช้ไป' || Math.abs(costTime_(l.t) - t) > 60000) return;
+    var it = findStockItem_(l.item);
+    lines.push('  • ' + l.item + ' ' + (it ? fmtPack_(l.qty, it) : l.qty) + ' = ' + costBaht_(l.value) + ' บาท');
+    sum += l.value;
+  });
+  var st = costSummary_().stock[central] || { total: 0, rows: [] };
+  var text = '✅ ตั้งยอดครัวกลางแล้ว ' + rows.length + ' รายการ\n' +
+    'มูลค่าของในครัวกลางตอนนี้ ' + costBaht_(st.total).toLocaleString() + ' บาท\n\n' +
+    'ส่วนที่หายไป → ค่าวัตถุดิบของ ' + chargeTo + ' ' + costBaht_(sum).toLocaleString() + ' บาท\n' +
+    (lines.join('\n') || '  (ไม่มี)');
+  Logger.log(text);
+  if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
+  return { rows: rows.length, charged: costBaht_(sum), central: st.total, text: text };
+}
+
+/**
+ * ของในครัวกลางที่นับจริง 8/10/2026 (เจ้าของร้านส่งมาในแชต)
+ * ราคาเป็นต่อหน่วยเล็กสุดในระบบ — กล่อง/ห่อ/โล แปลงแล้ว
+ */
+var CENTRAL_STOCK_20261008 = [
+  ['กะหล่ำ (ดิบ)',                  3.125, 27.25,       '3.125 โล โลละ 27.25'],
+  // ในระบบมี 0.1 โล (85 บาท) อยู่แล้ว ที่เกินมา 1.417 โล คิดโลละ 266
+  ['สาหร่าย (ดิบ)',                 1.517, 266,         '1.417 โล โลละ 266 + 0.1 โล 85 บาท'],
+  // ซื้อมา 471.68 = 22 กล่อง × 21.44 → กล่องละ 21.44 (ม้วนละ 1.79)
+  ['ฟองเต้าหู้ม้วน (ดิบ)',           216,   21.44 / 12,  '18 กล่อง × 12 ม้วน กล่องละ 21.44'],
+  ['ช้อน',                         500,   11.54 / 100, '5 แพ็ค × 100 อัน แพ็คละ 11.54'],
+  ['มันเทศ (ดิบ)',                  6,     10.92,       'เส้นมันเทศ 6 ถุง (ถุงละ 200 กรัม) ถุงละ 10.92'],
+  ['ผงหม่าล่า',                     2900,  10.49 / 100, 'พริกผงจีน 29 ห่อ × 100 กรัม ห่อละ 10.49'],
+  ['เบสหม่าล่า',                    1000,  160 / 1000,  '1000 มล 160 บาท'],
+  ['นมผง',                         200,   110 / 1000,  '200 กรัม โลละ 110'],
+  ['น้ำจิ้มงา (ดิบ)',                4,     89.6,        '4 ถุง ถุงละ 89.6'],
+  ['น้ำดำ',                         8,     75.3,        '8 ถุง ถุงละ 75.3'],
+  ['พริกป่น',                       170,   125 / 1000,  'พริกป่นไทย 170 กรัม โลละ 125'],
+  ['เต้าหู้หลอด (ดิบ)',              1,     54,          '12 หลอด (1 ถุง) 54 บาท'],
+  ['ข้าวโพดฝัก (ดิบ)',               1,     25,          '3 ฝัก (≈1 โล) 25 บาท'],
+  ['ถ้วย 2 ออน',                    50,    25 / 50,     '1 แพ็ค 25 บาท'],
+  ['ไม้เสียบเบอร์ 8',                1,     18,          '1 แพ็ค 18 บาท'],
+  ['เห็ดออเร็นจิ (ดิบ)',             0.749, 60,          '0.749 โล โลละ 60'],
+  ['แมงกะพรุน (ดิบ)',               0.378, 70,          '0.378 โล โลละ 70'],
+  ['หัวไหล่หมูติดหนังสไลซ์ (ดิบ)',    1.357, 122,         '1.357 โล โลละ 122'],
+  ['ไก่ (ดิบ)',                     0.896, 84,          'อกไก่ 0.896 โล โลละ 84'],
+  ['วุ้นเส้นเกาหลี (ดิบ)',            0.5,   62,          '0.5 โล 31 บาท']
+];
+
+/** กด ▶ ครั้งเดียวในหน้า Apps Script — ผลดูที่บันทึกการดำเนินการ (รันซ้ำไม่ได้ กันลงซ้ำ) */
+function setCentralStock20261008() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('CENTRAL_STOCK_20261008')) {
+    Logger.log('ตั้งยอดครัวกลางชุดนี้ไปแล้วเมื่อ ' + props.getProperty('CENTRAL_STOCK_20261008') +
+               ' — ไม่ลงซ้ำ');
+    return;
+  }
+  var r = setCentralStock_(CENTRAL_STOCK_20261008, 'ตลาดทรัพย์พัฒนา', 'เจ้าของร้าน');
+  if (r) props.setProperty('CENTRAL_STOCK_20261008', Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm'));
 }
 
 /**
