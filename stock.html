@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-07b';
+const PAGE_BUILD = '2026-10-07c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -552,12 +552,22 @@ function viewMoney(v) {
 
     // โชว์ครบทุกรายการ — เดิมตัดไว้ 12 แถว แล้วดูเหมือนของหายไป
     // จำนวนแบบเดียวกับแท็บสต็อกคงเหลือ (แพ็ค/ไม้/ชิ้น) ต้นทุนบอกหน่วยด้วย
-    const top = st.rows.map(r => `<tr>
+    // คิดจากรายการสินค้าในหน้านี้เองด้วย — หลังบ้านเวอร์ชันเก่าส่งมาแค่เลขหน่วยเล็กสุด (ชิ้น)
+    // ต้นทุนบอกต่อหน่วยที่ขาย (ไม้) เต้าชีส 2.88/ชิ้น → 5.77/ไม้
+    const top = st.rows.map(r => {
+      const it = itemOf(r.item);
+      const text = it ? fmtPack(r.qty, it) : (r.text || String(r.qty));
+      const per = it ? perStickOf(it) : 1;
+      const unit = r.unitSub != null ? r.unitSub
+        : per > 1 ? (r.qty > 0 ? r.value / r.qty * per : r.unit * per) : r.unit;
+      const u = it ? it.subUnit : (r.subUnit || r.baseUnit || '');
+      return `<tr>
         <td>${esc(r.item)}</td>
-        <td class="num">${esc(r.text || String(r.qty))}</td>
-        <td class="num">${baht(r.unit)}${r.baseUnit ? '<small>/' + esc(r.baseUnit) + '</small>' : ''}</td>
+        <td class="num">${esc(text)}</td>
+        <td class="num">${baht(unit)}${u ? '<small>/' + esc(u) + '</small>' : ''}</td>
         <td class="num">${baht(r.value)}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     return `<div class="card">
       <div class="loctitle"><span class="pill">${esc(loc)}</span>

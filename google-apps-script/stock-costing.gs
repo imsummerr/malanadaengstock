@@ -775,9 +775,14 @@ function costSummary_() {
       // เต้าชีส 34 (ชิ้น) กับ "1 แพ็ค 7 ไม้" เลยดูเหมือนไม่ตรงกันทั้งที่เป็นยอดเดียวกัน
       var it = (typeof findStockItem_ === 'function') ? findStockItem_(item) : null;
       var bu = it && typeof baseUnitOf_ === 'function' ? baseUnitOf_(it) : '';
+      var unit = shown > 0 ? shown : costBaht_(qty > 0 ? value / qty : 0);
+      // ต้นทุนต่อหน่วยที่ขาย (ไม้) ไม่ใช่ต่อชิ้น — เต้าชีส 2.88/ชิ้น = 5.77/ไม้
+      var per = it && typeof perStickOf_ === 'function' ? perStickOf_(it) : 1;
       rows.push({ item: item, qty: qty, value: value, baseUnit: bu,
                   text: it && typeof fmtPack_ === 'function' ? fmtPack_(qty, it) : String(qty),
-                  unit: shown > 0 ? shown : costBaht_(qty > 0 ? value / qty : 0) });
+                  unit: unit,
+                  subUnit: it ? it.subUnit : bu,
+                  unitSub: per > 1 ? costBaht_(qty > 0 ? value / qty * per : unit * per) : unit });
       sum += value;
     });
     rows.sort(function (a, b) { return b.value - a.value; });
@@ -871,12 +876,14 @@ function buildStockValue() {
   Object.keys(s.stock).forEach(function (loc) {
     if (!s.stock[loc].rows.length) return;      // ไม่มีของก็ไม่ต้องมีแถวรวม
     s.stock[loc].rows.forEach(function (r) {
-      rows.push([loc, r.item, r.text || r.qty, r.qty, r.baseUnit || '', r.unit, r.value]);
+      rows.push([loc, r.item, r.text || r.qty, r.unitSub != null ? r.unitSub : r.unit,
+                 r.subUnit || r.baseUnit || '', r.value, r.qty, r.baseUnit || '']);
     });
-    rows.push([loc, '— รวม —', '', '', '', '', s.stock[loc].total]);
+    rows.push([loc, '— รวม —', '', '', '', s.stock[loc].total, '', '']);
   });
+  // คงเหลือแบบเดียวกับหน้าสต็อก · ต้นทุนต่อหน่วยที่ขาย (ไม้/ถุง/กก.) · จำนวนหน่วยเล็กสุดไว้ท้ายตาราง
   costWriteSheet_(COST_SHEET_STOCK,
-    ['สถานที่', 'สินค้า', 'คงเหลือ', 'จำนวน (หน่วยเล็กสุด)', 'หน่วย', 'ต้นทุน/หน่วย', 'มูลค่า'], rows,
+    ['สถานที่', 'สินค้า', 'คงเหลือ', 'ต้นทุน', 'ต่อ', 'มูลค่า', 'จำนวน (หน่วยเล็กสุด)', 'หน่วยเล็กสุด'], rows,
     'มูลค่าสต็อกแบบเข้าก่อนออกก่อน · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สั่งใหม่ได้ด้วย buildStockValue()');
@@ -1014,7 +1021,8 @@ function previewCosting() {
   Object.keys(s.stock).forEach(function (loc) {
     out.push('\n📍 ' + loc + ' — มูลค่าสต็อก ' + s.stock[loc].total.toLocaleString() + ' บาท');
     s.stock[loc].rows.slice(0, 8).forEach(function (r) {
-      out.push('   ' + r.item + '  ' + r.qty + ' × ' + r.unit + ' = ' + r.value);
+      out.push('   ' + r.item + '  ' + (r.text || r.qty) + ' · ' + (r.subUnit || '') + 'ละ ' +
+               (r.unitSub != null ? r.unitSub : r.unit) + ' = ' + r.value);
     });
     if (s.stock[loc].rows.length > 8) out.push('   … อีก ' + (s.stock[loc].rows.length - 8) + ' รายการ');
   });
