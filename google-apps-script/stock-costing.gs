@@ -340,8 +340,7 @@ function costEvents_(all) {
         var perUnit = msg ? (pkMap[key + '|' + qty] || pkMap[key + '|g' + qty] || 0) : 0;
         ev.push({ t: costTime_(r[mapIn['วันที่เวลา']]), step: 1, type: 'ซื้อเข้า',
                   loc: loc, item: item, qty: qty, unit: perUnit,
-                  paid: perUnit > 0 ? costBaht_(perUnit * qty)
-                                    : costBaht_((paid[key] || 0) * (all > 0 ? qty / all : 1)) });
+                  paid: costBaht_((paid[key] || 0) * (all > 0 ? qty / all : 1)) });
       }
     });
   }
@@ -469,9 +468,10 @@ function costReplayRaw_(all) {
   function total(loc, item) {
     return costQty_(box(loc, item).reduce(function (s, l) { return s + l.qty; }, 0));
   }
-  function put(loc, item, qty, cost) {
+  function put(loc, item, qty, cost, shown) {
     if (!(qty > 0)) return;
-    box(loc, item).push({ qty: qty, cost: cost });
+    // shown = ราคาต่อหน่วยที่พิมพ์มาเอง (โลละ 84) ไว้โชว์ — คิดเงินยังใช้ cost
+    box(loc, item).push(shown > 0 ? { qty: qty, cost: cost, shown: shown } : { qty: qty, cost: cost });
     if (cost > 0) lastCost[loc + '|' + item] = cost;
   }
   /**
@@ -512,13 +512,14 @@ function costReplayRaw_(all) {
   costEvents_(all).forEach(function (e) {
     if (e.type === 'ซื้อเข้า') {
       // ซื้อผ่านไลน์จะมีราคามาด้วย · กรอกในเว็บไม่มี ต้องเดาจากราคาล่าสุด
-      // ราคาต่อหน่วยที่พิมพ์มาเอง (โลละ 122) แม่นกว่าเอายอดที่ปัดเศษแล้วมาหาร
-      var unit = e.unit > 0 ? e.unit : e.paid > 0 ? e.paid / e.qty : guessCost(e.loc, e.item);
+      // มูลค่า = เงินที่จ่ายจริง (75.25) · ราคาต่อโลที่โชว์ = ที่พิมพ์มา (โลละ 84)
+      // ถ้าเอา 84 × 0.896 จะได้ 75.26 ไม่ตรงกับที่จ่าย เพราะร้านปัดเศษยอดรวม
+      var unit = e.paid > 0 ? e.paid / e.qty : (e.unit > 0 ? e.unit : guessCost(e.loc, e.item));
       if (!(unit > 0)) {
         warn.push({ when: e.t, loc: e.loc, item: e.item,
                     msg: 'ไม่รู้ราคาที่ซื้อมา — คิดต้นทุนเป็น 0' });
       }
-      put(e.loc, e.item, e.qty, unit);
+      put(e.loc, e.item, e.qty, unit, e.unit > 0 ? e.unit : 0);
 
     } else if (e.type === 'แพ็คของ') {
       // ต้นทุนของที่แพ็คแล้ว = ต้นทุนของดิบที่กินไปทั้งหมด หารด้วยจำนวนที่ได้
@@ -734,12 +735,16 @@ function costSummary_() {
   Object.keys(rep.layers).forEach(function (loc) {
     var rows = [], sum = 0;
     Object.keys(rep.layers[loc]).forEach(function (item) {
-      var qty = 0, value = 0;
-      rep.layers[loc][item].forEach(function (l) { qty += l.qty; value += l.qty * l.cost; });
+      var qty = 0, value = 0, shown = null;
+      rep.layers[loc][item].forEach(function (l) {
+        qty += l.qty; value += l.qty * l.cost;
+        // ทุกชั้นพิมพ์ราคาต่อโลเท่ากัน = โชว์ราคานั้น ไม่งั้นโชว์ค่าเฉลี่ย
+        shown = (shown === null) ? (l.shown || 0) : (shown === l.shown ? shown : 0);
+      });
       qty = costQty_(qty); value = costBaht_(value);
       if (qty <= 0.00001 && value === 0) return;
       rows.push({ item: item, qty: qty, value: value,
-                  unit: costBaht_(qty > 0 ? value / qty : 0) });
+                  unit: shown > 0 ? shown : costBaht_(qty > 0 ? value / qty : 0) });
       sum += value;
     });
     rows.sort(function (a, b) { return b.value - a.value; });
