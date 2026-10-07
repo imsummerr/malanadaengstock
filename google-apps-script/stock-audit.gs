@@ -949,6 +949,7 @@ function cashCheck_(loc, day, opt) {
   // ถ้าเชื่อตัวเลขใน POS — เอาไว้แยกว่า "เงินหาย" หรือ "ขายแล้วไม่ได้กด POS"
   var posExpected = auditRound_(sDay.cashSales - sDay.expCash + flt);
   var hm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'HH:mm'); };
+  var dd = Utilities.formatDate(new Date(dayStart), auditTz_(), 'd/M');
 
   var L = [];
   L.push(noCash ? '📋 ปิดร้าน ' + loc + ' — ยังไม่มีคนกรอกเงินที่นับได้'
@@ -965,13 +966,13 @@ function cashCheck_(loc, day, opt) {
   });
   if (pre)        L.push('+ เงินสดบิลก่อนนับรอบ ' + hm(prevMs) + '   ' + auditBaht_(pre));
   if (old)        L.push('− เงินสดบิลของวันก่อน (อยู่ลิ้นชักวันก่อน)   ' + auditBaht_(old));
-  if (sDay.expCash) L.push('− ค่าใช้จ่ายเงินสดวันนี้   ' + auditBaht_(sDay.expCash));
+  if (sDay.expCash) L.push('− ค่าใช้จ่ายเงินสดวันที่ ' + dd + '   ' + auditBaht_(sDay.expCash));
   if (flt)        L.push('+ เงินทอนตั้งต้น   ' + auditBaht_(flt));
   L.push('= เงินสดที่ควรมี   ' + auditBaht_(expected) + ' บาท');
   if (!noCash) L.push('', 'นับได้จริง   ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
   if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
   L.push('');
-  L.push('เทียบ POS: ขายเงินสดวันนี้ ' + auditBaht_(sDay.cashSales) + ' บาท (ทั้งหมด ' + sDay.orders + ' บิล)' +
+  L.push('เทียบ POS: ขายเงินสดวันที่ ' + dd + ' ' + auditBaht_(sDay.cashSales) + ' บาท (ทั้งหมด ' + sDay.orders + ' บิล)' +
          ' → ควรมี ' + auditBaht_(posExpected));
   if (!ok || noCash) {
     if (u.sticks < 0) {
@@ -1069,10 +1070,12 @@ function cashCheckAfterCount_(loc, now) {
   var ms = (now || new Date()).getTime(), day = cashBizDay_(ms);
   var r = cashCheck_(loc, day);
   if (r) return r;
-  // นับเช้าวันรุ่งขึ้นก่อนเปิดร้าน — เมื่อวานกรอกเงินไว้แต่ยังไม่ได้เทียบ ก็เทียบให้ตอนนี้
+  // นับเช้าวันรุ่งขึ้นก่อนเปิดร้าน = รอบนับปิดของเมื่อวาน → เทียบเงินของเมื่อวาน
+  // (ทับผลเดิมได้ เช่นเมื่อวานกรอกเงินตอนยังไม่นับปิด แล้วระบบเก่าเทียบผิดไว้)
   var prev = cashBizDay_(cashDayStart_(day) - 3600000);
-  var waiting = cashRows_(loc).filter(function (c) { return cashBizDay_(c.ms) === prev; });
-  if (waiting.length && !waiting[waiting.length - 1].result) return cashCheck_(loc, prev);
+  if (!cashRows_(loc).some(function (c) { return cashBizDay_(c.ms) === prev; })) return null;
+  var cc = cashCloseCount_(loc, prev);
+  if (cc.countMs && Math.abs(cc.countMs - ms) <= 5 * 60000) return cashCheck_(loc, prev);
   return null;
 }
 
