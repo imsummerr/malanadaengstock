@@ -64,6 +64,7 @@ let txt = g.__env.SENT.map(x => x.messages[0].text).join('\n');
 eq('ไลน์บอกว่าเงินตรง', /✅ ปิดร้าน .* เงินตรง/.test(txt), true);
 eq('ค่าใช้จ่ายที่โอนจ่ายไม่ถูกหัก', /ค่าใช้จ่ายเงินสดวันที่ \d+\/\d+   50/.test(txt), true);
 eq('แยกโอนกับไทยช่วยไทย', /ลูกค้าโอน   60[\s\S]*ไทยช่วยไทย   40/.test(txt), true);
+eq('ของเสียไม่คิดเป็นเงิน — บอกว่าหักแล้ว', /หักของเสียออกแล้ว 2 ชิ้น 20 บาท: มันเทศ 2 ถุง/.test(txt), true);
 const cs = g.__env.SHEETS[g.SHEET_CASH];
 eq('จดยอดที่ควรมีลงชีต', cs.rows[0][cs.headers.indexOf('ควรมี')], 150);
 eq('จดผล', cs.rows[0][cs.headers.indexOf('ผลเทียบ')], 'ตรง');

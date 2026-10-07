@@ -868,18 +868,34 @@ function cashUsage_(loc, atMs) {
     if (t < atMs - 60000 && (!last[m.item] || t >= last[m.item].t)) last[m.item] = { t: t, qty: m.qty };
   });
 
-  var moved = {};
+  var moved = {}, wasted = {};
   function add(sheet, sign) {
     readMoves_(sheet).forEach(function (m) {
       if (m.loc !== loc) return;
       var t = auditTime_(m.when), from = last[m.item] ? last[m.item].t : 0;
-      if (t > from && t <= atMs + 60000) moved[m.item] = (moved[m.item] || 0) + sign * m.qty;
+      if (t > from && t <= atMs + 60000) {
+        moved[m.item] = (moved[m.item] || 0) + sign * m.qty;
+        if (sign < 0) wasted[m.item] = (wasted[m.item] || 0) + m.qty;
+      }
     });
   }
   add(SHEET_INCOMING, 1);
   add(SHEET_WASTE, -1);
 
-  var out = { value: 0, sticks: 0, items: [], overs: [] };
+  // ของเสียในช่วงนี้ — หักออกจากของที่ขายแล้ว (ไม่ได้เป็นเงิน) แสดงให้เห็นว่าหักไปเท่าไหร่
+  var out = { value: 0, sticks: 0, items: [], overs: [], waste: [], wasteValue: 0, wasteSticks: 0 };
+  Object.keys(wasted).forEach(function (name) {
+    var it = items[name];
+    if (!it || it.level || !counted.hasOwnProperty(name) || !last[name]) return;
+    var q = Math.round(wasted[name] / perStickOf_(it) * 1000) / 1000;
+    var v = auditRound_(q * (Number(it.price) || 0));
+    out.waste.push({ name: name, qty: q, unit: it.subUnit, value: v });
+    out.wasteValue += v;
+    if (Number(it.price) > 0) out.wasteSticks += q;
+  });
+  out.wasteValue = auditRound_(out.wasteValue);
+  out.wasteSticks = Math.round(out.wasteSticks * 1000) / 1000;
+  out.waste.sort(function (a, b) { return b.value - a.value || b.qty - a.qty; });
   Object.keys(counted).forEach(function (name) {
     var it = items[name];
     if (!it || it.level || !last[name]) return;          // ไม่มียอดยกมา = รอบฐานของตัวนี้ ยังคิดไม่ได้
@@ -987,6 +1003,11 @@ function cashCheck_(loc, day, opt) {
   L.push('นับสต็อก ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
   L.push('');
   L.push('ขายไปตามสต็อก ' + u.sticks + ' ชิ้น   ' + auditBaht_(u.value) + ' บาท');
+  if (u.waste.length) {
+    L.push('  (หักของเสียออกแล้ว ' + u.wasteSticks + ' ชิ้น ' + auditBaht_(u.wasteValue) + ' บาท: ' +
+           u.waste.slice(0, 5).map(function (x) { return x.name + ' ' + x.qty + ' ' + x.unit; }).join(', ') +
+           (u.waste.length > 5 ? ' …' : '') + ')');
+  }
   if (s.untracked) L.push('+ มาม่า/ของอื่นที่ไม่ได้นับสต็อก   ' + auditBaht_(s.untracked));
   if (dlv)        L.push('− เดลิเวอรี่ ' + s.dlvPieces + ' ชิ้น   ' + auditBaht_(dlv));
   if (s.discount) L.push('− ส่วนลด   ' + auditBaht_(s.discount));
