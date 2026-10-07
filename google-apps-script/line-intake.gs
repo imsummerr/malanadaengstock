@@ -990,7 +990,14 @@ function intakeItemNames_() {
 function intakeStockQty_(item, counts, gram, perBag) {
   if (!item) return null;
 
-  // ของที่แต่ละถุงไม่เท่ากัน (มาม่าเปล่า) — ต้องบอก "ถุงละกี่อัน" ถึงจะลงสต็อกได้
+  // บอก "ถุงละ N" มาเองกับของที่ยกถุงแล้วนับย่อยได้ — ใช้ตามที่บอก (ถุงนี้อาจไม่เท่าปกติ)
+  if (perBag > 0 && item.kind === 'วัตถุดิบ' && item.perPack > 1 && counts && counts.length &&
+      intakeNorm_(counts[0].unit) === intakeNorm_(item.packUnit)) {
+    return { base: counts[0].n * perBag, packs: counts[0].n, per: perBag,
+             unitNote: counts[0].n + ' ' + item.packUnit + ' × ' + perBag + ' ' + item.subUnit };
+  }
+
+  // ของที่แต่ละถุงไม่เท่ากัน (RAW_ASK_PER_BAG) — ต้องบอก "ถุงละกี่อัน" ถึงจะลงสต็อกได้
   var askU = (typeof rawAskPerBag_ === 'function') ? rawAskPerBag_(item.name) : '';
   if (askU && item.kind === 'วัตถุดิบ') {
     var c0 = (counts && counts.length) ? counts[0] : null;
@@ -1057,10 +1064,20 @@ function intakeStockQty_(item, counts, gram, perBag) {
   var sub = intakeNorm_(item.subUnit), pack = intakeNorm_(item.packUnit);
   var base = 0, packs = 0, i, u;
 
+  // ของดิบที่ยกแพ็คแล้วนับย่อยได้: ถุง/แพ็ค/กล่อง ที่พิมพ์มา = ชั้นแพ็คเดียวกัน
+  // (มาม่าเปล่าตั้งเป็นถุง แต่คนพิมพ์ "2 แพ็ค" ก็หมายถึง 2 ถุง)
+  // และคำที่หมายถึงชิ้นเดียว เช่น มาม่า "3 ห่อ" = 3 อัน ตั้งไว้ใน RAW_PACK.pieces
+  var isRawPack = item.kind === 'วัตถุดิบ' && item.perPack > 1;
+  var rp = (isRawPack && typeof rawPackOf_ === 'function') ? rawPackOf_(item.name) : null;
+  var pieceWords = ((rp && rp.pieces) || []).map(intakeNorm_);
+  var packWords = ['ถุง', 'แพ็ค', 'แพ็ก', 'กล่อง', 'ลัง'].map(intakeNorm_)
+    .filter(function (w) { return pieceWords.indexOf(w) === -1; });
   for (i = 0; i < counts.length; i++) {
     u = intakeNorm_(counts[i].unit);
     if (u === sub  && !base)  base  = counts[i].n;
     if (u === pack && !packs) packs = counts[i].n;
+    if (isRawPack && !base && pieceWords.indexOf(u) !== -1) base = counts[i].n;
+    if (isRawPack && !packs && u !== sub && packWords.indexOf(u) !== -1) packs = counts[i].n;
   }
 
   // บอกจำนวนหน่วยย่อยมาตรง ๆ ("ได้ 26 ไม้") — แม่นที่สุด ใช้เลย
