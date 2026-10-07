@@ -256,6 +256,30 @@ section('กรอกเงินเมื่อคืน แล้วนับ�
     'รายการ': 'ดอลลี่', 'จำนวน': 15, 'ประเภท': 'เช็คสต็อก' }), g.cashCheckAfterCount_(SHOP, new Date(NOW + 30 * 60000))), null);
 }
 
+section('ลืมนับและลืมกรอกเงินตอนปิด → เช้าวันถัดไปนับ+กรอก = ยอดของเมื่อวาน');
+{
+  const g = fresh();
+  g.CASH_DAY_CUT_HOURS = CUT;
+  const S = g.__env.SHEETS;
+  S[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
+  const today = g.cashBizDay_(NOW), t0 = g.cashDayStart_(today);
+  const T = h => new Date(t0 + h * 3600000);
+  const cnt = (d, q) => push(g, g.SHEET_COUNT, { 'วันที่เวลา': d, 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': q, 'ประเภท': 'เช็คสต็อก' });
+  const ord = (d, net, how) => push(g, g.SHEET_ORDERS, { 'วันที่': ymd(d), 'เวลา': hms(d), 'สาขา': SHOP,
+    'ยอดรวม': net, 'ส่วนลด': 0, 'ยอดสุทธิ': net, 'รวมไม้': net / 10, 'วิธีชำระเงิน': how || 'เงินสด' });
+  cnt(T(-23), 30);                                   // เมื่อวานก่อนเปิด
+  ord(T(-20), 80); ord(T(-19), 40, 'สแกน/โอนผ่านธนาคาร');
+  cnt(T(1), 18);                                     // ลืมนับเย็น — มานับเช้านี้ ขายไป 12
+  const yday = g.cashBizDay_(T(-20).getTime());
+  r = g.handleCashClose_({ token: 't', close: { branch: SHOP, cash: 80, closeId: 'LATE' } });
+  eq('เงินที่กรอกเช้านี้นับเป็นของเมื่อวาน', g.cashDayOfRow_(SHOP, { ms: Date.now() }), yday);
+  eq('เทียบเลย 120 − โอน 40 = 80', r.expected, 80);
+  eq('ตรง', r.diff, 0);
+  eq('ไม่นับซ้ำเป็นเงินของวันนี้', g.cashRowsForDay_(SHOP, today).length, 0);
+  ord(new Date(NOW + 60000), 50);
+  eq('ขายวันนี้แล้ว กรอกใหม่ = เงินของวันนี้', g.cashDayOfRow_(SHOP, { ms: NOW + 120000 }), today);
+}
+
 section('ส่งไลน์รวมทีเดียว');
 {
   const gb = fresh();
