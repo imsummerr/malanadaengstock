@@ -62,4 +62,24 @@ section('คุยกันในกลุ่ม ไม่ใช่คืนเ�
   eq('ไม่ลงชีตจ่ายคืน', (g3.__env.SHEETS[g3.COST_SHEET_PAY] || { rows: [] }).rows.length, 0);
 }
 
+section('ทุกวันอาทิตย์ + สิ้นเดือน หลัง 4 ทุ่ม → บอกยอดที่ควรคืน');
+{
+  const g4 = fresh();
+  g4.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
+  const T = s => new Date(s + '+07:00');
+  g4.recordPayback_(SHOP, 100, 'โอน', '', 'เจ้าของ');
+  eq('อาทิตย์ 11/10 3 ทุ่ม ยังไม่ส่ง', g4.checkPaybackReminder(T('2026-10-11T21:00:00')), false);
+  eq('อาทิตย์ 11/10 4 ทุ่ม ส่ง', g4.checkPaybackReminder(T('2026-10-11T22:05:00')), true);
+  const t = g4.__env.SENT.map(x => x.messages[0].text).join('\n');
+  eq('ไปกลุ่มครัวกลาง', g4.__env.SENT[0].to, 'Ccentral');
+  eq('หัวข้อความ', /📅 ถึงรอบตัดยอดคืนครัวกลาง \(วันอาทิตย์\) 11\/10\/2026/.test(t), true);
+  eq('มีสาขา + ยอดคืนได้', /🏪 ตลาดทรัพย์พัฒนา[\s\S]*👉 คืนได้รอบนี้/.test(t), true);
+  eq('ส่งวันละครั้ง', g4.checkPaybackReminder(T('2026-10-11T22:10:00')), false);
+  eq('วันพุธธรรมดาไม่ส่ง', g4.checkPaybackReminder(T('2026-10-14T22:10:00')), false);
+  eq('สิ้นเดือน 31/10 (วันเสาร์) ส่ง', g4.checkPaybackReminder(T('2026-10-31T22:10:00')), true);
+  eq('บอกว่าเป็นรอบสิ้นเดือน', /\(สิ้นเดือน\) 31\/10\/2026/.test(g4.__env.SENT.slice(-1)[0].messages[0].text), true);
+  eq('อาทิตย์ที่ตรงสิ้นเดือน (31/1/2027) ส่งครั้งเดียว บอกทั้งสอง', (g4.checkPaybackReminder(T('2027-01-31T22:10:00')),
+    /\(วันอาทิตย์ \+ สิ้นเดือน\)/.test(g4.__env.SENT.slice(-1)[0].messages[0].text)), true);
+}
+
 done();

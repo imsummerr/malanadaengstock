@@ -159,6 +159,9 @@ function checkNewIncoming() {
   // สาขาคืนเงินครัวกลาง (กรอกในชีตเอง) — แจ้งกลุ่มไลน์ครัวกลาง อาศัย trigger ตัวนี้ ไม่ต้องตั้งเพิ่ม
   try { if (typeof checkNewPaybacks === 'function') checkNewPaybacks(); }
   catch (e) { Logger.log('checkNewPaybacks: ' + e.message); }
+  // ทุกวันอาทิตย์ + สิ้นเดือน หลัง 4 ทุ่ม — บอกยอดที่สาขาควรคืนครัวกลาง
+  try { if (typeof checkPaybackReminder === 'function') checkPaybackReminder(); }
+  catch (e) { Logger.log('checkPaybackReminder: ' + e.message); }
   var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) return;

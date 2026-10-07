@@ -836,6 +836,8 @@ function costSummary_() {
   Object.keys(rep.sent).forEach(seat);
   Object.keys(rep.used).forEach(function (l) { if (l !== central) seat(l); });
   Object.keys(back).forEach(seat);
+  // สาขาที่ขายได้แล้วแต่ยังไม่ได้รับของผ่านระบบ ก็ต้องเห็นเงินในมือ (รอบตัดยอดคืนครัวกลาง)
+  Object.keys(income).forEach(function (l) { if (l !== central) seat(l); });
   delete owed[central];
 
   // งบของแต่ละที่ — สาขามีรายได้ ครัวกลางไม่มี (ส่งต่อที่ต้นทุน)
@@ -1071,6 +1073,62 @@ function checkNewPaybacks() {
   return sent;
 }
 
+/**
+ * รอบตัดยอดคืนครัวกลาง — ทุกวันอาทิตย์ และวันสุดท้ายของเดือน (ตรงกันวันเดียวกันส่งครั้งเดียว)
+ * หลัง PAYBACK_REMIND_HOUR (ค่าเริ่มต้น 22 น. หลังปิดร้าน) ส่งยอดที่ควรคืนเข้ากลุ่มไลน์ครัวกลาง
+ * อาศัย trigger เช็คของเข้าทุก 5 นาที ส่งวันละครั้ง จำวันที่ส่งไว้ใน PAYBACK_REMIND_LAST
+ */
+function paybackDueToday_(d) {
+  var tz = costTz_();
+  var dow = Number(Utilities.formatDate(d, tz, 'u'));             // 7 = อาทิตย์
+  var tomorrow = Utilities.formatDate(new Date(d.getTime() + 24 * 3600000), tz, 'd');
+  return { sunday: dow === 7, monthEnd: tomorrow === '1' };
+}
+
+function paybackReminderText_(d, due) {
+  var s = costSummary_(), central = costCentral_();
+  var tag = [due.sunday ? 'วันอาทิตย์' : '', due.monthEnd ? 'สิ้นเดือน' : ''].filter(String).join(' + ');
+  var L = ['📅 ถึงรอบตัดยอดคืนครัวกลาง (' + tag + ') ' +
+           Utilities.formatDate(d, costTz_(), 'd/M/yyyy')];
+  var locs = Object.keys(s.owed);
+  try {
+    Object.keys(stockLineGroups_() || {}).forEach(function (l) { if (locs.indexOf(l) === -1) locs.push(l); });
+  } catch (e) {}
+  locs = locs.filter(function (l) { return l !== central; }).sort();
+  if (!locs.length) return '';
+  locs.forEach(function (loc) {
+    var o = s.owed[loc];
+    L.push('', '🏪 ' + loc);
+    if (!o) { L.push('• ยังไม่มีของที่รับไปหรือยอดขายในระบบ'); return; }
+    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
+    L.push('• คืนแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+    L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
+    L.push('• เงินในมือสาขา ' + o['เงินในมือ'].toLocaleString() + ' บาท');
+    L.push('👉 คืนได้รอบนี้ ' + o['จ่ายได้เลย'].toLocaleString() + ' บาท');
+  });
+  L.push('', 'คืนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500');
+  return L.join('\n');
+}
+
+function checkPaybackReminder(now) {
+  var d = now || new Date();
+  var hour = Number(Utilities.formatDate(d, costTz_(), 'HH'));
+  var props = PropertiesService.getScriptProperties();
+  var at = Number(props.getProperty('PAYBACK_REMIND_HOUR')) || 22;
+  if (hour < at) return false;
+  var due = paybackDueToday_(d);
+  if (!due.sunday && !due.monthEnd) return false;
+  var key = Utilities.formatDate(d, costTz_(), 'yyyy-MM-dd');
+  if (props.getProperty('PAYBACK_REMIND_LAST') === key) return false;
+  cacheClear_();
+  var text = paybackReminderText_(d, due);
+  if (!text) { props.setProperty('PAYBACK_REMIND_LAST', key); return false; }
+  var r = (typeof stockNotify_ === 'function') ? stockNotify_(costCentral_(), text) : { sent: false };
+  if (!r.sent) { Logger.log('แจ้งรอบคืนเงินไม่ได้: ' + (r.message || '')); return false; }
+  props.setProperty('PAYBACK_REMIND_LAST', key);
+  return true;
+}
+
 /* ═══════════════════ ตั้งยอดครัวกลางตามของที่มีจริง ═══════════════════ */
 
 /** ช่องเพิ่มในชีตเช็คสต็อก ใช้เฉพาะตอนตั้งยอดครัวกลาง */
@@ -1157,8 +1215,8 @@ var CENTRAL_STOCK_20261008 = [
   ['กะหล่ำ (ดิบ)',                  3.125, 27.25,       '3.125 โล โลละ 27.25'],
   // ในระบบมี 0.1 โล (85 บาท) อยู่แล้ว ที่เกินมา 1.417 โล คิดโลละ 266
   ['สาหร่าย (ดิบ)',                 1.517, 266,         '1.417 โล โลละ 266 + 0.1 โล 85 บาท'],
-  // ซื้อมา 471.68 = 22 กล่อง × 21.44 → กล่องละ 21.44 (ม้วนละ 1.79)
-  ['ฟองเต้าหู้ม้วน (ดิบ)',           216,   21.44 / 12,  '18 กล่อง × 12 ม้วน กล่องละ 21.44'],
+  // กล่องละ 21.44 กล่องละ 12 ชิ้น (ชิ้นละ 1.79)
+  ['ฟองเต้าหู้ม้วน (ดิบ)',           216,   21.44 / 12,  '18 กล่อง × 12 ชิ้น กล่องละ 21.44'],
   ['ช้อน',                         500,   11.54 / 100, '5 แพ็ค × 100 อัน แพ็คละ 11.54'],
   ['มันเทศ (ดิบ)',                  6,     10.92,       'เส้นมันเทศ 6 ถุง (ถุงละ 200 กรัม) ถุงละ 10.92'],
   ['ผงหม่าล่า',                     2900,  10.49 / 100, 'พริกผงจีน 29 ห่อ × 100 กรัม ห่อละ 10.49'],
@@ -1167,8 +1225,8 @@ var CENTRAL_STOCK_20261008 = [
   ['น้ำจิ้มงา (ดิบ)',                4,     89.6,        '4 ถุง ถุงละ 89.6'],
   ['น้ำดำ',                         8,     75.3,        '8 ถุง ถุงละ 75.3'],
   ['พริกป่น',                       170,   125 / 1000,  'พริกป่นไทย 170 กรัม โลละ 125'],
-  ['เต้าหู้หลอด (ดิบ)',              1,     54,          '12 หลอด (1 ถุง) 54 บาท'],
-  ['ข้าวโพดฝัก (ดิบ)',               1,     25,          '3 ฝัก (≈1 โล) 25 บาท'],
+  ['เต้าหู้หลอด (ดิบ)',              12,    54 / 12,     '12 หลอด (1 ถุง) 54 บาท'],
+  ['ข้าวโพดฝัก (ดิบ)',               3,     25 / 3,      '3 ฝัก 25 บาท'],
   ['ถ้วย 2 ออน',                    50,    25 / 50,     '1 แพ็ค 25 บาท'],
   ['ไม้เสียบเบอร์ 8',                1,     18,          '1 แพ็ค 18 บาท'],
   ['เห็ดออเร็นจิ (ดิบ)',             0.749, 60,          '0.749 โล โลละ 60'],
@@ -1185,6 +1243,12 @@ function setCentralStock20261008() {
     Logger.log('ตั้งยอดครัวกลางชุดนี้ไปแล้วเมื่อ ' + props.getProperty('CENTRAL_STOCK_20261008') +
                ' — ไม่ลงซ้ำ');
     return;
+  }
+  // รายการสินค้าในชีตยังเป็นหน่วยเก่า (ข้าวโพดเป็นโล เต้าหู้หลอดเป็นถุง) — อัปเดตก่อน ไม่งั้นจำนวนผิดหน่วย
+  var corn = findStockItem_('ข้าวโพดฝัก (ดิบ)'), tube = findStockItem_('เต้าหู้หลอด (ดิบ)');
+  if (!findStockItem_('ไม้เสียบเบอร์ 8') || !corn || corn.subUnit !== 'ฝัก' || !tube || tube.subUnit !== 'หลอด') {
+    if (typeof fixItemList === 'function') fixItemList();
+    cacheClear_();
   }
   var r = setCentralStock_(CENTRAL_STOCK_20261008, 'ตลาดทรัพย์พัฒนา', 'เจ้าของร้าน');
   if (r) props.setProperty('CENTRAL_STOCK_20261008', Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm'));
