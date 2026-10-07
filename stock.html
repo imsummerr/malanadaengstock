@@ -1223,7 +1223,9 @@ function fillCountRows() {
   const isW = it => /^(กก\.?|กิโล|กรัม)$/.test(String(it.subUnit || '').trim());
   const off = '<input type="number" placeholder="–" disabled>';
 
-  box.innerHTML = list.length ? list.map((it, i) => it.level ? `
+  // กระดูกหมู/น้ำดำ — สาขานับเป็นระดับ (ต้มอยู่ในหม้อ) ครัวกลางนับเป็นถุง
+  const lvAt = it => it.level && !pc;
+  box.innerHTML = list.length ? list.map((it, i) => lvAt(it) ? `
     <div class="countrow" id="cr-${i}">
       <div class="nm">${esc(it.name)}<small id="cs-${i}">&nbsp;</small></div>
       <select id="clv-${i}" class="lvsel" onchange="countChanged(${i})">
@@ -1312,7 +1314,7 @@ function paintCount() {
     if (!cell) return;
     // เจ้าของร้านเห็นยอดระบบไว้เทียบ พนักงานนับโดยไม่เห็นเฉลย
     // นอกจากเป็นเรื่องสิทธิ์แล้ว การนับแบบไม่เห็นยอดระบบยังได้ตัวเลขจริงกว่า
-    if (it.level) {
+    if (it.level && loc !== D.central) {
       // ของที่นับเป็นระดับ ตัวเลขในระบบไม่มีความหมาย บอกแค่ว่านับครั้งก่อนเป็นยังไง
       const st = (D.stock || []).find(x => x.name === loc);
       const prev = st && st.rows.find(r => r.item === it.name);

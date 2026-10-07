@@ -1196,6 +1196,10 @@ var LEVELS = ['เหลือน้อย ต้องเติม', 'กลา
 var LEVEL_OK = 'มาก ไม่ต้องเติม';
 var KIND_LEVEL_COUNT = 'เช็คระดับ';
 function isLevelItem_(name) { return LEVEL_ITEMS.indexOf(String(name || '').trim()) !== -1; }
+/**
+ * นับเป็นระดับเฉพาะที่สาขา (ต้มอยู่ในหม้อ) — ครัวกลางยังเป็นถุงปิดอยู่ นับเป็นกี่ถุงได้
+ */
+function levelAt_(it, loc) { return !!(it && it.level) && String(loc || '').trim() !== CENTRAL; }
 
 /**
  * ของแถมลูกค้า ไม่คิดเงิน — ราคา 0 และไม่นับเป็นของหายตอนเทียบกับยอดขาย
@@ -2246,7 +2250,7 @@ function handleStockCount_(body) {
   var missing = items.filter(function (it) {
     var r = got[it.name];
     if (!r) return true;
-    if (it.level) return LEVELS.indexOf(String(r.level || '').trim()) === -1;
+    if (levelAt_(it, loc)) return LEVELS.indexOf(String(r.level || '').trim()) === -1;
     var blank = function (v) { return v === '' || v == null; };
     return blank(r.packs) && blank(r.rem) && blank(r.pieces);
   }).map(function (it) { return it.name; });
@@ -2275,7 +2279,7 @@ function handleStockCount_(body) {
 
   items.forEach(function (it) {
     var r = got[it.name];
-    if (it.level) {
+    if (levelAt_(it, loc)) {
       // เก็บระดับไว้ในหมายเหตุ ไม่มีตัวเลข — ยอดคงเหลือกับต้นทุนไม่เอาแถวนี้ไปคิด
       var lv = String(r.level || '').trim();
       out.push({
@@ -2430,9 +2434,9 @@ function handleStockBootstrap_(p) {
       name: loc,
       counted: lc ? { when: Utilities.formatDate(new Date(lc.t), TZ, 'd/M/yyyy HH:mm'), n: lc.n } : null,
       rows: items.filter(function (it) {
-        return it.level ? !!(lv[loc] && lv[loc][it.name]) : m[it.name];
+        return levelAt_(it, loc) ? !!(lv[loc] && lv[loc][it.name]) : m[it.name];
       }).map(function (it) {
-        if (it.level) {
+        if (levelAt_(it, loc)) {
           var x = lv[loc][it.name];
           return { item: it.name, base: 0, text: x.level, low: x.level !== LEVEL_OK, level: true };
         }
@@ -3634,8 +3638,8 @@ var SUPPLY_ITEMS = [
   ['ตะเกียบ',       'อัน',    '',  100, 'แพ็ค', ''],
   ['ถ้วย1000 มล',   'ใบ',     '',  50,  'แพ็ค', ''],
   ['ถ้วย1500 มล',   'ใบ',     '',  50,  'แพ็ค', ''],
-  ['กระดูกหมู',      'กก.',   '',  1,   'ลัง',  ''],
-  ['น้ำดำ',         'ถุง',    '',  1,   'ลัง',  'เข้าครัวกลางเป็นถุง ส่งสาขาก็เป็นถุง'],
+  ['กระดูกหมู',      'ถุง',    '',  1,   'ลัง',  'ครัวกลางนับเป็นถุง · สาขานับเป็นระดับ (ต้มอยู่ในหม้อ)'],
+  ['น้ำดำ',         'ถุง',    '',  1,   'ลัง',  'เข้าครัวกลางเป็นถุง ส่งสาขาก็เป็นถุง · ครัวกลางนับเป็นถุง สาขานับเป็นระดับ'],
   // นับเป็นแพ็คอย่างเดียว ไม่แกะนับทีละใบ
   ['ถุงหูหิ้ว',      'แพ็ค',   '',  1,   'แพ็ค', 'นับเป็นแพ็คอย่างเดียว'],
   ['ถุงร้อนใหญ่',    'แพ็ค',   '',  1,   'แพ็ค', 'นับเป็นแพ็คอย่างเดียว'],

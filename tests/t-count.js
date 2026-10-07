@@ -9,7 +9,7 @@ function webList(g, loc) {
   return g.getStockItems_().filter(i => !i.scope || i.scope === want);
 }
 function rowsFor(g, loc, levels) {
-  return webList(g, loc).map(i => i.level
+  return webList(g, loc).map(i => (i.level && loc !== g.CENTRAL)
     ? { item: i.name, level: (levels && levels[i.name]) || 'มาก ไม่ต้องเติม' }
     : { item: i.name, packs: '', rem: 0, pieces: '' });
 }
@@ -95,5 +95,25 @@ rows2.forEach(rw => { if (rw[iT] instanceof Date && rw[iT].getTime() > Date.now(
 g.cacheClear_();
 r = g.handleStockCount_({ token: 't', location: SHOP, rows: rowsFor(g, SHOP) });
 eq('รอบสองไม่ใช่ฐาน', r.base, false);
+
+
+section('ครัวกลางนับกระดูกหมู/น้ำดำเป็นถุง');
+{
+  const gc = fresh();
+  eq('กระดูกหมูหน่วยถุง', gc.findStockItem_('กระดูกหมู').subUnit, 'ถุง');
+  const rowsC = webList(gc, gc.CENTRAL).map(i => i.name === 'กระดูกหมู' ? { item: i.name, packs: '', rem: 3, pieces: '' }
+    : i.name === 'น้ำดำ' ? { item: i.name, packs: '', rem: 5, pieces: '' }
+    : { item: i.name, packs: '', rem: 0, pieces: '' });
+  const rc = gc.handleStockCount_({ token: 't', location: gc.CENTRAL, rows: rowsC });
+  eq('บันทึกได้โดยไม่ต้องเลือกระดับ', rc.success, true);
+  gc.cacheClear_();
+  eq('กระดูกหมู 3 ถุง', gc.stockBalances_()[gc.CENTRAL]['กระดูกหมู'], 3);
+  eq('น้ำดำ 5 ถุง', gc.stockBalances_()[gc.CENTRAL]['น้ำดำ'], 5);
+  const cr = gc.__env.SHEETS[gc.SHEET_COUNT];
+  eq('ไม่มีแถวเช็คระดับที่ครัวกลาง', cr.rows.some(r => r[cr.headers.indexOf('ประเภท')] === gc.KIND_LEVEL_COUNT), false);
+  // สาขายังต้องเลือกระดับ
+  const rs = gc.handleStockCount_({ token: 't', location: SHOP, rows: webList(gc, SHOP).map(i => ({ item: i.name, packs: '', rem: 0, pieces: '' })) });
+  eq('สาขายังบังคับเลือกระดับ', rs.success, false);
+}
 
 process.exit(done().fail ? 1 : 0);
