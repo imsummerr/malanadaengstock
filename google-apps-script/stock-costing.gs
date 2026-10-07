@@ -188,7 +188,15 @@ function clearLocationStart(loc) {
  * มูลค่ายอดตั้งต้นคิดจากราคาทุนล่าสุดที่เคยซื้อ (ดูประวัติก่อนเส้นได้)
  */
 function promptStartDate() {
-  var ui = SpreadsheetApp.getUi();
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); }
+  catch (e) {
+    // กด ▶ จากหน้า Apps Script เปิดกล่องถามไม่ได้ — ตั้งเป็น "วันนี้" ให้เลย แล้วบอกผลใน log
+    var today = Utilities.formatDate(new Date(), costTz_(), 'yyyy-MM-dd');
+    setStartDate(today);
+    Logger.log('✅ เริ่มนับใหม่ทุกที่ตั้งแต่ ' + today + ' — วันนี้ให้ครัวกลางและทุกสาขานับสต็อกเป็นยอดตั้งต้น');
+    return;
+  }
   var a = ui.prompt('เริ่มนับใหม่ทุกที่พร้อมกัน',
     'วันที่เริ่ม เป็น yyyy-MM-dd เช่น 2026-10-01', ui.ButtonSet.OK_CANCEL);
   if (a.getSelectedButton() !== ui.Button.OK) return;

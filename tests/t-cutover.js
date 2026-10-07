@@ -134,4 +134,16 @@ eq('เหลือ 30 ไม้ = ฐาน 10 (0) + ที่ส่ง 20 (76)
 eq('ครัวกลางยังตัดของที่ส่ง 3/10', val(g5, g5.CENTRAL, 'ดอลลี่'), (400 - 50 - 20) * 3.8);
 eq('ครัวกลางไม่โดนเลื่อน รายจ่าย/ฐานเดิมยังอยู่', g5.costStartDate_(g5.CENTRAL) < g5.costStartDate_(SHOP), true);
 
+section('เริ่มใหม่ทุกที่จากหน้า Apps Script (ไม่มีกล่องถาม) = วันนี้');
+{
+  const g6 = fresh();
+  g6.promptStartDate();
+  const today = g6.Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  eq('ตั้ง ACC_START_DATE เป็นวันนี้', g6.__env.PROPS.ACC_START_DATE, today);
+  // เส้นเฉพาะสาขาที่เก่ากว่า ไม่บังเส้นใหม่
+  g6.__env.PROPS.ACC_START_BY_LOC = JSON.stringify({ [SHOP]: '2026-10-05 22:38' });
+  g6.cacheClear_();
+  eq('สาขาใช้เส้นใหม่ (ใหม่กว่า)', g6.costStartDate_(SHOP), g6.costYmdTime_(today));
+}
+
 process.exit(done().fail ? 1 : 0);
