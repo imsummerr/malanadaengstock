@@ -272,12 +272,24 @@ function costPaidByMsg_() {
     var iMsg  = head.indexOf('messageId');
     if (iItem === -1 || iBaht === -1) return out;
 
+    var iGram = head.indexOf('น้ำหนัก(กรัม)');
+    var iKg   = head.indexOf('บาท/กก.');
+    // ราคาต่อโลที่พิมพ์มา ("โลละ 122") — ใช้ตัวนี้เป็นต้นทุน ไม่เอายอดรวมมาหาร
+    // ยอดรวมมักปัดเศษ (1.546 โล × 122 = 188.61 แต่จ่าย 188.5) หารกลับได้ 121.93 ไม่ตรงที่ซื้อ
+    // จับคู่กับแถวของเข้าด้วยน้ำหนัก: ของที่นับเป็น กก. = กรัม/1000 · ของที่นับเป็นกรัม = กรัม
+    out.__perKg = {};
     for (var r = 1; r < v.length; r++) {
       var item = String(v[r][iItem] || '').trim();
       var baht = Number(v[r][iBaht]) || 0;
       if (!item || !baht) continue;
       var key = (iMsg === -1 ? '' : String(v[r][iMsg] || '').trim()) + '|' + item;
       out[key] = costBaht_((out[key] || 0) + baht);
+      var gram = iGram === -1 ? 0 : Number(v[r][iGram]) || 0;
+      var pk   = iKg === -1 ? 0 : Number(v[r][iKg]) || 0;
+      if (gram > 0 && pk > 0) {
+        out.__perKg[key + '|' + costQty_(gram / 1000)] = pk;            // นับเป็น กก.
+        out.__perKg[key + '|g' + costQty_(gram)] = pk / 1000;            // นับเป็นกรัม
+      }
     }
     return out;
   });
@@ -324,9 +336,12 @@ function costEvents_(all) {
                   loc: loc, item: item, qty: qty });
       } else {
         var key = msg + '|' + item, all = qtyOfKey[key] || qty;
+        var pkMap = paid.__perKg || {};
+        var perUnit = msg ? (pkMap[key + '|' + qty] || pkMap[key + '|g' + qty] || 0) : 0;
         ev.push({ t: costTime_(r[mapIn['วันที่เวลา']]), step: 1, type: 'ซื้อเข้า',
-                  loc: loc, item: item, qty: qty,
-                  paid: costBaht_((paid[key] || 0) * (all > 0 ? qty / all : 1)) });
+                  loc: loc, item: item, qty: qty, unit: perUnit,
+                  paid: perUnit > 0 ? costBaht_(perUnit * qty)
+                                    : costBaht_((paid[key] || 0) * (all > 0 ? qty / all : 1)) });
       }
     });
   }
@@ -497,7 +512,8 @@ function costReplayRaw_(all) {
   costEvents_(all).forEach(function (e) {
     if (e.type === 'ซื้อเข้า') {
       // ซื้อผ่านไลน์จะมีราคามาด้วย · กรอกในเว็บไม่มี ต้องเดาจากราคาล่าสุด
-      var unit = e.paid > 0 ? e.paid / e.qty : guessCost(e.loc, e.item);
+      // ราคาต่อหน่วยที่พิมพ์มาเอง (โลละ 122) แม่นกว่าเอายอดที่ปัดเศษแล้วมาหาร
+      var unit = e.unit > 0 ? e.unit : e.paid > 0 ? e.paid / e.qty : guessCost(e.loc, e.item);
       if (!(unit > 0)) {
         warn.push({ when: e.t, loc: e.loc, item: e.item,
                     msg: 'ไม่รู้ราคาที่ซื้อมา — คิดต้นทุนเป็น 0' });
