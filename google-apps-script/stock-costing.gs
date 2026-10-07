@@ -985,6 +985,92 @@ function refreshCostingSheets() {
   buildLocationPL();
 }
 
+/* ═══════════════════ สาขาคืนเงินครัวกลาง → แจ้งไลน์ ═══════════════════ */
+
+/** ช่องในชีตจ่ายคืน — แจ้งกลุ่มไลน์ไปแล้วเมื่อไหร่ (ว่าง = ยังไม่แจ้ง) */
+var COST_PAY_NOTIFIED_COL = 'แจ้งไลน์แล้ว';
+
+function costPaySheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(COST_SHEET_PAY);
+  if (!sh) {
+    sh = ss.insertSheet(COST_SHEET_PAY);
+    sh.getRange(1, 1, 1, COST_PAY_COLS.length).setValues([COST_PAY_COLS])
+      .setFontWeight('bold').setBackground('#f3f3f4');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** ข้อความแจ้งกลุ่ม — บอกยอดค้างที่เหลือด้วย คนในกลุ่มจะได้ไม่ต้องไปเปิดชีต */
+function costPaybackText_(loc, baht, method, note, who) {
+  var L = ['💸 สาขาคืนเงินครัวกลาง',
+           loc + ' — ' + costBaht_(baht).toLocaleString() + ' บาท' + (method ? ' (' + method + ')' : '')];
+  if (note) L.push('หมายเหตุ: ' + note);
+  if (who)  L.push('บันทึกโดย ' + who);
+  try {
+    cacheClear_();
+    var o = costSummary_().owed[loc];
+    if (o) {
+      L.push('');
+      L.push('รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
+      L.push('คืนเงินแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+      L.push(o['ค้างชำระ'] >= 0
+        ? 'ค้างชำระเหลือ ' + o['ค้างชำระ'].toLocaleString() + ' บาท'
+        : 'จ่ายเกินของที่รับไป ' + (-o['ค้างชำระ']).toLocaleString() + ' บาท (เป็นเงินล่วงหน้า)');
+    }
+  } catch (e) { Logger.log('costPaybackText_: ' + e.message); }
+  return L.join('\n');
+}
+
+/**
+ * บันทึกเงินที่สาขาคืนครัวกลาง (จากไลน์) — จดว่าแจ้งแล้ว เพราะคนสั่งได้ข้อความตอบกลับในกลุ่มไปแล้ว
+ * คืนข้อความไว้ตอบกลับ
+ */
+function recordPayback_(loc, baht, method, note, who) {
+  var sh = costPaySheet_();
+  var map = ensureCols_(sh, COST_PAY_COLS.concat([COST_PAY_NOTIFIED_COL]));
+  var now = new Date(), r = {};
+  r['วันที่'] = now; r['สาขา'] = loc; r['จำนวนเงิน'] = costBaht_(baht);
+  r['วิธีจ่าย'] = method || ''; r['หมายเหตุ'] = [note, who ? 'ลงทางไลน์โดย ' + who : ''].filter(String).join(' · ');
+  r[COST_PAY_NOTIFIED_COL] = Utilities.formatDate(now, costTz_(), 'd/M/yyyy HH:mm');
+  appendRows_(sh, map, [r]);
+  SpreadsheetApp.flush();
+  return costPaybackText_(loc, baht, method, note, who);
+}
+
+/**
+ * แถวที่กรอกเองในชีตจ่ายคืน ยังไม่ได้แจ้ง → แจ้งกลุ่มไลน์ครัวกลาง แล้วจดว่าแจ้งแล้ว
+ * เรียกจาก trigger เช็คของเข้าทุก 5 นาที (checkNewIncoming) ไม่ต้องตั้ง trigger เพิ่ม
+ * ครั้งแรกที่เจอชีต จดแถวเก่าทั้งหมดว่าแจ้งแล้วเฉย ๆ ไม่ย้อนส่งของเก่า
+ */
+function checkNewPaybacks() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(COST_SHEET_PAY);
+  if (!sh || sh.getLastRow() < 1) return 0;
+  var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0]
+    .map(function (h) { return String(h).trim(); });
+  var first = head.indexOf(COST_PAY_NOTIFIED_COL) === -1;
+  var map = ensureColsRaw_(sh, COST_PAY_COLS.concat([COST_PAY_NOTIFIED_COL]));
+  if (sh.getLastRow() < 2) return 0;
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var col = map[COST_PAY_NOTIFIED_COL] + 1, sent = 0;
+  var stamp = Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm');
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][map[COST_PAY_NOTIFIED_COL]] || '').trim()) continue;
+    var loc = String(v[i][map['สาขา']] || '').trim();
+    var baht = Number(String(v[i][map['จำนวนเงิน']]).replace(/,/g, '')) || 0;
+    if (!loc || !baht) continue;                          // ยังกรอกไม่ครบ รอรอบหน้า
+    if (first) { sh.getRange(i + 2, col).setValue('มีก่อนเริ่มแจ้ง'); continue; }
+    var text = costPaybackText_(loc, baht, String(v[i][map['วิธีจ่าย']] || '').trim(),
+                                String(v[i][map['หมายเหตุ']] || '').trim(), '');
+    var r = (typeof stockNotify_ === 'function') ? stockNotify_(costCentral_(), text) : { sent: false };
+    if (!r.sent) { Logger.log('แจ้งคืนเงินไม่ได้: ' + (r.message || '')); continue; }   // ส่งไม่ได้ ลองรอบหน้า
+    sh.getRange(i + 2, col).setValue(stamp);
+    sent++;
+  }
+  return sent;
+}
+
 /* ═══════════════════ ตั้งยอดครัวกลางตามของที่มีจริง ═══════════════════ */
 
 /** ช่องเพิ่มในชีตเช็คสต็อก ใช้เฉพาะตอนตั้งยอดครัวกลาง */

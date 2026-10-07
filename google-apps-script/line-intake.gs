@@ -215,6 +215,12 @@ function intakeOnText_(ev, ctx) {
 
   var stripped = intakeStripPrefix_(raw);
   var called   = stripped !== null;   // พิมพ์คำนำหน้ามา = ตั้งใจสั่งบอทแน่ ๆ
+
+  // สาขาคืนเงินครัวกลาง — "คืนเงิน 500" / "คืนเงิน ทรัพย์พัฒนา 500 โอน"
+  var pb = intakePaybackOf_(called ? stripped : raw);
+  // ในกลุ่มที่ไม่ได้เรียกบอท มีคำอื่นปนมา (เช่น "คืนเงินลูกค้า 20") = คุยกันเฉย ๆ ไม่ใช่คืนเงินครัวกลาง
+  if (pb && ctx.isGroup && !called && pb.note) pb = null;
+  if (pb) { intakeReply_(ctx, intakePayback_(pb, ctx)); return; }
   var mode     = String(intakeProp_('INTAKE_GROUP_MODE', 'smart')).toLowerCase();
 
   // โหมด prefix — ในกลุ่มต้องมีคำนำหน้าเสมอ ไม่มีก็ไม่สนใจ
@@ -433,6 +439,41 @@ function intakeStripPrefix_(text) {
   return null;
 }
 
+/**
+ * ข้อความคืนเงินครัวกลาง — ต้องขึ้นต้นด้วย คืนเงิน / จ่ายคืน / โอนคืน
+ * คืน null ถ้าไม่ใช่ · { loc, baht, method, note }
+ */
+var INTAKE_PAYBACK_RE = /^(?:คืนเงิน|จ่ายคืน|โอนคืน)(?:\s*(?:ให้|เข้า)?\s*ครัวกลาง)?\s*([\s\S]*)$/;
+function intakePaybackOf_(text) {
+  var m = String(text || '').trim().match(INTAKE_PAYBACK_RE);
+  if (!m) return null;
+  var b = intakeBranchOf_(m[1]);
+  var p = intakePayOf_(b.text);
+  var rest = p.text;
+  var n = rest.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:บาท|฿)?/);
+  var note = n ? (rest.slice(0, n.index) + ' ' + rest.slice(n.index + n[0].length)) : rest;
+  return { loc: b.loc, baht: n ? intakeNum_(n[1]) : 0,
+           method: p.cash ? 'เงินสด' : p.method,         // คืนเงินเป็นเงินสดได้ (ต่างจากซื้อของ)
+           note: note.replace(/\s+/g, ' ').trim() };
+}
+
+function intakePayback_(pb, ctx) {
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
+  var branches = intakeBranchTags_().map(function (t) { return t.loc; })
+    .filter(function (l, i, a) { return a.indexOf(l) === i; });
+  var loc = pb.loc || (ctx.location && ctx.location !== central ? ctx.location : '') ||
+            (branches.length === 1 ? branches[0] : '');
+  if (!loc) return 'คืนเงินจากสาขาไหนครับ? พิมพ์ชื่อสาขาด้วย เช่น\n  คืนเงิน ทรัพย์พัฒนา 500';
+  if (!(pb.baht > 0)) return 'คืนเงินเท่าไหร่ครับ? เช่น\n  คืนเงิน 500\n  คืนเงิน ทรัพย์พัฒนา 500 โอน';
+  if (typeof recordPayback_ !== 'function') return 'ยังไม่ได้ติดตั้ง stock-costing.gs ในโปรเจกต์นี้';
+  var text = recordPayback_(loc, pb.baht, pb.method, pb.note, ctx.who);
+  // พิมพ์ในกลุ่มอื่น (เช่นกลุ่มสาขา) → ส่งเข้ากลุ่มครัวกลางที่บันทึกค่าใช้จ่ายด้วย
+  if (ctx.location !== central && typeof stockNotify_ === 'function') {
+    try { stockNotify_(central, text); } catch (e) { Logger.log('payback notify: ' + e.message); }
+  }
+  return text;
+}
+
 function intakeHelpText_() {
   return '📥 วิธีบันทึกผ่านไลน์\n\n' +
          '🛒 ซื้อของ — ชื่อของ + จำนวน + ราคา\n' +
@@ -456,6 +497,9 @@ function intakeHelpText_() {
          '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
          '   ไม่พิมพ์อะไร = โอน · ทางไลน์มีแค่ 2 อย่างนี้\n' +
          '   จ่ายเงินสดหน้าร้าน ลงในหน้า POS ไม่ใช่ทางนี้\n\n' +
+         '💸 สาขาคืนเงินครัวกลาง — ขึ้นต้นด้วย "คืนเงิน"\n' +
+         '   คืนเงิน ทรัพย์พัฒนา 500\n' +
+         '   คืนเงิน 500 เงินสด\n\n' +
          '🧪 ของลองสูตร — เติม "ทดลอง" ข้างหน้า\n' +
          '   ทดลอง ปลากะพง 200\n' +
          '   (ไม่เข้าสต็อก ไม่นับเป็นต้นทุนขาย)\n\n' +

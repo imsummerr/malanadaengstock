@@ -156,6 +156,9 @@ var PROP_LAST_ROW = 'LAST_NOTIFIED_INCOMING_ROW'; // ตำแหน่งแถ
  * ว่าเข้าอะไรบ้าง พร้อมวันที่ควรทิ้งของแต่ละรายการ
  */
 function checkNewIncoming() {
+  // สาขาคืนเงินครัวกลาง (กรอกในชีตเอง) — แจ้งกลุ่มไลน์ครัวกลาง อาศัย trigger ตัวนี้ ไม่ต้องตั้งเพิ่ม
+  try { if (typeof checkNewPaybacks === 'function') checkNewPaybacks(); }
+  catch (e) { Logger.log('checkNewPaybacks: ' + e.message); }
   var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) return;
