@@ -1189,8 +1189,13 @@ function setCentralStock_(list, chargeTo, who) {
   SpreadsheetApp.flush();
   cacheClear_();
 
-  // สรุปว่าตัดอะไรไปเป็นค่าวัตถุดิบสาขาเท่าไหร่
-  var rep = costReplay_(), t = now.getTime(), sum = 0, lines = [];
+  return centralStockSummary_(now.getTime(), chargeTo, rows.length, 'ตั้งยอดครัวกลางแล้ว');
+}
+
+/** สรุปว่าตัดอะไรไปเป็นค่าวัตถุดิบสาขาเท่าไหร่ ในรอบตั้งยอดเวลา t */
+function centralStockSummary_(t, chargeTo, n, title) {
+  var central = costCentral_();
+  var rep = costReplay_(), sum = 0, lines = [];
   rep.log.forEach(function (l) {
     if (l.loc !== chargeTo || l.kind !== 'ใช้ไป' || Math.abs(costTime_(l.t) - t) > 60000) return;
     var it = findStockItem_(l.item);
@@ -1198,13 +1203,64 @@ function setCentralStock_(list, chargeTo, who) {
     sum += l.value;
   });
   var st = costSummary_().stock[central] || { total: 0, rows: [] };
-  var text = '✅ ตั้งยอดครัวกลางแล้ว ' + rows.length + ' รายการ\n' +
+  var text = '✅ ' + title + ' ' + n + ' รายการ\n' +
     'มูลค่าของในครัวกลางตอนนี้ ' + costBaht_(st.total).toLocaleString() + ' บาท\n\n' +
     'ส่วนที่หายไป → ค่าวัตถุดิบของ ' + chargeTo + ' ' + costBaht_(sum).toLocaleString() + ' บาท\n' +
     (lines.join('\n') || '  (ไม่มี)');
   Logger.log(text);
   if (typeof refreshCostingSheets === 'function') refreshCostingSheets();
-  return { rows: rows.length, charged: costBaht_(sum), central: st.total, text: text };
+  return { rows: n, charged: costBaht_(sum), central: st.total, text: text };
+}
+
+/**
+ * แก้รอบตั้งยอดครัวกลางที่ลงไปแล้ว — แก้แถวเดิม (เวลาเดิม) ไม่ลงรอบใหม่
+ * ลงรอบใหม่จะผิด: ของที่ตัดเป็นค่าวัตถุดิบสาขาไปแล้วตอนรอบแรก จะไม่ถูกคืน
+ * รายการที่ยังไม่มีแถวในรอบนั้น เพิ่มแถวใหม่ที่เวลาเดียวกัน
+ */
+function fixCentralStockBatch_(list, chargeTo) {
+  var central = costCentral_();
+  var sh = sheet_(SHEET_COUNT);
+  var map = ensureCols_(sh, MOVE_COLS.concat([COUNT_COST_COL, COUNT_CHARGE_COL]));
+  var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+  var batch = 0;
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][map['สาขา']]).trim() !== central) continue;
+    if (String(v[i][map['หมายเหตุ']]).indexOf('ตั้งยอดครัวกลาง') !== 0) continue;
+    batch = Math.max(batch, costTime_(v[i][map['วันที่เวลา']]));
+  }
+  if (!batch) return null;
+  var at = {};
+  for (var j = 1; j < v.length; j++) {
+    if (String(v[j][map['สาขา']]).trim() !== central) continue;
+    if (String(v[j][map['หมายเหตุ']]).indexOf('ตั้งยอดครัวกลาง') !== 0) continue;
+    if (Math.abs(costTime_(v[j][map['วันที่เวลา']]) - batch) > 60000) continue;
+    at[String(v[j][map['รายการ']]).trim()] = j + 1;
+  }
+  var add = [], changed = 0;
+  list.forEach(function (x) {
+    var it = findStockItem_(x[0]);
+    if (!it) return;
+    var sp = splitUnits_(x[1], it), vals = {};
+    vals['จำนวน'] = costQty_(x[1]); vals['แพ็ค'] = sp.packs; vals['เศษ'] = sp.sticks; vals['เศษ(ชิ้น)'] = sp.pieces;
+    vals['หมายเหตุ'] = 'ตั้งยอดครัวกลาง' + (x[3] ? ' · ' + x[3] : '');
+    vals[COUNT_COST_COL] = x[2] || ''; vals[COUNT_CHARGE_COL] = chargeTo || '';
+    var r = at[it.name];
+    if (r) {
+      var row = v[r - 1];
+      if (Number(row[map['จำนวน']]) === vals['จำนวน'] && Number(row[map[COUNT_COST_COL]]) === Number(vals[COUNT_COST_COL])) return;
+      Object.keys(vals).forEach(function (k) { if (map[k] !== undefined) sh.getRange(r, map[k] + 1).setValue(vals[k]); });
+      changed++;
+    } else {
+      vals['วันที่เวลา'] = new Date(batch); vals['สาขา'] = central; vals['ผู้ตรวจ'] = 'เจ้าของร้าน';
+      vals['รายการ'] = it.name; vals['หน่วย'] = baseUnitOf_(it); vals['ประเภท'] = 'เช็คสต็อก';
+      vals['ไม้ต่อแพ็ค'] = it.perPack; vals['ชิ้นต่อไม้'] = perStickOf_(it);
+      add.push(vals);
+    }
+  });
+  if (add.length) appendRows_(sh, map, add);
+  SpreadsheetApp.flush();
+  cacheClear_();
+  return centralStockSummary_(batch, chargeTo, changed + add.length, 'แก้รอบตั้งยอดครัวกลางแล้ว');
 }
 
 /**
@@ -1233,15 +1289,16 @@ var CENTRAL_STOCK_20261008 = [
   ['แมงกะพรุน (ดิบ)',               0.378, 70,          '0.378 โล โลละ 70'],
   ['หัวไหล่หมูติดหนังสไลซ์ (ดิบ)',    1.357, 122,         '1.357 โล โลละ 122'],
   ['ไก่ (ดิบ)',                     0.896, 84,          'อกไก่ 0.896 โล โลละ 84'],
-  ['วุ้นเส้นเกาหลี (ดิบ)',            0.5,   62,          '0.5 โล 31 บาท']
+  ['วุ้นเส้นเกาหลี (ดิบ)',            0.5,   62,          '0.5 โล 31 บาท'],
+  ['เห็ดเข็ม (ดิบ)',                 0.4,   50,          'เห็ดเข็มทอง 0.4 โล โลละ 50']
 ];
 
-/** กด ▶ ครั้งเดียวในหน้า Apps Script — ผลดูที่บันทึกการดำเนินการ (รันซ้ำไม่ได้ กันลงซ้ำ) */
+/** กด ▶ ในหน้า Apps Script — ผลดูที่บันทึกการดำเนินการ · กดซ้ำ = แก้รอบเดิมตามรายการล่าสุด ไม่ลงซ้ำ */
 function setCentralStock20261008() {
   var props = PropertiesService.getScriptProperties();
+  // กดไปแล้ว = แก้แถวเดิมตามรายการล่าสุด (เพิ่มรายการตกหล่นได้ กดซ้ำได้ ไม่ลงซ้ำ)
   if (props.getProperty('CENTRAL_STOCK_20261008')) {
-    Logger.log('ตั้งยอดครัวกลางชุดนี้ไปแล้วเมื่อ ' + props.getProperty('CENTRAL_STOCK_20261008') +
-               ' — ไม่ลงซ้ำ');
+    fixCentralStockBatch_(CENTRAL_STOCK_20261008, 'ตลาดทรัพย์พัฒนา');
     return;
   }
   // รายการสินค้าในชีตยังเป็นหน่วยเก่า (ข้าวโพดเป็นโล เต้าหู้หลอดเป็นถุง) — อัปเดตก่อน ไม่งั้นจำนวนผิดหน่วย
