@@ -493,6 +493,14 @@ var INTAKE_UNIT_RE =
 var INTAKE_PERKG_RE =
   /(?:โลละ|กิโลละ|กิโลกรัมละ|กก\.?ละ|ต่อโล|ต่อกิโล|ต่อกก\.?)\s*([\d.,]+)\s*(?:บาท|฿|บ\.)?/i;
 
+/**
+ * "ถุงละ 30 อัน" — จำนวนต่อถุงของที่แต่ละถุงไม่เท่ากัน (มาม่าเปล่า)
+ * ต้องดึงออกก่อน ไม่งั้น "30 อัน" จะถูกอ่านเป็นจำนวนทั้งหมด
+ * มีคำว่าบาทตามหลัง = ราคาต่อถุง ไม่ใช่จำนวน ไม่แตะ
+ */
+var INTAKE_PERBAG_RE =
+  /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(อัน|ห่อ|ก้อน|ชิ้น|ซอง)?(?!\s*(?:\d|บาท|฿|บ\.))/;
+
 function intakeUnitRe_() {
   return new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(' + INTAKE_UNIT_RE + ')?', 'gi');
 }
@@ -736,6 +744,15 @@ function intakeParseLine_(line) {
     if (!text) return null;
   }
 
+  // "ถุงละ 30 อัน" — ตัดออกก่อน ไม่งั้น 30 อันจะกลายเป็นจำนวนทั้งหมด
+  var perBag = 0;
+  var pb = text.match(INTAKE_PERBAG_RE);
+  if (pb) {
+    perBag = intakeNum_(pb[1]);
+    text = text.replace(INTAKE_PERBAG_RE, ' ').trim();
+    if (!text) return null;
+  }
+
   // "โลละ 136 บาท" — ตัดออกก่อน ไม่งั้น 136 จะไปนับเป็นยอดที่จ่าย
   var perKg = 0;
   var pk = text.match(INTAKE_PERKG_RE);
@@ -799,6 +816,7 @@ function intakeParseLine_(line) {
   return {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     perKg: perKg,                                     // คนพิมพ์บอกมาเอง ใช้แทนที่จะหาร
+    perBag: perBag,                                   // "ถุงละ 30 อัน" ของที่ถุงไม่เท่ากัน
     pay: pay.method, expense: intakeIsExpense_(name),
     branch: branch.loc,                               // ป้ายสาขา ใช้กับค่าใช้จ่าย
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
@@ -969,8 +987,25 @@ function intakeItemNames_() {
  * คืน null ถ้าเดาไม่ได้ — ยอมไม่ลงดีกว่าลงตัวเลขมั่ว เพราะชีตนี้เอาไปคิด
  * ยอดคงเหลือ ลงผิดทีเดียวยอดเพี้ยนยาวจนกว่าจะนับสต็อกใหม่
  */
-function intakeStockQty_(item, counts, gram) {
+function intakeStockQty_(item, counts, gram, perBag) {
   if (!item) return null;
+
+  // ของที่แต่ละถุงไม่เท่ากัน (มาม่าเปล่า) — ต้องบอก "ถุงละกี่อัน" ถึงจะลงสต็อกได้
+  var askU = (typeof rawAskPerBag_ === 'function') ? rawAskPerBag_(item.name) : '';
+  if (askU && item.kind === 'วัตถุดิบ') {
+    var c0 = (counts && counts.length) ? counts[0] : null;
+    if (!c0) return null;
+    var cu = intakeNorm_(c0.unit);
+    // บอกเป็นชิ้นมาตรง ๆ ("มาม่าเปล่า 60 อัน") ใช้เลย
+    if (cu === intakeNorm_(askU) || /^(ห่อ|ก้อน|ชิ้น|ซอง)$/.test(cu)) {
+      return { base: c0.n, packs: 0, per: 1 };
+    }
+    if (perBag > 0) {
+      return { base: c0.n * perBag, packs: 0, per: perBag,
+               unitNote: c0.n + ' ' + (c0.unit || 'ถุง') + ' × ' + perBag + ' ' + askU };
+    }
+    return { base: 0, packs: 0, per: 1, askPerBag: askU, typed: c0.n + ' ' + (c0.unit || '') };
+  }
 
   // พิมพ์น้ำหนักมา แล้วชีตก็ตั้งหน่วยเป็นน้ำหนัก — แปลงให้ตรงหน่วยที่ตั้งไว้
   // ใช้ได้ทั้งของดิบและของใช้ ของอย่างนมผง/ผงหม่าล่า นับเป็นกรัม
@@ -1646,9 +1681,14 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           unitWarns.push(hit.name + ' — ไม่มีชื่อนี้ในชีตรายการสินค้าแล้ว');
           continue;
         }
-        var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts, it.gram) : null;
+        var q = hit.matched ? intakeStockQty_(byName[hit.name], it.counts, it.gram, it.perBag) : null;
         if (makeOnly) {
           // บอกไปแล้วว่าต้องไปลงแพ็คของ ไม่ต้องบ่นเรื่องหน่วยซ้ำอีก
+        } else if (q && q.askPerBag) {
+          // ถุงไม่เท่ากัน ไม่รู้ว่ากี่ชิ้น — ไม่เดา ค่าซื้อลงแล้ว ให้พิมพ์ใหม่พร้อมจำนวนต่อถุง
+          unitWarns.push(hit.name + ' — ซื้อมา ' + q.typed.trim() + ' แต่ไม่ได้บอกว่าถุงละกี่' + q.askPerBag +
+                         '\n       ส่งเพิ่มแค่ เช่น ' + hit.name.replace(/\s*\(ดิบ\)$/, '') +
+                         ' ' + q.typed.trim() + ' ถุงละ 30 ' + q.askPerBag + ' (ไม่ต้องใส่ราคา)');
         } else if (q && q.unitWarn) {
           unitWarns.push(hit.name + ' — พิมพ์มาเป็น "' + q.unitWarn +
                          '" แต่ชีตตั้งไว้เป็น "' + byName[hit.name].subUnit + '"' +

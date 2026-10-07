@@ -2677,7 +2677,19 @@ function rawBagKg_(base) {
   var n = Number(RAW_BAG_KG[String(base || '').trim()]);
   return n > 0 ? n : 0;
 }
+/**
+ * ของดิบที่ซื้อมาเป็นถุง แต่แต่ละถุงจำนวนไม่เท่ากัน — เก็บยอดเป็นชิ้น
+ * ตอนลงซื้อทางไลน์ต้องบอกว่า "ถุงละกี่อัน" ไม่บอก = ไม่ลงสต็อก แล้วเตือนให้พิมพ์ใหม่
+ *   มาม่าเปล่า 2 ถุง ถุงละ 30 อัน 300   → มาม่าเปล่า (ดิบ) 60 อัน
+ */
+var RAW_ASK_PER_BAG = { 'มาม่าเปล่า': 'อัน' };
+function rawAskPerBag_(name) {
+  var base = String(name || '').replace(/\s*\(ดิบ\)\s*$/, '').trim();
+  return RAW_ASK_PER_BAG[base] || '';
+}
+
 function rawUnitOf_(base) {
+  if (RAW_ASK_PER_BAG[base]) return RAW_ASK_PER_BAG[base];
   if (RAW_KG.indexOf(base) !== -1) return 'กก.';
   return RAW_BAG[base] || 'ถุง';
 }
@@ -2886,7 +2898,10 @@ function itemCatalogue_() {
       name: rawName_(base), kind: KIND_RAW,
       subUnit: u, packUnit: pk ? pk.packUnit : u, perPack: pk ? pk.per : 1, perStick: 1,
       price: 0, scope: SCOPE_CENTRAL, raws: [],
-      note: pk
+      note: RAW_ASK_PER_BAG[base]
+        ? 'ซื้อเป็นถุง แต่ละถุงไม่เท่ากัน เก็บยอดเป็น' + u +
+          ' · ลงไลน์ต้องบอก "ถุงละกี่' + u + '" เช่น ' + base + ' 2 ถุง ถุงละ 30 ' + u + ' 300'
+        : pk
         ? 'ซื้อเป็น' + pk.packUnit + ' ' + pk.packUnit + 'ละ ' + pk.per + ' ' + u +
           ' · นับสต็อกได้ทั้งแบบ' + pk.packUnit + 'และแบบ' + u
         : 'ซื้อเป็น' + u + ' เข้าครัวกลาง แพ็คแล้วระบบตัดออกให้เอง' +
