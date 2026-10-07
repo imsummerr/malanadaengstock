@@ -954,6 +954,33 @@ function intakeNorm_(s) {
     .trim();
 }
 
+/**
+ * แจ้งชัด ๆ ว่าของที่ซื้อมาไม่มีในรายการสินค้า — ค่าซื้อลงแล้ว แต่ไม่เข้าสต็อกและไม่ขึ้นในบัญชี
+ * เดิมมีแค่ดอกจันท้ายข้อความ คนพิมพ์มองข้าม แล้วนึกว่าของเข้าสต็อกไปแล้ว
+ * มีชื่อในรายการที่ใกล้เคียง = บอกด้วย เผื่อพิมพ์ผิด
+ */
+function intakeUnknownBlock_(unknown, names) {
+  var seen = {}, list = [];
+  (unknown || []).forEach(function (n) { n = String(n || '').trim(); if (n && !seen[n]) { seen[n] = 1; list.push(n); } });
+  if (!list.length) return '';
+  var lines = list.map(function (n) {
+    var norm = intakeNorm_(n), best = [], i;
+    for (i = 0; i < (names || []).length; i++) {
+      var nm = String(names[i]).replace(/\s*\(ดิบ\)$/, '');
+      var d = intakeLev_(norm, intakeNorm_(nm));
+      if (d <= Math.max(2, Math.floor(norm.length / 3))) best.push({ n: nm, d: d });
+    }
+    best.sort(function (a, b) { return a.d - b.d; });
+    var near = [];
+    best.forEach(function (b) { if (near.indexOf(b.n) === -1 && near.length < 2) near.push(b.n); });
+    return '• ' + n + (near.length ? '  (หมายถึง ' + near.join(' / ') + ' ?)' : '');
+  });
+  return '\n\n⚠️ ไม่มีในรายการสินค้า ' + list.length + ' รายการ — ค่าซื้อลงแล้ว แต่ไม่เข้าสต็อก ไม่ขึ้นในบัญชี\n' +
+         lines.join('\n') +
+         '\n\n👉 พิมพ์ชื่อผิด: พิมพ์ "ลบ" แล้วส่งใหม่ด้วยชื่อที่ถูก' +
+         '\n👉 ของใหม่: แจ้งเจ้าของร้านให้เพิ่มในรายการสินค้าก่อน แล้วค่อยส่งใหม่';
+}
+
 /** ระยะแก้คำ (Levenshtein) — ใช้วัดว่าสองชื่อใกล้กันแค่ไหน */
 function intakeLev_(a, b) {
   if (a === b) return 0;
@@ -1614,6 +1641,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   var packWarns = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
+  var unknown = [];   // ชื่อที่ไม่มีในรายการสินค้า — ต้องบอกให้ชัด ไม่งั้นนึกว่าเข้าสต็อกแล้ว
   var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
 
   var lock = LockService.getScriptLock();
@@ -1694,7 +1722,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         }
 
         buyTotal += it.baht || 0;
-        if (!hit.matched) unmatched = true;
+        if (!hit.matched) { unmatched = true; unknown.push(it.raw); }
         buyLines.push('• ' + hit.name + (hit.matched ? '' : ' *') + ' — ' +
                       intakeAmountText_(it) + intakePayTag_(it.pay));
 
@@ -1779,7 +1807,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   if (sums.length) msg += '\n\nรวม ' + sums.join(' · ') + ' บาท';
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
-  if (unmatched) msg += '\n\n* ไม่มีชื่อนี้ในชีตรายการสินค้า — บันทึกตามที่ส่งมา';
+  if (unmatched) msg += intakeUnknownBlock_(unknown, names);
   // หน่วยไม่ตรง = แปลงให้ไม่ได้ เลยไม่ลงสต็อก ต้องบอก ไม่งั้นยอดขาดเงียบ ๆ
   if (unitWarns.length) {
     msg += '\n\n⚠️ ยังไม่ได้ลงสต็อก ' + unitWarns.length + ' รายการ — หน่วยแปลงให้ไม่ได้\n' +
