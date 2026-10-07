@@ -546,7 +546,8 @@ function viewMoney(v) {
             <td class="num">${baht(o['ค่าของที่ใช้ไปแล้ว'])}</td></tr>
       </tbody></table>` : '';
 
-    const top = st.rows.slice(0, 12).map(r => `<tr>
+    // โชว์ครบทุกรายการ — เดิมตัดไว้ 12 แถว แล้วดูเหมือนของหายไป
+    const top = st.rows.map(r => `<tr>
         <td>${esc(r.item)}</td>
         <td class="num">${r.qty}</td>
         <td class="num">${baht(r.unit)}</td>
@@ -563,7 +564,7 @@ function viewMoney(v) {
           <th class="num">ต้นทุน/หน่วย</th><th class="num">มูลค่า</th></tr></thead>
         <tbody>${top || '<tr><td colspan="4" class="empty">ไม่มีของ</td></tr>'}</tbody>
       </table>
-      ${st.rows.length > 12 ? `<p class="note">แสดง 12 จาก ${st.rows.length} รายการ — ดูครบในชีต "บัญชี_มูลค่าสต็อก"</p>` : ''}
+      <p class="note">${st.rows.length} รายการ</p>
     </div>`;
   }).join('');
 

@@ -301,6 +301,16 @@ function costEvents_(all) {
   if (shIn && shIn.getLastRow() > 1) {
     var mapIn = ensureCols_(shIn, MOVE_COLS.concat(['messageId']));
     var vin = shIn.getRange(2, 1, shIn.getLastRow() - 1, shIn.getLastColumn()).getValues();
+    // ข้อความเดียวซื้อของชื่อเดียวกันสองบรรทัดได้ (หัวไหล่ 2 ถุงคนละน้ำหนัก)
+    // ราคาในชีตซื้อของรวมเป็นก้อนเดียวตาม messageId+ชื่อ ต้องแบ่งตามจำนวน
+    // ไม่งั้นทุกแถวได้ราคาเต็มก้อน ต้นทุนเบิ้ลเป็นสองเท่า
+    var qtyOfKey = {};
+    if (mapIn['messageId'] !== undefined) {
+      vin.forEach(function (r) {
+        var k = String(r[mapIn['messageId']] || '').trim() + '|' + String(r[mapIn['รายการ']] || '').trim();
+        qtyOfKey[k] = (qtyOfKey[k] || 0) + (costQty_(r[mapIn['จำนวน']]) || 0);
+      });
+    }
     vin.forEach(function (r) {
       var item = String(r[mapIn['รายการ']] || '').trim();
       if (!item) return;
@@ -313,8 +323,10 @@ function costEvents_(all) {
         ev.push({ t: costTime_(r[mapIn['วันที่เวลา']]), step: 3, type: 'ส่งเข้าร้าน',
                   loc: loc, item: item, qty: qty });
       } else {
+        var key = msg + '|' + item, all = qtyOfKey[key] || qty;
         ev.push({ t: costTime_(r[mapIn['วันที่เวลา']]), step: 1, type: 'ซื้อเข้า',
-                  loc: loc, item: item, qty: qty, paid: paid[msg + '|' + item] || 0 });
+                  loc: loc, item: item, qty: qty,
+                  paid: costBaht_((paid[key] || 0) * (all > 0 ? qty / all : 1)) });
       }
     });
   }
