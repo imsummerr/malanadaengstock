@@ -39,6 +39,13 @@ function rptMonthOf_(v) {
   return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, rptTz_(), 'yyyy-MM');
 }
 
+/** วันที่+เวลาของแถว — เส้นเริ่มนับเป็นนาทีได้ ต้องดูเวลาด้วย (ดู costRowTime_) */
+function rptRowTime_(head, dateCell, row) {
+  var iT = head.indexOf('เวลา');
+  if (typeof costRowTime_ !== 'function') return rptDateOf_(dateCell);
+  return costRowTime_(rptDateOf_(dateCell) || dateCell, iT === -1 ? '' : row[iT]);
+}
+
 function rptDateOf_(v) {
   if (v instanceof Date && !isNaN(v.getTime())) return v;
   var t = String(v == null ? '' : v).trim();
@@ -96,7 +103,7 @@ function rptGather_(ym, branch) {
 
   o.rows.forEach(function (r) {
     if (iDate === -1 || rptMonthOf_(r[iDate]) !== ym) return;
-    if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[iDate]), r[iLoc])) return;
+    if (typeof costBefore_ === 'function' && costBefore_(rptRowTime_(o.head, r[iDate], r), r[iLoc])) return;
     if (only && String(r[iLoc] || '').trim() !== only) return;
     var net = Number(r[iNet]) || 0;
     out.bills++;
@@ -158,7 +165,7 @@ function rptGather_(ym, branch) {
     }
     dl.rows.forEach(function (r) {
       if (rptMonthOf_(r[jDate]) !== ym) return;
-      if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[jDate]), jLoc === -1 ? '' : r[jLoc])) return;
+      if (typeof costBefore_ === 'function' && costBefore_(rptRowTime_(dl.head, r[jDate], r), jLoc === -1 ? '' : r[jLoc])) return;
       if (only && jLoc !== -1 && String(r[jLoc] || '').trim() !== only) return;
       // นับรายการเสมอ ส่วนยอดเงินเอาที่แอปแจ้งก่อน ไม่มีค่อยเดาจากรายการราคา
       var guess = 0;
@@ -195,7 +202,7 @@ function rptGather_(ym, branch) {
   if (kDate !== -1 && kBaht !== -1) {
     ex.rows.forEach(function (r) {
       if (rptMonthOf_(r[kDate]) !== ym) return;
-      if (typeof costBefore_ === 'function' && costBefore_(rptDateOf_(r[kDate]), kLoc === -1 ? '' : r[kLoc])) return;
+      if (typeof costBefore_ === 'function' && costBefore_(rptRowTime_(ex.head, r[kDate], r), kLoc === -1 ? '' : r[kLoc])) return;
       if (only && kLoc !== -1 && String(r[kLoc] || '').trim() !== only) return;
       var baht = Number(r[kBaht]) || 0;
       if (!baht) return;

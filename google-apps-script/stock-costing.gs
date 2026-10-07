@@ -77,6 +77,25 @@ function costYmdTime_(v) {
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
+/**
+ * วันที่ + เวลาของแถวบิล/ค่าใช้จ่าย (เก็บแยกสองช่อง) → เวลาเดียว
+ * เส้นเริ่มนับเป็นนาทีได้ (เช่นยอดนับ 17:23) บิลหลังจากนั้นในวันเดียวกันต้องยังถูกนับ
+ * ถ้าดูแค่วันที่ บิลทั้งวันจะถูกมองว่าอยู่ก่อนเส้น แล้วยอดขายคืนนั้นหายจากบัญชี
+ */
+function costRowTime_(dateCell, timeCell) {
+  var base = dateCell instanceof Date ? dateCell
+           : (typeof rptDateOf_ === 'function' ? rptDateOf_(dateCell) : new Date(String(dateCell || '')));
+  if (!base || isNaN(base.getTime())) return dateCell;
+  var h = 0, m = 0, s = 0;
+  if (timeCell instanceof Date && !isNaN(timeCell.getTime())) {
+    h = timeCell.getHours(); m = timeCell.getMinutes(); s = timeCell.getSeconds();
+  } else {
+    var x = String(timeCell == null ? '' : timeCell).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (x) { h = Number(x[1]); m = Number(x[2]); s = Number(x[3] || 0); }
+  }
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, s);
+}
+
 /** แถวนี้เกิดก่อนวันเริ่มนับของที่นั้นหรือเปล่า — ไม่บอกที่ = ดูเส้นทั้งระบบ */
 function costBefore_(v, loc) {
   var start = costStartDate_(loc);
@@ -649,9 +668,10 @@ function costIncome_() {
     var v = sh.getDataRange().getValues();
     var h = v[0].map(function (x) { return String(x).trim(); });
     var iLoc = h.indexOf('สาขา'), iNet = h.indexOf('ยอดสุทธิ'), iDate = h.indexOf('วันที่');
+    var iTime = h.indexOf('เวลา');
     if (iLoc !== -1 && iNet !== -1) {
       for (var r = 1; r < v.length; r++) {
-        if (iDate !== -1 && costBefore_(v[r][iDate], v[r][iLoc])) continue;
+        if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
         add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
       }
     }
@@ -670,9 +690,9 @@ function costIncome_() {
     var jLoc = hd.indexOf('สาขา'), jData = hd.indexOf('ข้อมูล');
     var jPf  = hd.indexOf('แพลตฟอร์ม'), jAmt = hd.indexOf('ยอดเงิน');
     if (jLoc !== -1 && jData !== -1) {
-      var jDate = hd.indexOf('วันที่');
+      var jDate = hd.indexOf('วันที่'), jTime = hd.indexOf('เวลา');
       for (var d = 1; d < vd.length; d++) {
-        if (jDate !== -1 && costBefore_(vd[d][jDate], vd[d][jLoc])) continue;
+        if (jDate !== -1 && costBefore_(costRowTime_(vd[d][jDate], jTime === -1 ? '' : vd[d][jTime]), vd[d][jLoc])) continue;
         // ยอดที่แอปแจ้งแม่นกว่าการเดาจากรายการราคา เพราะราคาบนแอปตั้งสูงกว่าหน้าร้าน
         var amt = jAmt === -1 ? 0 : Number(vd[d][jAmt]) || 0;
         if (!amt) {
@@ -711,10 +731,10 @@ function costOutgo_() {
   var v = sh.getDataRange().getValues();
   var h = v[0].map(function (x) { return String(x).trim(); });
   var iLoc = h.indexOf('สาขา'), iBaht = h.indexOf('จำนวนเงิน'), iType = h.indexOf('ประเภท');
-  var iDate = h.indexOf('วันที่');
+  var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
-    if (iDate !== -1 && costBefore_(v[r][iDate], v[r][iLoc])) continue;
+    if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;

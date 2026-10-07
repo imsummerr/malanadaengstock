@@ -62,4 +62,24 @@ g.promptStartFromLatestCount();
 eq('ตั้งเส้นที่ 22:38', JSON.parse(g.__env.PROPS.ACC_START_BY_LOC)[SHOP], '2026-10-05 22:38');
 eq('บอกผลใน log', g.__env.LOG.some(l => /✅ ตลาดทรัพย์พัฒนา — ยอดตั้งต้น = ที่นับเมื่อ 5\/10\/2026 22:38/.test(l)), true);
 
+section('เส้นเริ่มนับกลางวัน (17:23) — บิลหลังเส้นวันเดียวกันยังนับ บิลก่อนเส้นไม่นับ');
+{
+  const g7 = fresh();
+  g7.__env.SHEETS[g7.SHEET_EXPENSE] = { headers: g7.EXPENSE_HEADERS.slice(), rows: [] };
+  g7.setLocationStart(SHOP, '2026-10-07 17:23');
+  const bill = (t, net) => push(g7, g7.SHEET_ORDERS, { 'วันที่': '2026-10-07', 'เวลา': t, 'สาขา': SHOP,
+    'ยอดรวม': net, 'ยอดสุทธิ': net, 'วิธีชำระเงิน': 'เงินสด' });
+  bill('16:17:14', 95); bill('17:05:37', 95); bill('18:30:00', 120); bill('21:10:00', 60);
+  push(g7, g7.SHEET_EXPENSE, { 'วันที่': '2026-10-07', 'เวลา': '15:00:00', 'สาขา': SHOP, 'ประเภท': 'ค่าที่', 'จำนวนเงิน': 120 });
+  push(g7, g7.SHEET_EXPENSE, { 'วันที่': '2026-10-07', 'เวลา': '19:00:00', 'สาขา': SHOP, 'ประเภท': 'ค่าน้ำแข็ง', 'จำนวนเงิน': 10 });
+  const pl = g7.costSummary_().pl[SHOP];
+  eq('รายได้เฉพาะหลัง 17:23 = 180', pl['รายได้'], 180);
+  eq('ค่าใช้จ่ายเฉพาะหลัง 17:23 = 10', pl['ค่าใช้จ่ายอื่น'], 10);
+  const rp = g7.monthlyReport('2026-10', SHOP);
+  eq('รายงานเดือนก็นับเหมือนกัน', rp.sales, 180);
+  // เส้นแบบวันอย่างเดียวยังทำงานเหมือนเดิม
+  g7.setLocationStart(SHOP, '2026-10-07');
+  eq('เส้นทั้งวัน = นับทุกบิลของวันนั้น', g7.costSummary_().pl[SHOP]['รายได้'], 370);
+}
+
 module.exports = done();
