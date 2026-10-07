@@ -267,8 +267,12 @@ function auditSales_(loc, fromStamp, toStamp) {
   out.transfer = 0; out.cashSales = 0; out.expCash = 0; out.expOther = 0; out.expenses = [];
   out.byMethod = {}; out.redeem = 0; out.untracked = 0;
   // อ่านชีตบิลรอบเดียว เก็บทุกอย่างที่ต้องใช้ (เดิมอ่านสองรอบ)
+  out.firstStamp = ''; out.lastStamp = '';
   scan((typeof SHEET_ORDERS === 'string') ? SHEET_ORDERS : 'POS_Orders', function (r, idx) {
     out.orders++;
+    var st = auditRowStamp_(r[idx['วันที่']], r[idx['เวลา']]);
+    if (!out.firstStamp || st < out.firstStamp) out.firstStamp = st;
+    if (st > out.lastStamp) out.lastStamp = st;
     if (idx['ส่วนลดแต้ม'] !== undefined) out.redeem += n(r[idx['ส่วนลดแต้ม']]);
     if (idx['ยอดมาม่า'] !== undefined) out.untracked += n(r[idx['ยอดมาม่า']]);
     if (idx['ยอดของอื่น'] !== undefined) out.untracked += n(r[idx['ยอดของอื่น']]);
@@ -794,7 +798,8 @@ function cashRows_(loc) {
     if (!stamp) continue;
     var ms = new Date(stamp.replace(' ', 'T') + '+07:00').getTime();
     out.push({ row: i + 1, ms: ms, staff: v[i][idx['พนักงาน']],
-               cash: num_(v[i][idx['เงินสดที่นับได้']]), id: v[i][idx['close_id']] });
+               cash: num_(v[i][idx['เงินสดที่นับได้']]), id: v[i][idx['close_id']],
+               result: idx['ผลเทียบ'] !== undefined ? String(v[i][idx['ผลเทียบ']] || '') : '' });
   }
   return out;
 }
@@ -863,9 +868,51 @@ function cashUsage_(loc, atMs) {
   return out;
 }
 
+/** เวลาเริ่มวันทำการ (ตี 4 ของวันนั้น) เป็นมิลลิวินาที */
+function cashDayStart_(day) {
+  return new Date(day + 'T' + ('0' + CASH_DAY_CUT_HOURS).slice(-2) + ':00:00+07:00').getTime();
+}
+
+function cashStampMs_(stamp) {
+  return stamp ? new Date(String(stamp).replace(' ', 'T') + '+07:00').getTime() : 0;
+}
+
 /**
- * เทียบเงินสดของวันทำการหนึ่ง — ต้องมีทั้งรอบนับสต็อกและเงินที่กรอกในวันเดียวกัน
+ * รอบนับปิดร้านของวันทำการ day = รอบนับแรกหลังบิลสุดท้ายของวันนั้น
+ * (นับเช้าวันรุ่งขึ้นก่อนเปิดขายก็ได้ ของไม่ขยับแล้ว)
+ * วันนั้นไม่มีบิลเลย = ใช้รอบนับล่าสุดของวันนั้น
+ * คืน { countMs, prevMs, lastBill } — countMs 0 = ยังไม่ได้นับปิดร้าน
+ */
+function cashCloseCount_(loc, day) {
+  var times = cashCountTimes_(loc);                      // ใหม่ → เก่า
+  var start = cashDayStart_(day), end = start + 24 * 3600000;
+  var bills = auditSales_(loc, auditStamp_(new Date(start)), auditStamp_(new Date(end - 1000)));
+  var lastBill = cashStampMs_(bills.lastStamp);
+  var pick = -1;
+  if (lastBill) {
+    for (var i = times.length - 1; i >= 0; i--) {         // เก่า → ใหม่ หาอันแรกหลังบิลสุดท้าย
+      if (times[i] < lastBill - 60000) continue;
+      // ระหว่างบิลสุดท้ายกับรอบนับนี้ต้องไม่มีบิลใหม่ (ของวันถัดไป)
+      if (times[i] > end && auditSales_(loc, bills.lastStamp, auditStamp_(new Date(times[i]))).orders) break;
+      pick = i; break;
+    }
+  } else {
+    for (var j = 0; j < times.length; j++) if (cashBizDay_(times[j]) === day) { pick = j; break; }
+  }
+  if (pick < 0) return { countMs: 0, prevMs: 0, lastBill: lastBill };
+  return { countMs: times[pick], prevMs: times[pick + 1] || 0, lastBill: lastBill };
+}
+
+/**
+ * เทียบเงินสดของวันทำการหนึ่ง — ต้องมีทั้งรอบนับปิดร้านและเงินที่กรอก
  * ขาดอย่างใดอย่างหนึ่ง = คืน null เงียบ ๆ (รออีกอันเข้ามาแล้วค่อยเทียบ)
+ *
+ * เงินในลิ้นชัก = ของวันทำการนั้นทั้งวัน (ตี 4 ถึงปิดร้าน)
+ * ของที่ขายไป   = ระหว่างรอบนับก่อนหน้า (นับล่าสุดที่ลง) ถึงรอบนับปิดร้าน
+ * สองช่วงนี้ไม่เท่ากันได้ เช่นนับกลางวันหลังขายไปแล้วบางบิล
+ *   → บิลเงินสดของวันนั้นที่ขายก่อนรอบนับก่อนหน้า บวกเพิ่มจาก POS (เงินอยู่ในลิ้นชักแล้ว)
+ *   → บิลเงินสดของเมื่อวานที่อยู่ในช่วงนับ หักออก (เงินอยู่ลิ้นชักเมื่อวาน)
+ *   → ค่าใช้จ่ายเงินสด นับตามวันทำการ ไม่ใช่ตามรอบนับ
  */
 function cashCheck_(loc, day, opt) {
   opt = opt || {};
@@ -875,36 +922,38 @@ function cashCheck_(loc, day, opt) {
   var cash = cashes.length ? cashes[cashes.length - 1]          // กรอกใหม่ = ใช้อันล่าสุด
                            : { row: 0, ms: 0, cash: null, staff: '' };
 
-  var times = cashCountTimes_(loc);
-  var countMs = 0, prevMs = 0;
-  for (var i = 0; i < times.length; i++) {
-    if (cashBizDay_(times[i]) === day) { countMs = times[i]; prevMs = times[i + 1] || 0; break; }
-  }
-  if (!countMs) return null;
+  var cc = cashCloseCount_(loc, day);
+  var countMs = cc.countMs, prevMs = cc.prevMs;
+  if (!countMs) return null;                                    // ยังไม่ได้นับหลังบิลสุดท้าย
   if (!prevMs) {
     return cashSay_(loc, cash, null, '📋 ' + loc + ' — รับยอดเงินปิดร้าน ' + auditBaht_(cash.cash || 0) +
       ' บาทแล้ว\nแต่รอบนับนี้เป็นรอบฐาน ยังไม่มีรอบก่อนให้คิดว่าขายไปเท่าไหร่\nพรุ่งนี้ปิดร้านแล้วจะเทียบให้', opt);
   }
 
+  var dayStart = cashDayStart_(day);
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
   var u = cashUsage_(loc, countMs);
-  var endMs = Math.max(countMs, cash.ms);
-  var s = auditSales_(loc, auditStamp_(new Date(prevMs)), auditStamp_(new Date(endMs)));
+  var s = auditSales_(loc, st(prevMs), st(countMs + 60000));                 // ช่วงนับสต็อก
+  var sDay = auditSales_(loc, st(dayStart - 1000), st(Math.max(countMs + 60000, cash.ms)));  // ทั้งวัน
+  var pre = prevMs > dayStart ? auditSales_(loc, st(dayStart - 1000), st(prevMs)).cashSales : 0;
+  var old = prevMs < dayStart ? auditSales_(loc, st(prevMs), st(dayStart - 1000)).cashSales : 0;
   var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
   var dlv = auditRound_(s.dlvPieces * perStick);
   var flt = cashProp_('CASH_FLOAT', 0);
   var expected = auditRound_(u.value + s.untracked - dlv - s.discount - s.redeem -
-                             s.transfer - s.expCash + flt);
+                             s.transfer + pre - old - sDay.expCash + flt);
   var noCash = cash.cash == null;
   var diff = noCash ? 0 : auditRound_(cash.cash - expected);
   var gap = cashProp_('CASH_GAP_BAHT', 0);
   var ok = Math.abs(diff) <= gap;
   // ถ้าเชื่อตัวเลขใน POS — เอาไว้แยกว่า "เงินหาย" หรือ "ขายแล้วไม่ได้กด POS"
-  var posExpected = auditRound_(s.cashSales - s.expCash + flt);
+  var posExpected = auditRound_(sDay.cashSales - sDay.expCash + flt);
+  var hm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'HH:mm'); };
 
   var L = [];
   L.push(noCash ? '📋 ปิดร้าน ' + loc + ' — ยังไม่มีคนกรอกเงินที่นับได้'
                 : (ok ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' — ' + (ok ? 'เงินตรง' : 'เงินไม่ตรง'));
-  L.push('ช่วง ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
+  L.push('นับสต็อก ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
   L.push('');
   L.push('ขายไปตามสต็อก ' + u.sticks + ' ชิ้น   ' + auditBaht_(u.value) + ' บาท');
   if (s.untracked) L.push('+ มาม่า/ของอื่นที่ไม่ได้นับสต็อก   ' + auditBaht_(s.untracked));
@@ -914,27 +963,36 @@ function cashCheck_(loc, day, opt) {
   Object.keys(s.byMethod || {}).forEach(function (k) {
     L.push('− ' + (/โอน|สแกน/.test(k) ? 'ลูกค้าโอน' : k) + '   ' + auditBaht_(s.byMethod[k]));
   });
-  if (s.expCash)  L.push('− ค่าใช้จ่ายเงินสด   ' + auditBaht_(s.expCash));
+  if (pre)        L.push('+ เงินสดบิลก่อนนับรอบ ' + hm(prevMs) + '   ' + auditBaht_(pre));
+  if (old)        L.push('− เงินสดบิลของวันก่อน (อยู่ลิ้นชักวันก่อน)   ' + auditBaht_(old));
+  if (sDay.expCash) L.push('− ค่าใช้จ่ายเงินสดวันนี้   ' + auditBaht_(sDay.expCash));
   if (flt)        L.push('+ เงินทอนตั้งต้น   ' + auditBaht_(flt));
   L.push('= เงินสดที่ควรมี   ' + auditBaht_(expected) + ' บาท');
   if (!noCash) L.push('', 'นับได้จริง   ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
   if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
   L.push('');
-  L.push('เทียบ POS: ขายเงินสด ' + auditBaht_(s.cashSales) + ' บาท (ทั้งหมด ' + s.orders + ' บิล)' +
+  L.push('เทียบ POS: ขายเงินสดวันนี้ ' + auditBaht_(sDay.cashSales) + ' บาท (ทั้งหมด ' + sDay.orders + ' บิล)' +
          ' → ควรมี ' + auditBaht_(posExpected));
   if (!ok || noCash) {
-    var gapPos = auditRound_(u.value - (s.gross - s.untracked) - dlv);
-    if (Math.abs(gapPos) >= 10) {
-      L.push(gapPos > 0
-        ? '👉 ของออกมากกว่าที่กด POS ' + auditBaht_(gapPos) + ' บาท — ขายแล้วไม่ได้กด / ลงของเสียไม่ครบ / ของหาย'
-        : '👉 กด POS มากกว่าของที่ออก ' + auditBaht_(-gapPos) + ' บาท — ลงของเข้าไม่ครบ หรือนับสต็อกเกิน');
+    if (u.sticks < 0) {
+      L.push('👉 สต็อกเพิ่มขึ้นแทนที่จะลด — มีของเข้าร้านที่ยังไม่ได้ลง เลยเทียบเงินจากสต็อกไม่ได้');
+      L.push('   ลงของเข้าร้านย้อนหลังแล้วกด 💵 ดูผลเทียบเงินปิดร้าน ใหม่ หรือดูเทียบ POS ไปก่อน');
     } else {
-      L.push('👉 ของออกตรงกับ POS' + (noCash ? '' : ' — ที่ต่างคือเงินในลิ้นชัก'));
+      var gapPos = auditRound_(u.value - (s.gross - s.untracked) - dlv);
+      if (Math.abs(gapPos) >= 10) {
+        L.push(gapPos > 0
+          ? '👉 ของออกมากกว่าที่กด POS ' + auditBaht_(gapPos) + ' บาท — ขายแล้วไม่ได้กด / ลงของเสียไม่ครบ / ของหาย'
+          : '👉 กด POS มากกว่าของที่ออก ' + auditBaht_(-gapPos) + ' บาท — ลงของเข้าไม่ครบ หรือนับสต็อกเกิน');
+      } else {
+        L.push('👉 ของออกตรงกับ POS' + (noCash ? '' : ' — ที่ต่างคือเงินในลิ้นชัก'));
+      }
     }
     if (u.overs.length) {
+      var overs = u.overs.slice().sort(function (a, b) { return b.qty - a.qty; });
       L.push('');
-      L.push('นับได้เกินที่ควรเหลือ (ลืมลงของเข้า?)');
-      u.overs.slice(0, 5).forEach(function (x) { L.push('• ' + x.name + ' ' + x.qty + ' ' + x.unit); });
+      L.push('นับได้เกินที่ควรเหลือ (ลืมลงของเข้า?) ' + overs.length + ' รายการ');
+      overs.slice(0, 10).forEach(function (x) { L.push('• ' + x.name + ' ' + x.qty + ' ' + x.unit); });
+      if (overs.length > 10) L.push('• …อีก ' + (overs.length - 10) + ' รายการ');
     }
   }
   return cashSay_(loc, cash, noCash ? { expected: expected, diff: null, ok: null }
@@ -1000,7 +1058,7 @@ function handleCashClose_(body) {
   var out = { success: true, checked: !!(res && res.expected != null),
               waiting: !res,
               message: res ? 'บันทึกแล้ว ระบบเทียบกับสต็อกและแจ้งเจ้าของร้านแล้ว'
-                           : 'บันทึกแล้ว — จะเทียบให้ทันทีที่นับสต็อกปิดร้านเสร็จ' };
+                           : 'บันทึกแล้ว — อย่าลืมนับสต็อกปิดร้าน ระบบจะเทียบเงินให้ทันทีที่นับเสร็จ' };
   // ยอดที่ควรมีให้เจ้าของร้านดูคนเดียว
   if (session.role === 'owner' && res) { out.expected = res.expected; out.diff = res.diff; }
   return out;
@@ -1008,7 +1066,14 @@ function handleCashClose_(body) {
 
 /** เรียกจาก handleStockCount_ — ถ้าวันนี้กรอกเงินไว้ก่อนแล้ว เทียบเลย */
 function cashCheckAfterCount_(loc, now) {
-  return cashCheck_(loc, cashBizDay_((now || new Date()).getTime()));
+  var ms = (now || new Date()).getTime(), day = cashBizDay_(ms);
+  var r = cashCheck_(loc, day);
+  if (r) return r;
+  // นับเช้าวันรุ่งขึ้นก่อนเปิดร้าน — เมื่อวานกรอกเงินไว้แต่ยังไม่ได้เทียบ ก็เทียบให้ตอนนี้
+  var prev = cashBizDay_(cashDayStart_(day) - 3600000);
+  var waiting = cashRows_(loc).filter(function (c) { return cashBizDay_(c.ms) === prev; });
+  if (waiting.length && !waiting[waiting.length - 1].result) return cashCheck_(loc, prev);
+  return null;
 }
 
 /** ลองเทียบโดยไม่ส่งไลน์ — เลือกวันได้ (เว้นว่าง = วันนี้) ผลขึ้นเป็นกล่องข้อความ */
@@ -1025,7 +1090,7 @@ function previewCashClose() {
   auditLocations_().forEach(function (loc) {
     if (loc === auditCentral_()) return;
     var r = cashCheck_(loc, day, { silent: true });
-    parts.push(r ? r.text : loc + ' — วันที่ ' + day + ' ยังไม่มีทั้งยอดนับปิดร้านและยอดเงินที่กรอก');
+    parts.push(r ? r.text : loc + ' — วันที่ ' + day + ' ยังไม่ได้นับสต็อกปิดร้าน (ต้องนับหลังบิลสุดท้าย)');
   });
   var text = parts.join('\n\n────────\n\n');
   Logger.log(text);

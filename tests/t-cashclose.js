@@ -8,8 +8,11 @@ const at = min => new Date(NOW - min * 60000);
 const ymd = d => formatDate(d, '', 'yyyy-MM-dd');
 const hms = d => formatDate(d, '', 'HH:mm:ss');
 
+// วันทำการในเทสต์ให้เริ่ม 8 ชม.ก่อนตอนนี้ — ไม่งั้นรันช่วงตี 4–ตี 6 บิลจะตกไปวันก่อน
+const CUT = (new Date(NOW).getHours() + 16) % 24;
 function setup(withCount) {
   const g = fresh();
+  g.CASH_DAY_CUT_HOURS = CUT;
   const S = g.__env.SHEETS;
   S[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
   const cnt = (min, item, qty) => push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(min), 'สาขา': SHOP,
@@ -59,7 +62,7 @@ eq('ควรมี 310 − ลด 10 − โอน 60 − ไทยช่วย
 eq('ต่าง 0', r.diff, 0);
 let txt = g.__env.SENT.map(x => x.messages[0].text).join('\n');
 eq('ไลน์บอกว่าเงินตรง', /✅ ปิดร้าน .* เงินตรง/.test(txt), true);
-eq('ค่าใช้จ่ายที่โอนจ่ายไม่ถูกหัก', /ค่าใช้จ่ายเงินสด   50/.test(txt), true);
+eq('ค่าใช้จ่ายที่โอนจ่ายไม่ถูกหัก', /ค่าใช้จ่ายเงินสดวันนี้   50/.test(txt), true);
 eq('แยกโอนกับไทยช่วยไทย', /ลูกค้าโอน   60[\s\S]*ไทยช่วยไทย   40/.test(txt), true);
 const cs = g.__env.SHEETS[g.SHEET_CASH];
 eq('จดยอดที่ควรมีลงชีต', cs.rows[0][cs.headers.indexOf('ควรมี')], 150);
@@ -192,6 +195,60 @@ section('กะหล่ำ ของแถม ไม่คิดเงิน');
   eq('ไม่ขึ้นว่ายังไม่ตั้งราคา', u.noPrice.indexOf('กะหล่ำ'), -1);
   eq('ไม่ขึ้นว่าหน่วยกิโลต้องแก้', u.rawUnits.indexOf('กะหล่ำ'), -1);
   eq('บอกว่าแถมไป 2 กก.', u.free.used, 2);
+}
+
+section('นับกลางวันหลังขายไปแล้ว แล้วกรอกเงินก่อนนับปิด (เหตุการณ์ 7/10)');
+{
+  const g = fresh();
+  g.CASH_DAY_CUT_HOURS = CUT;
+  const S = g.__env.SHEETS;
+  S[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
+  const cnt = (min, rows, by) => rows.forEach(([i, q]) => push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(min),
+    'สาขา': SHOP, 'รายการ': i, 'จำนวน': q, 'ประเภท': 'เช็คสต็อก', 'ผู้ตรวจ': by || 'ลลิตา' }));
+  const ord = (min, net, how) => push(g, g.SHEET_ORDERS, { 'วันที่': ymd(at(min)), 'เวลา': hms(at(min)),
+    'สาขา': SHOP, 'ยอดรวม': net, 'ส่วนลด': 0, 'ยอดสุทธิ': net, 'รวมไม้': net / 10, 'วิธีชำระเงิน': how || 'เงินสด' });
+  const exp = (min, amt) => push(g, g.SHEET_EXPENSE, { 'วันที่': ymd(at(min)), 'เวลา': hms(at(min)),
+    'สาขา': SHOP, 'ประเภท': 'ค่าน้ำแข็ง', 'จำนวนเงิน': amt, 'วิธีจ่าย': 'เงินสด' });
+  // เมื่อวาน: นับปิด แล้วจ่ายค่าไม้เสียบหลังนับ (ยังเป็นเงินเมื่อวาน)
+  cnt(24 * 60, [['ดอลลี่', 5]]);
+  exp(24 * 60 - 3, 23);
+  // วันนี้: ของมาส่งแต่ไม่ได้ลงของเข้า · ขาย 2 บิลก่อนนับ · เจ้าของนับกลางวัน
+  ord(300, 60); ord(290, 40, 'ไทยช่วยไทย');
+  cnt(280, [['ดอลลี่', 40]], 'เจ้าของร้าน');
+  ord(200, 100); ord(150, 50, 'สแกน/โอนผ่านธนาคาร');
+  exp(250, 10);
+  // พนักงานกรอกเงิน ยังไม่ได้นับปิด
+  g.checkToken_ = () => ({ role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' });
+  let r = g.handleCashClose_({ token: 't', close: { cash: 150, closeId: 'M1' } });
+  eq('ยังไม่นับหลังบิลสุดท้าย → รอ ไม่เอารอบกลางวันมาเทียบ', r.waiting, true);
+  eq('ไม่ส่งไลน์ยอดติดลบ', g.__env.SENT.length, 0);
+  eq('บอกพนักงานให้นับปิด', /นับสต็อกปิดร้าน/.test(r.message), true);
+  // นับปิด: ดอลลี่ 25 → ขายตั้งแต่รอบกลางวัน 15 ไม้ = 150
+  cnt(1, [['ดอลลี่', 25]]);
+  const c = g.cashCheckAfterCount_(SHOP, new Date());
+  // 150 − โอน 50 + เงินสดบิลก่อนนับกลางวัน 60 − ค่าใช้จ่ายวันนี้ 10 = 150 (ค่าไม้เสียบเมื่อวานไม่หัก)
+  eq('ควรมี 150', c.expected, 150);
+  eq('เงินตรง', c.ok, true);
+  const t = g.__env.SENT.map(x => x.messages[0].text).join('\n');
+  eq('ช่วงนับเริ่มจากรอบล่าสุดที่ลง (กลางวัน)', /นับสต็อก .* → /.test(t) && /\+ เงินสดบิลก่อนนับรอบ \d\d:\d\d   60/.test(t), true);
+  eq('ไม่หักค่าใช้จ่ายเมื่อวาน', /ค่าใช้จ่ายเงินสดวันนี้   10\n/.test(t), true);
+  eq('POS วันนี้ 4 บิล เงินสด 160', /ขายเงินสดวันนี้ 160 บาท \(ทั้งหมด 4 บิล\)/.test(t), true);
+}
+
+section('กรอกเงินเมื่อคืน แล้วนับปิดเช้าวันรุ่งขึ้น');
+{
+  const g = fresh();
+  g.CASH_DAY_CUT_HOURS = CUT;
+  const S = g.__env.SHEETS;
+  S[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
+  push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(30 * 60), 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': 20, 'ประเภท': 'เช็คสต็อก' });
+  push(g, g.SHEET_ORDERS, { 'วันที่': ymd(at(26 * 60)), 'เวลา': hms(at(26 * 60)), 'สาขา': SHOP,
+    'ยอดรวม': 50, 'ส่วนลด': 0, 'ยอดสุทธิ': 50, 'รวมไม้': 5, 'วิธีชำระเงิน': 'เงินสด' });
+  S[g.SHEET_CASH] = { headers: g.CASH_HEADERS.slice(), rows: [[ymd(at(25 * 60)), hms(at(25 * 60)), SHOP, 'ลลิตา', 50, '', 'Y1']] };
+  push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(1), 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': 15, 'ประเภท': 'เช็คสต็อก' });
+  const c = g.cashCheckAfterCount_(SHOP, new Date());
+  eq('เทียบเงินของเมื่อวานให้', c && c.expected, 50);
+  eq('ตรง', c && c.ok, true);
 }
 
 section('ส่งไลน์รวมทีเดียว');
