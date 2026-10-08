@@ -107,8 +107,8 @@ section('มาม่าเปล่า ถุงละ 21 อัน');
 g = fresh();
 eq('ของดิบ: อัน / ถุง / 21', [g.findStockItem_('มาม่าเปล่า (ดิบ)').subUnit, g.findStockItem_('มาม่าเปล่า (ดิบ)').packUnit,
    g.findStockItem_('มาม่าเปล่า (ดิบ)').perPack], ['อัน', 'ถุง', 21]);
-eq('ของส่งสาขา: อัน / ถุง / 21', [g.findStockItem_('มาม่าเปล่า').subUnit, g.findStockItem_('มาม่าเปล่า').packUnit,
-   g.findStockItem_('มาม่าเปล่า').perPack], ['อัน', 'ถุง', 21]);
+eq('ของส่งสาขา: อัน / แพ็คละ 10', [g.findStockItem_('มาม่าเปล่า').subUnit, g.findStockItem_('มาม่าเปล่า').packUnit,
+   g.findStockItem_('มาม่าเปล่า').perPack], ['อัน', 'แพ็ค', 10]);
 eq('ขายอันละ 10', g.findStockItem_('มาม่าเปล่า').price, 10);
 out = send(g, 'มาม่าเปล่า 2 ถุง 300', 'mm1');
 eq('2 ถุง = 42 อัน', bal(g)['มาม่าเปล่า (ดิบ)'], 42);
