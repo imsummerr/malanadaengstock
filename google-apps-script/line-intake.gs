@@ -554,7 +554,7 @@ var INTAKE_UNIT_RE =
   // แล้วสต็อกไม่ขยับทั้งที่พิมพ์มาถูกต้องแล้วในสายตาคนพิมพ์
   '|ถุง|แพ็ค|แพ้ค|แพ๊ค|แพ็ก|แพก|แพค|ชิ้น|อัน|ไม้|กล่อง|ลัง|มัด|กระปุก|ฝัก|ห่อ|แผ่น|ตัว|ใบ|ฟอง|ขวด|กระป๋อง|ที่' +
   // มาม่าเปล่านับเป็นก้อน/ซอง = อัน
-  '|ก้อน|ซอง|หลอด';
+  '|ก้อน|ซอง|หลอด|ลูก|ชุด';
 
 /**
  * ราคาต่อกิโลที่คนพิมพ์บอกมาเอง เช่น "โลละ 136 บาท"
@@ -1119,6 +1119,18 @@ function intakeItemNames_() {
  */
 function intakeStockQty_(item, counts, gram, perBag) {
   if (!item) return null;
+
+  // เบเกอรี่ — ยอดเก็บเป็นลูก/ชิ้น · ไดฟุกุ แพ็ค = 2 ชุด = 80 ลูก · บราวนี่ แพ็ค = 25 ชิ้น
+  if (item.bakery) {
+    if (!counts || !counts.length) return null;
+    var ps = Number(item.perStick) > 0 ? Number(item.perStick) : 1;
+    var pp = Number(item.perPack) > 0 ? Number(item.perPack) : 1;
+    var bu = intakeNorm_(counts[0].unit), bn = counts[0].n;
+    if (/^(ลูก|ชิ้น|อัน)$/.test(bu) || !bu)              return { base: bn, packs: 0, per: pp };
+    if (bu === intakeNorm_(item.subUnit))                 return { base: bn * ps, packs: 0, per: pp };
+    if (/^(แพ็ค|แพก|แพค|กล่อง|ถุง|ลัง)$/.test(bu))      return { base: bn * pp * ps, packs: bn, per: pp };
+    return null;
+  }
 
   // บอก "ถุงละ N" มาเองกับของที่ยกถุงแล้วนับย่อยได้ — ใช้ตามที่บอก (ถุงนี้อาจไม่เท่าปกติ)
   if (perBag > 0 && item.kind === 'วัตถุดิบ' && item.perPack > 1 && counts && counts.length &&

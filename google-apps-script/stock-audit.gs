@@ -1314,10 +1314,12 @@ function handleBakeryCount_(body) {
     BAKERY_ITEMS.forEach(function (b) {
       var it = findStockItem_(b[0]);
       var qty = Number(got[b[0]]), had = sys[b[0]] || 0, used = Math.round((had - qty) * 1000) / 1000;
+      var sp = it ? splitUnits_(qty, it) : { packs: 0, sticks: qty, pieces: 0 };
       rows.push({ 'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': session.name, 'รายการ': b[0],
                   'จำนวน': qty, 'หน่วย': it ? baseUnitOf_(it) : 'ชิ้น', 'ประเภท': KIND_BAKERY_COUNT,
                   'หมายเหตุ': round + ' · ยอดระบบ ' + had,
-                  'แพ็ค': 0, 'เศษ': qty, 'ไม้ต่อแพ็ค': it ? it.perPack : 10 });
+                  'แพ็ค': sp.packs, 'เศษ': sp.sticks, 'เศษ(ชิ้น)': sp.pieces,
+                  'ไม้ต่อแพ็ค': it ? it.perPack : 10, 'ชิ้นต่อไม้': it ? perStickOf_(it) : 1 });
       if (qty > 0) left.push(b[0] + ' ' + qty);
       if (used > 0) { sold.push({ name: b[0], qty: used }); soldN += used; }
       if (used < 0) overs.push({ name: b[0], qty: -used });

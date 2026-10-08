@@ -1224,6 +1224,17 @@ var KIND_BAKERY = 'เบเกอรี่';
  * สาขานับในแท็บ 🍡 เบเกอรี่ วันละ 2 รอบ (ก่อนขาย / หลังขาย) ไม่ได้นับรวมกับเช็คสต็อกหม่าล่า
  * [ชื่อ, ต้นทุน/ชิ้น] */
 var BAKERY_PRICE = 10;
+/* หน่วยของเบเกอรี่ (8/10) — ยอดเก็บเป็นชิ้น/ลูกเสมอ
+ *   ไดฟุกุ   1 แพ็ค = 2 ชุด · 1 ชุด = 40 ลูก · ส่งสาขาเป็นชุด
+ *   บราวนี่  1 แพ็ค = 25 ชิ้น · ส่งสาขาทีละ 15 ชิ้น (ลงช่องเศษ) */
+var BAKERY_UNITS = {
+  'ไดฟุกุ':  { subUnit: 'ชุด',  perPack: 2,  perStick: 40, piece: 'ลูก' },
+  'บราวนี่': { subUnit: 'ชิ้น', perPack: 25, perStick: 1,  piece: 'ชิ้น' }
+};
+function bakeryUnits_(name) {
+  var m = String(name || '').match(/^(ไดฟุกุ|บราวนี่)/);
+  return (m && BAKERY_UNITS[m[1]]) || { subUnit: 'ชิ้น', perPack: 10, perStick: 1, piece: 'ชิ้น' };
+}
 var BAKERY_ITEMS = [
   ['ไดฟุกุ นมสด', 6.5], ['ไดฟุกุ ช็อกโกแลต', 6.5], ['ไดฟุกุ ชาเขียว', 6.5], ['ไดฟุกุ โอริโอ้', 6.5],
   ['บราวนี่ นูเทลล่า', 6], ['บราวนี่ โอริโอ้', 6]
@@ -1578,7 +1589,7 @@ function getStockItemsRaw_() {
 function lowPacksFor_(item, loc) {
   // เบเกอรี่ตั้งจุดเตือนไว้ในโค้ดเป็นชิ้น (BAKERY_LOW) — แปลงเป็นแพ็ค
   var bk = item && item.bakery ? bakeryLowPieces_(item.name, loc) : 0;
-  if (bk) return bk / (item.perPack > 0 ? item.perPack : 1);
+  if (bk) return bk / ((item.perPack > 0 ? item.perPack : 1) * perStickOf_(item));
   if (String(loc || '').trim() === CENTRAL) return item.lowPacks || 0;
   return item.lowPacksBranch > 0 ? item.lowPacksBranch : (item.lowPacks || 0);
 }
@@ -1890,8 +1901,8 @@ function checkLowStock_(itemNames, location, balOverride) {
 
     var isLow = have <= limit;
     if (isLow && !wasLow) {
-      hits.push('• ' + name + ' เหลือ ' + (it.bakery ? have + ' ' + it.subUnit : fmtPack_(have, it)) +
-                (it.bakery ? '  (จุดเตือน ' + limit + ' ' + it.subUnit + ')'
+      hits.push('• ' + name + ' เหลือ ' + (it.bakery ? have + ' ' + bakeryUnits_(name).piece : fmtPack_(have, it)) +
+                (it.bakery ? '  (จุดเตือน ' + Math.round(limit) + ' ' + bakeryUnits_(name).piece + ')'
                            : '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')'));
       toSet[key] = '1';
     } else if (!isLow && wasLow) {
@@ -3101,9 +3112,13 @@ function itemCatalogue_() {
 
   // เบเกอรี่ — ซื้อ/รับเข้าครัวกลาง ส่งสาขา ขายเป็นชิ้น ไม่ต้องแพ็ค
   BAKERY_ITEMS.forEach(function (b) {
-    out.push({ name: b[0], kind: KIND_BAKERY, subUnit: 'ชิ้น', packUnit: 'แพ็ค', perPack: PACK_SIZE,
-               perStick: 1, price: BAKERY_PRICE, scope: '', raws: [],
-               note: 'เบเกอรี่ ชิ้นละ ' + BAKERY_PRICE + ' · ต้นทุนชิ้นละ ' + b[1] +
+    var u = bakeryUnits_(b[0]);
+    out.push({ name: b[0], kind: KIND_BAKERY, subUnit: u.subUnit, packUnit: 'แพ็ค', perPack: u.perPack,
+               // ราคาขายต่อหน่วยย่อย — ไดฟุกุ 1 ชุด 40 ลูก = 400 · บราวนี่ชิ้นละ 10
+               perStick: u.perStick, price: BAKERY_PRICE * u.perStick, scope: '', raws: [],
+               note: 'เบเกอรี่ ' + u.piece + 'ละ ' + BAKERY_PRICE + ' · ต้นทุน' + u.piece + 'ละ ' + b[1] +
+                     ' · 1 แพ็ค = ' + u.perPack + ' ' + u.subUnit +
+                     (u.perStick > 1 ? ' · 1 ' + u.subUnit + ' = ' + u.perStick + ' ' + u.piece : '') +
                      ' · สาขานับในแท็บเบเกอรี่ (ก่อนขาย/หลังขาย)' });
   });
   return out;
@@ -3155,7 +3170,7 @@ function applyItemCatalogue() {
     // ราคาที่เจ้าของกรอกเองในชีต (เช่น ของ 15 บาท) ห้ามเขียนทับกลับเป็น 10
     // เขียนให้เฉพาะช่องที่ยังว่าง หรือของที่ตั้งราคาไว้ใน PRICE_EXCEPTION
     var priceCell = sh.getRange(row, map['ราคาขาย/หน่วยย่อย'] + 1).getValue();
-    if (Number(priceCell) > 0 && PRICE_EXCEPTION[it.name] === undefined) delete vals['ราคาขาย/หน่วยย่อย'];
+    if (Number(priceCell) > 0 && PRICE_EXCEPTION[it.name] === undefined && it.kind !== KIND_BAKERY) delete vals['ราคาขาย/หน่วยย่อย'];
     Object.keys(vals).forEach(function (k) {
       if (k === 'สินค้า') return;
       sh.getRange(row, map[k] + 1).setValue(vals[k]);

@@ -100,13 +100,15 @@ g.checkToken_ = () => ({ role: 'staff', branch: SHOP, branches: [SHOP], name: '�
 const FL = g.BAKERY_ITEMS.map(b => b[0]);
 g.handleBakeryCount_({ token: 't', round: 'ก่อนขาย', rows: FL.map(n => ({ item: n, qty: n === DF ? 15 : n === BR ? 12 : 30 })) });
 let all = g.__env.SENT.map(s => s.messages.map(m => m.text).join('\n')).join('\n');
-eq('สาขาไดฟุกุ 15 ≤ 20 → เตือน', /ใกล้หมด[\s\S]*ไดฟุกุ นมสด เหลือ 15 ชิ้น/.test(all), true);
+eq('สาขาไดฟุกุ 15 ≤ 20 → เตือน', /ใกล้หมด[\s\S]*ไดฟุกุ นมสด เหลือ 15 ลูก  \(จุดเตือน 20 ลูก\)/.test(all), true);
 eq('บราวนี่ 12 > 10 ไม่เตือน', /บราวนี่ นูเทลล่า เหลือ/.test(all), false);
 g.__env.SENT.length = 0;
-rcv(g, '2026-10-01T10:00:00', DF, 50, '2026-10-01');
+rcv(g, '2026-10-01T10:00:00', DF, 120, '2026-10-01');
 g.checkToken_ = () => ({ role: 'owner', branch: '', branches: [], name: 'เจ้าของ' });
-g.handleStockToShop_({ token: 't', item: DF, packs: 1, rem: 5, location: SHOP });
+const sr = g.handleStockToShop_({ token: 't', item: DF, packs: 0, rem: 2, location: SHOP });   // ส่ง 2 ชุด
+eq('ส่ง 2 ชุด = 80 ลูก = 1 แพ็ค', sr.text, '1 แพ็ค');
 all = g.__env.SENT.map(s => (s.to || '') + ' ' + s.messages.map(m => m.text).join('\n')).join('\n');
-eq('ครัวกลางเหลือ 35 ≤ 40 → เตือนกลุ่มครัวกลาง', /Ccentral[\s\S]*ไดฟุกุ นมสด เหลือ 35 ชิ้น/.test(all), true);
+eq('ครัวกลางเหลือ 40 ≤ 40 → เตือนกลุ่มครัวกลาง', /Ccentral[\s\S]*ไดฟุกุ นมสด เหลือ 40 ลูก/.test(all), true);
+eq('สาขาได้ 80 ลูก', g.stockBalances_()[SHOP][DF] - 15, 80);
 
 done();

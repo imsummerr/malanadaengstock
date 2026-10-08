@@ -19,7 +19,10 @@ function setup() {
 section('รายการสินค้า');
 let g = setup();
 const dk = g.findStockItem_('ไดฟุกุ นมสด'), br = g.findStockItem_('บราวนี่ โอริโอ้');
-eq('ไดฟุกุ ชิ้นละ 10 เป็นเบเกอรี่', [dk.price, dk.kind, dk.subUnit, dk.bakery], [10, 'เบเกอรี่', 'ชิ้น', true]);
+eq('ไดฟุกุ: แพ็ค = 2 ชุด · ชุด = 40 ลูก · ชุดละ 400 (ลูกละ 10)', [dk.packUnit, dk.perPack, dk.subUnit, dk.perStick, dk.price, dk.kind, dk.bakery],
+   ['แพ็ค', 2, 'ชุด', 40, 400, 'เบเกอรี่', true]);
+eq('บราวนี่: แพ็ค = 25 ชิ้น · ชิ้นละ 10', [br.packUnit, br.perPack, br.subUnit, br.perStick, br.price], ['แพ็ค', 25, 'ชิ้น', 1, 10]);
+eq('ยอดเก็บเป็นลูก/ชิ้น', [g.baseUnitOf_(dk), g.toBase_(1, 1, 5, dk), g.fmtPack_(125, dk)], ['ชิ้น', 125, '1 แพ็ค 1 ชุด 5 ชิ้น']);
 eq('มีทั้งครัวกลางและสาขา', dk.scope, '');
 eq('ต้นทุน ไดฟุกุ 6.5 · บราวนี่ 6', [g.bakeryCost_('ไดฟุกุ ชาเขียว'), g.bakeryCost_('บราวนี่ นูเทลล่า')], [6.5, 6]);
 eq('ครบ 6 รส', FL.every(n => g.findStockItem_(n)), true);

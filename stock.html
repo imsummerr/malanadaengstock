@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09a';
+const PAGE_BUILD = '2026-10-09b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -844,7 +844,10 @@ function recalc() {
   const over = (tab !== 'in') && after < 0;
   box.innerHTML =
     `<div class="big">${esc(fmtPack(total, it))}</div>` +
-    (it.perPack > 1 ? `<div class="sub">= ${total} ${esc(it.subUnit)} (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)})</div>` : '') +
+    // ยอดรวมเป็นหน่วยเล็กสุด — ของที่ไม้/ชุดหนึ่งมีหลายชิ้น (เต้าชีส ไดฟุกุ) หน่วยเล็กสุดคือชิ้น/ลูก ไม่ใช่ไม้/ชุด
+    (it.perPack > 1 || perStickOf(it) > 1 ? `<div class="sub">= ${total} ${esc(perStickOf(it) > 1 ? (/^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น') : it.subUnit)}` +
+      ` (1 ${esc(it.packUnit)} = ${it.perPack} ${esc(it.subUnit)}` +
+      (perStickOf(it) > 1 ? ` · 1 ${esc(it.subUnit)} = ${perStickOf(it)} ${/^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น'}` : '') + ')</div>' : '') +
     (isOwner()
       ? `<div class="sub">${esc(from)} ${esc(fmtPack(have, it))} → เหลือ <b>${esc(fmtPack(after, it))}</b>` +
         (over ? ' <span class="low">⚠️ มากกว่าที่มีในสต็อก</span>' : '') + '</div>'
@@ -1248,8 +1251,9 @@ function viewBakery(v) {
     <div style="display:flex;gap:8px">${rbtn('ก่อนขาย')}${rbtn('หลังขาย')}</div>
   </div>
   <div class="card">
-    <h2 style="font-size:16px">นับ${BK_ROUND} (ชิ้น)</h2>
-    ${items.map((it, k) => row('bk-i-' + k, it.name, 'ชิ้น')).join('')}
+    <h2 style="font-size:16px">นับ${BK_ROUND}</h2>
+    <p class="note" style="margin-top:0">ไดฟุกุนับเป็นลูก (1 ชุด = 40 ลูก) · บราวนี่นับเป็นชิ้น</p>
+    ${items.map((it, k) => row('bk-i-' + k, it.name, /^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น')).join('')}
     ${after ? '<h2 style="font-size:16px;margin-top:16px">เงินที่ได้วันนี้</h2>' +
               BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') : ''}
     <button class="key btn-red submit" id="bk-btn" onclick="submitBakery()">บันทึก${BK_ROUND}</button>
