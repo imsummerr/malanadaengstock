@@ -1787,8 +1787,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         ]);
         expTotal += it.baht || 0;
         var shared = !expBiz && typeof COST_SHARED_TYPES === 'object' && COST_SHARED_TYPES.hasOwnProperty(type);
+        var saleOnly = shared && typeof COST_SHARED_SALE_DAYS_ONLY === 'object' && COST_SHARED_SALE_DAYS_ONLY[type];
         var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay) +
-                      (shared ? '  (แบ่งครึ่ง หม่าล่า/เบเกอรี่)' : '');
+                      (saleOnly ? '  (แบ่งครึ่งกับเบเกอรี่ถ้าวันนั้นเบเกอรี่ขาย)'
+                       : shared ? '  (แบ่งครึ่ง หม่าล่า/เบเกอรี่)' : '');
         expLines.push(expLine);
         // หัวแยกตามสาขา + ธุรกิจ — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
         var expKey = expLoc + '|' + (expBiz || 'หม่าล่า');

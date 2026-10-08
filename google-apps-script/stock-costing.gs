@@ -48,10 +48,15 @@ var COST_BIZES = ['หม่าล่า', 'เบเกอรี่'];
  * ค่าน้ำ ค่าน้ำแข็ง ค่าไฟ และอื่น ๆ ที่ไม่ได้อยู่ในนี้ = หม่าล่าทั้งหมด
  */
 var COST_SHARED_TYPES = { 'ค่าที่': 0.5, 'ค่าแรง': 0.5 };
+/**
+ * เริ่มแบ่งตั้งแต่วันที่เบเกอรี่เริ่มขาย (BAKERY_START_DATE) — ก่อนนั้นเป็นหม่าล่าทั้งหมด
+ *   ค่าที่   แบ่งครึ่งทุกวัน แม้วันนั้นเบเกอรี่ไม่ได้ขาย
+ *   ค่าแรง  แบ่งครึ่งเฉพาะวันที่เบเกอรี่ขาย · วันไม่ขาย = หม่าล่า 300 เต็ม
+ */
+var COST_SHARED_SALE_DAYS_ONLY = { 'ค่าแรง': true };
 
 /**
- * แบ่งให้เบเกอรี่เฉพาะ "วันที่เบเกอรี่ขาย" — วันที่พนักงานสาขากรอกยอดเบเกอรี่หลังขายแล้วมีขาย
- * วันที่เบเกอรี่ไม่ได้ขาย ค่าที่/ค่าแรงเป็นของหม่าล่าเต็มจำนวน (ค่าแรง 300 → หม่าล่า 300)
+ * วันที่เบเกอรี่ขาย — วันที่พนักงานสาขากรอกยอดเบเกอรี่หลังขายแล้วมีขาย
  * คืน { 'สาขา|yyyy-MM-dd': true }
  */
 function costBakeryDays_() {
@@ -812,11 +817,13 @@ function costOutgo_(biz) {
     // ไม่ได้เขียน: ค่าที่ / ค่าแรง(ค่าพนักงาน) แบ่งครึ่ง · อย่างอื่นเป็นหม่าล่าหมด
     if (biz) {
       var tag = iBiz === -1 ? '' : String(v[r][iBiz] || '').trim();
-      // ค่าที่/ค่าแรง แบ่งครึ่งเฉพาะวันที่เบเกอรี่ขาย — วันอื่นเป็นหม่าล่าทั้งหมด
+      // ค่าที่ แบ่งครึ่งทุกวันตั้งแต่เบเกอรี่เริ่มขาย · ค่าแรง แบ่งเฉพาะวันที่เบเกอรี่ขาย
       var cut = 0;
       if (!tag && COST_SHARED_TYPES.hasOwnProperty(type)) {
         var day = costExpenseDay_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]);
-        if (costBakeryDays_()[loc + '|' + day]) cut = COST_SHARED_TYPES[type];
+        var started = !(typeof BAKERY_START_DATE === 'string') || (day && day >= BAKERY_START_DATE);
+        var saleDay = !COST_SHARED_SALE_DAYS_ONLY[type] || costBakeryDays_()[loc + '|' + day];
+        if (started && saleDay) cut = COST_SHARED_TYPES[type];
       }
       var share = tag ? (costBizCell_(tag) === biz ? 1 : 0)
                       : (biz === 'เบเกอรี่' ? cut : 1 - cut);
