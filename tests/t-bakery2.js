@@ -8,6 +8,7 @@ const BR = 'บราวนี่ นูเทลล่า', DF = 'ไดฟุ�
 function setup() {
   const g = fresh();
   g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
+  g.BAKERY_START_DATE = '2000-01-01';
   const S = g.__env.SHEETS[g.SHEET_INCOMING];
   if (S.headers.indexOf(g.BAKERY_START_COL) === -1) { S.headers.push(g.BAKERY_START_COL); S.rows.forEach(r => r.push('')); }
   return g;

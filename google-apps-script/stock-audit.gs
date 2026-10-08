@@ -1216,7 +1216,7 @@ function bakeryMoneyRows_() {
     out.push({ row: i + 1, ms: ms, day: cashBizDay_(ms), loc: String(v[i][idx['สาขา']] || '').trim(),
                cash: num_(v[i][idx['เงินสด']]), transfer: num_(v[i][idx['เงินโอน']]),
                thai: num_(v[i][idx['ไทยช่วยไทย']]), money: num_(v[i][idx['รวมเงิน']]),
-               id: v[i][idx['bakery_id']] });
+               sold: num_(v[i][idx['ขาย(ชิ้น)']]), id: v[i][idx['bakery_id']] });
   }
   return out;
 }
@@ -1229,6 +1229,7 @@ function bakeryIncome_() {
   var last = {};
   bakeryMoneyRows_().forEach(function (r) {
     if (typeof costBefore_ === 'function' && costBefore_(new Date(r.ms), r.loc)) return;
+    if (typeof BAKERY_START_DATE === 'string' && r.day < BAKERY_START_DATE) return;   // ก่อนเริ่มขาย = ลองระบบ
     var k = r.loc + '|' + r.day;
     if (!last[k] || r.ms >= last[k].ms) last[k] = r;
   });

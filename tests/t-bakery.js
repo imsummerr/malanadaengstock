@@ -13,6 +13,7 @@ function setup() {
   const g = fresh();
   g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
   g.CASH_DAY_CUT_HOURS = (new Date(NOW).getHours() + 16) % 24;   // วันทำการเริ่ม 8 ชม.ก่อน
+  g.BAKERY_START_DATE = '2000-01-01';                              // เทสต์ใช้เวลาจริง ไม่ผูกกับวันเริ่มขาย
   return g;
 }
 
@@ -124,7 +125,15 @@ section('ค่าที่ / ค่าพนักงาน แบ่งคร�
   const ex = (type, amt, biz) => push(g2, g2.SHEET_EXPENSE, { 'วันที่': d, 'เวลา': t, 'สาขา': SHOP, 'ประเภท': type, 'จำนวนเงิน': amt, 'ธุรกิจ': biz || '' });
   ex('ค่าที่', 120); ex('ค่าแรง', 300); ex('ค่าน้ำแข็ง', 10); ex('อื่น ๆ', 40); ex('ค่าที่', 20, 'หม่าล่า');
   g2.cacheClear_();
-  const sm = g2.costSummary_();
+  let sm = g2.costSummary_();
+  eq('วันนี้เบเกอรี่ยังไม่ได้ขาย → ค่าที่ ค่าแรง เป็นหม่าล่าทั้งหมด 490', sm.pl[SHOP]['ค่าใช้จ่ายอื่น'], 490);
+  eq('เบเกอรี่ไม่โดนหัก', (sm.biz['เบเกอรี่'].pl[SHOP] || {})['ค่าใช้จ่ายอื่น'] || 0, 0);
+  // พนักงานกรอกยอดเบเกอรี่วันนี้ (มีขาย) → แบ่งครึ่ง
+  g2.checkToken_ = () => staff;
+  g2.handleBakeryCount_({ token: 't', round: 'ก่อนขาย', rows: rowsOf([10, 0, 0, 0, 0, 0]) });
+  g2.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([5, 0, 0, 0, 0, 0]), money: { cash: 50, transfer: 0, thai: 0 }, id: 'S1' });
+  g2.cacheClear_();
+  sm = g2.costSummary_();
   const m = sm.pl[SHOP], b = sm.biz['เบเกอรี่'].pl[SHOP];
   eq('หม่าล่า: ค่าที่ 60+20 · ค่าแรง 150 · น้ำแข็ง 10 · อื่น 40 = 280', m['ค่าใช้จ่ายอื่น'], 280);
   eq('เบเกอรี่: ค่าที่ 60 · ค่าแรง 150 = 210', b['ค่าใช้จ่ายอื่น'], 210);
@@ -135,6 +144,30 @@ section('ค่าที่ / ค่าพนักงาน แบ่งคร�
   const last = EX.rows.slice(-1)[0];
   eq('ไลน์ ค่าพนักงาน → ค่าแรง ธุรกิจว่าง', [last[EX.headers.indexOf('ประเภท')], last[EX.headers.indexOf('ธุรกิจ')]], ['ค่าแรง', '']);
   eq('ตอบว่าแบ่งครึ่ง', /แบ่งครึ่ง หม่าล่า\/เบเกอรี่/.test(o), true);
+}
+
+section('เบเกอรี่เริ่มขาย 9/10 — ก่อนนั้นค่าที่ค่าแรงเป็นหม่าล่าทั้งหมด · แบ่งเฉพาะวันที่เบเกอรี่ขาย');
+{
+  const g3 = fresh();
+  g3.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
+  const EX = g3.__env.SHEETS[g3.SHEET_EXPENSE] || (g3.__env.SHEETS[g3.SHEET_EXPENSE] = { headers: g3.EXPENSE_HEADERS.slice(), rows: [] });
+  if (EX.headers.indexOf('ธุรกิจ') === -1) { EX.headers.push('ธุรกิจ'); EX.rows.forEach(r => r.push('')); }
+  const ex = (d, type, amt) => push(g3, g3.SHEET_EXPENSE, { 'วันที่': d, 'เวลา': '18:00:00', 'สาขา': SHOP, 'ประเภท': type, 'จำนวนเงิน': amt, 'ธุรกิจ': '' });
+  ex('2026-10-07', 'ค่าที่', 120); ex('2026-10-07', 'ค่าแรง', 300);
+  ex('2026-10-09', 'ค่าที่', 120); ex('2026-10-09', 'ค่าแรง', 300);
+  ex('2026-10-10', 'ค่าที่', 120); ex('2026-10-10', 'ค่าแรง', 300);
+  g3.bakerySheet_();
+  const BS = g3.__env.SHEETS[g3.SHEET_BAKERY];
+  const brow = (d, money, sold) => BS.rows.push([d, '21:00:00', SHOP, 'ลลิตา', money, 0, 0, money, sold, sold * 10, 0, 'ตรง', '', 'x' + d]);
+  brow('2026-10-08', 40, 4);     // กรอกลองระบบก่อนเริ่มขาย — ไม่นับ
+  brow('2026-10-09', 200, 20);   // 9/10 ขายเบเกอรี่
+  brow('2026-10-10', 0, 0);      // 10/10 กรอกแต่ไม่มีขาย
+  g3.cacheClear_();
+  const sm = g3.costSummary_();
+  eq('หม่าล่า: 7/10 เต็ม 420 + 9/10 ครึ่ง 210 + 10/10 เต็ม 420 = 1050', sm.pl[SHOP]['ค่าใช้จ่ายอื่น'], 1050);
+  eq('เบเกอรี่: แค่ 9/10 = ค่าที่ 60 + ค่าแรง 150 = 210', sm.biz['เบเกอรี่'].pl[SHOP]['ค่าใช้จ่ายอื่น'], 210);
+  eq('รายได้เบเกอรี่ไม่นับวันลองระบบ 8/10', sm.biz['เบเกอรี่'].pl[SHOP]['รายได้'], 200);
+  eq('รวมยังเท่าค่าใช้จ่ายจริง 1260', sm.biz['รวม'].pl[SHOP]['ค่าใช้จ่ายอื่น'], 1260);
 }
 
 done();

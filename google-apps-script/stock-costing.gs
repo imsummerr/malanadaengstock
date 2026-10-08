@@ -49,6 +49,30 @@ var COST_BIZES = ['หม่าล่า', 'เบเกอรี่'];
  */
 var COST_SHARED_TYPES = { 'ค่าที่': 0.5, 'ค่าแรง': 0.5 };
 
+/**
+ * แบ่งให้เบเกอรี่เฉพาะ "วันที่เบเกอรี่ขาย" — วันที่พนักงานสาขากรอกยอดเบเกอรี่หลังขายแล้วมีขาย
+ * วันที่เบเกอรี่ไม่ได้ขาย ค่าที่/ค่าแรงเป็นของหม่าล่าเต็มจำนวน (ค่าแรง 300 → หม่าล่า 300)
+ * คืน { 'สาขา|yyyy-MM-dd': true }
+ */
+function costBakeryDays_() {
+  return cached_('cost:bakerydays', function () {
+    var out = {};
+    if (typeof bakeryMoneyRows_ !== 'function') return out;
+    bakeryMoneyRows_().forEach(function (r) {
+      if (typeof BAKERY_START_DATE === 'string' && r.day < BAKERY_START_DATE) return;
+      if (r.money > 0 || r.sold > 0) out[r.loc + '|' + r.day] = true;
+    });
+    return out;
+  });
+}
+/** วันทำการของแถวค่าใช้จ่าย (ตี 4 ยังเป็นวันก่อน เหมือนปิดร้าน) */
+function costExpenseDay_(dateCell, timeCell) {
+  var t = costRowTime_(dateCell, timeCell);
+  var ms = t instanceof Date ? t.getTime() : costTime_(t);
+  if (!ms) return '';
+  return (typeof cashBizDay_ === 'function') ? cashBizDay_(ms) : Utilities.formatDate(new Date(ms), costTz_(), 'yyyy-MM-dd');
+}
+
 function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
 
 /**
@@ -788,10 +812,14 @@ function costOutgo_(biz) {
     // ไม่ได้เขียน: ค่าที่ / ค่าแรง(ค่าพนักงาน) แบ่งครึ่ง · อย่างอื่นเป็นหม่าล่าหมด
     if (biz) {
       var tag = iBiz === -1 ? '' : String(v[r][iBiz] || '').trim();
+      // ค่าที่/ค่าแรง แบ่งครึ่งเฉพาะวันที่เบเกอรี่ขาย — วันอื่นเป็นหม่าล่าทั้งหมด
+      var cut = 0;
+      if (!tag && COST_SHARED_TYPES.hasOwnProperty(type)) {
+        var day = costExpenseDay_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]);
+        if (costBakeryDays_()[loc + '|' + day]) cut = COST_SHARED_TYPES[type];
+      }
       var share = tag ? (costBizCell_(tag) === biz ? 1 : 0)
-                      : (COST_SHARED_TYPES.hasOwnProperty(type)
-                          ? (biz === 'เบเกอรี่' ? COST_SHARED_TYPES[type] : 1 - COST_SHARED_TYPES[type])
-                          : (biz === 'หม่าล่า' ? 1 : 0));
+                      : (biz === 'เบเกอรี่' ? cut : 1 - cut);
       if (!share) continue;
       baht = costBaht_(baht * share);
     }
