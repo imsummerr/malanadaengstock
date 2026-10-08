@@ -5,7 +5,7 @@ const { eq, section, done } = makeCheck('เบเกอรี่ — นับ�
 
 const NOW = Date.now();
 const at = min => new Date(NOW - min * 60000);
-const FL = ['ไดฟุกุ นมสด', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้'];
+const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้'];
 const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] }));
 const staff = { role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' };
 
@@ -18,7 +18,7 @@ function setup() {
 
 section('รายการสินค้า');
 let g = setup();
-const dk = g.findStockItem_('ไดฟุกุ นมสด'), br = g.findStockItem_('บราวนี่ โอริโอ้');
+const dk = g.findStockItem_('ไดฟุกุ ครีมนม'), br = g.findStockItem_('บราวนี่ โอริโอ้');
 eq('ไดฟุกุ: แพ็ค = 2 ชุด · ชุด = 40 ลูก · ชุดละ 400 (ลูกละ 10)', [dk.packUnit, dk.perPack, dk.subUnit, dk.perStick, dk.price, dk.kind, dk.bakery],
    ['แพ็ค', 2, 'ชุด', 40, 400, 'เบเกอรี่', true]);
 eq('บราวนี่: แพ็ค = 25 ชิ้น · ชิ้นละ 10', [br.packUnit, br.perPack, br.subUnit, br.perStick, br.price], ['แพ็ค', 25, 'ชิ้น', 1, 10]);
@@ -30,16 +30,16 @@ eq('เช็คสต็อกปิดร้านสาขาไม่ต้�
 eq('ครัวกลางนับเบเกอรี่ด้วย', g.countItemsAt_(g.CENTRAL).filter(i => i.bakery).length, 6);
 
 section('ครัวกลางรับเข้า → ส่งสาขา');
-push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(600), 'สาขา': g.CENTRAL, 'รายการ': 'ไดฟุกุ นมสด', 'จำนวน': 20, 'ประเภท': 'ของเข้าครัวกลาง' });
+push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(600), 'สาขา': g.CENTRAL, 'รายการ': 'ไดฟุกุ ครีมนม', 'จำนวน': 20, 'ประเภท': 'ของเข้าครัวกลาง' });
 push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(600), 'สาขา': g.CENTRAL, 'รายการ': 'บราวนี่ โอริโอ้', 'จำนวน': 10, 'ประเภท': 'ของเข้าครัวกลาง' });
-push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(400), 'สาขา': SHOP, 'รายการ': 'ไดฟุกุ นมสด', 'จำนวน': 12, 'ประเภท': 'ของเข้าร้าน' });
+push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(400), 'สาขา': SHOP, 'รายการ': 'ไดฟุกุ ครีมนม', 'จำนวน': 12, 'ประเภท': 'ของเข้าร้าน' });
 push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(400), 'สาขา': SHOP, 'รายการ': 'บราวนี่ โอริโอ้', 'จำนวน': 6, 'ประเภท': 'ของเข้าร้าน' });
 g.cacheClear_();
 let s = g.costSummary_();
 const cRow = n => (s.biz['เบเกอรี่'].stock[g.CENTRAL].rows.find(r => r.item === n) || {});
-eq('ครัวกลางเหลือไดฟุกุ 8 × 6.5 = 52', cRow('ไดฟุกุ นมสด').value, 52);
+eq('ครัวกลางเหลือไดฟุกุ 8 × 6.5 = 52', cRow('ไดฟุกุ ครีมนม').value, 52);
 eq('ครัวกลางเหลือบราวนี่ 4 × 6 = 24', cRow('บราวนี่ โอริโอ้').value, 24);
-eq('ไม่ไปอยู่ในสต็อกหม่าล่า', (s.stock[g.CENTRAL] || { rows: [] }).rows.some(r => r.item === 'ไดฟุกุ นมสด'), false);
+eq('ไม่ไปอยู่ในสต็อกหม่าล่า', (s.stock[g.CENTRAL] || { rows: [] }).rows.some(r => r.item === 'ไดฟุกุ ครีมนม'), false);
 
 section('ก่อนขาย');
 g.checkToken_ = () => staff;
@@ -82,7 +82,7 @@ eq('รายได้วันนี้ 160 (แถวล่าสุด)', g.b
 section('บัญชี — ต้นทุนเบเกอรี่ = 11 × 6.5 + 5 × 6 = 101.5');
 g.cacheClear_();
 s = g.costSummary_();
-eq('สต็อกสาขาเหลือ 1 + 1', g.stockBalances_()[SHOP]['ไดฟุกุ นมสด'] + g.stockBalances_()[SHOP]['บราวนี่ โอริโอ้'], 2);
+eq('สต็อกสาขาเหลือ 1 + 1', g.stockBalances_()[SHOP]['ไดฟุกุ ครีมนม'] + g.stockBalances_()[SHOP]['บราวนี่ โอริโอ้'], 2);
 const bk = s.biz['เบเกอรี่'];
 eq('ต้นทุนเบเกอรี่ที่ขายไป', bk.pl[SHOP]['ค่าใช้จ่ายวัตถุดิบ'], 101.5);
 eq('รายได้เบเกอรี่ 160', bk.pl[SHOP]['รายได้'], 160);
@@ -109,7 +109,7 @@ eq('รายได้รวม', tot['รายได้'], (s.pl[SHOP]['รา
 eq('ขายเบเกอรี่แยกให้เห็น', tot['ขายเบเกอรี่'], 160);
 eq('ค่าใช้จ่ายอื่นรวม 500', tot['ค่าใช้จ่ายอื่น'], 500);
 eq('กำไรสุทธิรวม = สองฝั่งบวกกัน', tot['กำไรสุทธิ'], Math.round((s.pl[SHOP]['กำไรสุทธิ'] + s.biz['เบเกอรี่'].pl[SHOP]['กำไรสุทธิ']) * 100) / 100);
-eq('สต็อกรวมมีเบเกอรี่', s.biz['รวม'].stock[g.CENTRAL].rows.some(r => r.item === 'ไดฟุกุ นมสด'), true);
+eq('สต็อกรวมมีเบเกอรี่', s.biz['รวม'].stock[g.CENTRAL].rows.some(r => r.item === 'ไดฟุกุ ครีมนม'), true);
 g.buildLocationPL();
 const PL = g.__env.SHEETS['บัญชี_กำไรแต่ละที่'];
 const plRows = (PL.rows || []).filter(r => r[0] === SHOP).map(r => r[1]);
