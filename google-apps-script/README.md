@@ -227,3 +227,15 @@ var BRANCH_LINE_GROUPS = {
 - เหลือน้อยแจ้งเติม: สาขา ไดฟุกุ ≤ 20 / บราวนี่ ≤ 10 ต่อรส · ครัวกลาง ไดฟุกุ ≤ 40 / บราวนี่ ≤ 20 (`BAKERY_LOW`)
 - ค่าใช้จ่ายที่ไม่ได้เขียนธุรกิจ: ค่าที่ กับ ค่าแรง (ค่าพนักงาน) แบ่งครึ่ง หม่าล่า/เบเกอรี่ · อย่างอื่นเป็นหม่าล่า (`COST_SHARED_TYPES`)
 - บัญชีรวม: ชีต `บัญชี_กำไรแต่ละที่` มี 3 แถวต่อที่ (รวม / หม่าล่า / เบเกอรี่) · หน้าเว็บมีปุ่ม 📊 รวม
+
+## 🌐 หน้าเว็บ — ใช้ GitHub Pages (เลิกใช้ Netlify เพราะติดลิมิต)
+
+เปิดครั้งเดียว: GitHub → repo `malanadaengstock` → **Settings → Pages** → Source: **Deploy from a branch** → Branch: **main** · **/ (root)** → Save
+
+ลิงก์ (push ขึ้น main แล้วอัปเดตเองใน 1–2 นาที ไม่ต้องอัปโหลดไฟล์เอง):
+- หน้าแรก  https://imsummerr.github.io/malanadaengstock/
+- สต็อก     https://imsummerr.github.io/malanadaengstock/stock.html
+- POS       https://imsummerr.github.io/malanadaengstock/pos.html
+- สรุปยอด   https://imsummerr.github.io/malanadaengstock/pos-dashboard.html
+
+URL ของ Apps Script ฝังอยู่ในไฟล์ (`DEFAULT_API_URL`) ไม่ต้องตั้งค่าใหม่ · ย้ายลิงก์แล้วต้อง login ใหม่หนึ่งครั้ง (เบราว์เซอร์จำ login แยกตามเว็บ)
