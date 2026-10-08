@@ -1,79 +1,50 @@
 /************************************************************
- * 🔔 แจ้งเตือน LINE: ของรายการไหนต้องทิ้งวันนี้
+ * 🔔 แจ้งเตือน LINE: ของเข้าใหม่ และของที่ต้องทิ้ง
  *
- * มี 2 การแจ้งเตือน:
  *  1) ของเข้าใหม่ — เช็คชีต "จำนวนของเข้า" ทุก 5 นาที
- *     ถ้ามีของเข้าใหม่ จะแจ้ง LINE ทันทีว่าเข้าอะไรบ้าง
- *     พร้อมวันที่ควรทิ้งของแต่ละรายการ
- *  2) ของครบกำหนดทิ้ง — ทุกวันตอน 1 ทุ่ม (19:00 น.)
- *     แจ้งเฉพาะของที่ครบกำหนดทิ้ง "วันนี้" เท่านั้น (เลยกำหนดแล้วไม่แจ้ง)
- *     ของแห้ง/มาม่า/ของใช้ (ดู hasExpiry_) ไม่แจ้งวันหมดอายุ
+ *     แจ้ง LINE ทันทีว่าเข้าอะไร พร้อมวันที่ขายได้ถึง / วันที่ต้องทิ้ง
+ *  2) ของที่ต้องทิ้ง — แจ้งทันทีหลังพนักงานเช็คสต็อกสาขาเสร็จ (expiryAfterCount_)
+ *     แจ้งเฉพาะของที่ "ยังเหลืออยู่จริง" และขายได้ถึงวันนี้เป็นวันสุดท้าย
+ *     ขายหมดก่อนครบกำหนด = ไม่แจ้ง
  *
- * อายุของแต่ละรายการดู ITEM_EXPIRY_DAYS ด้านล่าง
- * นับรวมวันที่ของเข้า เช่น เข้า 1/7 อยู่ได้ 5 วัน → ต้องทิ้ง 5/7
+ * อายุของแต่ละรายการดู branchShelfDays_ ด้านล่าง
+ * ไม่นับวันที่ของเข้า เช่น เข้า 10/10 อยู่ได้ 3 วัน → ขายได้ถึง 13/10 · ทิ้ง 14/10 ก่อนขาย
  *
  * วิธีติดตั้ง: อ่านไฟล์ README.md ในโฟลเดอร์เดียวกัน
  ************************************************************/
 
-// ── ตั้งค่า ──
-// อายุของแต่ละรายการ (วัน นับรวมวันที่ของเข้า) — รายการที่ไม่อยู่ในตารางใช้ค่า DEFAULT
-var EXPIRY_DAYS_DEFAULT = 7;
-// ชื่อเก่ายังเก็บไว้ด้วย เผื่อแถวเก่าในชีตประวัติที่ยังไม่ได้เปลี่ยนชื่อ
-var ITEM_EXPIRY_DAYS = {
-  // ── 3 วัน: เนื้อสไลด์ และของพัน/ห่อที่ใช้เนื้อสด ──
-  'หมูสามชั้นสไลซ์': 3, 'หมูไม่ติดมัน': 3, 'หมูติดมันสไลซ์': 3, 'หมูติดมันหั่นชิ้น': 3,
-  'ไก่': 3, 'ไส้กรอกแดง': 7,
-  // หมูซื้อมาหั่นเสร็จแล้ว ของดิบก็เป็นเนื้อสด อยู่ได้ 3 วันเท่ากัน
-  'หมูสามชั้นสไลซ์ (ดิบ)': 3, 'หมูไม่ติดมัน (ดิบ)': 3, 'หมูติดมันสไลซ์ (ดิบ)': 3,
-  'หมูติดมันหั่นชิ้น (ดิบ)': 3, 'ไก่ (ดิบ)': 3,
-  'หมูพันเห็ดเข็มทอง': 3, 'หมูพันสาหร่าย': 3,
-  // ── ชื่อเก่า เก็บไว้เผื่อแถวเก่าในชีตประวัติ ──
-  'สันคอสไลซ์': 3, 'สันนอกสไลซ์': 3, 'สะโพกหมูสไลซ์': 3,
-  'หัวไหล่หมูติดหนังสไลซ์': 3, 'หัวไหล่หมูติดหนังหั่นชิ้น': 3, 'อกไก่เนื้อล้วนติดหนัง': 3,
-  'สันคอสไลซ์ (ดิบ)': 3, 'สันนอกสไลซ์ (ดิบ)': 3, 'สะโพกหมูสไลซ์ (ดิบ)': 3,
-  'หัวไหล่หมูติดหนังสไลซ์ (ดิบ)': 3, 'หัวไหล่หมูติดหนังหั่นชิ้น (ดิบ)': 3,
-  'อกไก่เนื้อล้วนติดหนัง (ดิบ)': 3, 'อกไก่ (ดิบ)': 3,
-  'หมูพันเห็ดชิเมจิ': 3, 'หมูพันผักกาดขาว': 3, 'เห็ดชิเมจิ (ดิบ)': 3,
-  'สามชั้นสไลซ์': 3, 'หัวไหล่หมูสไลซ์': 3,
-  'หัวไหล่หมูสไลซ์ (ไม้)': 3, 'หัวไหล่หมูสไลซ์ (ถุง)': 3,
-  'สันคอสไลด์': 3, 'สามชั้นสไลด์': 3, 'หัวไหล่หมูสไลด์': 3, 'สันนอก': 3,
-  'สะโพกหมูสไลด์': 3, 'สันนอกสไลด์': 3, 'หัวไหล่หมูติดหนังสไลด์': 3,
-  'อกไก่': 3, 'อกไก่ (โล)': 3, 'หัวไหล่หมู (ดิบ)': 3, 'หมูสามชั้น (ดิบ)': 3,
-  'สันคอ (ดิบ)': 3, 'สันนอก (ดิบ)': 3, 'สะโพกหมู (ดิบ)': 3,
-  'หมูห่อชีส': 3, 'สามชั้นพันเห็ดเข็มทอง': 3, 'สามชั้นพันสาหร่าย': 3,
-  'สามชั้นพันปูอัด': 3,
-  'เนื้อแดง': 3, 'สันนอกห่อชีส': 3, 'สามชั้นพันเห็ดเข็ม': 3,
-  // ── 7 วัน ──
-  'ดอลลี่': 7,
-  'ปูอัด': 7, 'ปูอัดชีส': 7, 'ปูอัดยาว': 7, 'ไส้กรอกหนังกรอบ': 7, 'ไส้กรอกชมพู': 7,
-  'เต้าหู้ชีส': 7, 'เต้าหู้หมู': 7, 'ชีสหลายสี': 7,
-  'เบคอนพันไส้กรอก': 7, 'ฟองเต้าหู้สามเหลี่ยม': 7,
-  'หมึก': 7, 'ปลาดอลลี่': 7, 'กุ้งพันสาหร่าย': 7, 'ไส้กรอกพันเบคอน': 7,  // ชื่อเก่า
-  // ── 10 วัน ──
-  'ปลาหมึกกรอบ': 10, 'แมงกะพรุน': 10,
-  // ── 15 วัน ──
-  'รากบัว': 15, 'ต็อก': 15, 'แป้งต็อก': 15
+// ── อายุของที่หน้าร้าน (ตั้ง 8/10/2026) ──
+// นับจากวันที่ของถึงสาขา (ไม่นับวันที่เข้า) ขายได้ถึง "วันเข้า + N" แล้วทิ้งเช้าวันถัดไปก่อนขาย
+//   หมูพันเห็ดเข็มทอง เข้า 10/10 อยู่ได้ 3 วัน → ขายได้ถึง 13/10 · ทิ้ง 14/10 ก่อนขาย
+// เฉพาะของขาย (ราคาขาย > 0) — หม่าล่า นมข้นจืด น้ำจิ้ม ของแถม ของใช้ ไม่นับวันหมดอายุ
+// ครัวกลางไม่นับ อายุเริ่มตอนของถึงหน้าร้าน
+//
+//   ของพัน (ครัวกลางพันเอง เช่น หมูพัน...)  3 วัน
+//   หมูสด (ชื่อขึ้นต้นด้วย "หมู")           5 วัน
+//   ทะเล · ดอลลี่                         5 วัน
+//   หมึกกรอบ · แมงกะพรุน                  7 วัน
+//   ลูกชิ้น และที่เหลือทั้งหมด              7 วัน
+var BRANCH_SHELF_DEFAULT = 7;
+// ตัวที่ระบุชื่อตรง ๆ — มาก่อนกฎอื่น แก้/เพิ่มตรงนี้ได้
+var BRANCH_SHELF_DAYS = {
+  'ดอลลี่': 5,
+  'ปลาหมึกกรอบ': 7, 'แมงกะพรุน': 7
 };
-function getItemExpiryDays_(name) { return ITEM_EXPIRY_DAYS[name] || EXPIRY_DAYS_DEFAULT; }
-
-// ── รายการที่ "ไม่ต้อง" แจ้งเตือนวันหมดอายุ (ของแห้ง/มาม่า/ของใช้ อยู่ได้นาน) ──
-var NO_EXPIRY_EXACT = {
-  'ฟองเต้าหู้ม้วน': 1, 'สาหร่ายกระปุก': 1, 'สาหร่ายแผ่น': 1,
-  'นมผง': 1, 'นมข้นจืด': 1, 'ตะเกียบ': 1, 'กระดูกหมู': 1,
-  'เบสหม่าล่า': 1, 'ผงหม่าล่า': 1, 'พริกป่น': 1, 'หม่าล่า(ผสมแล้ว)': 1,
-  // ชื่อเก่า
-  'ฟองเต้าหู้': 1, 'สาหร่าย': 1, 'นม': 1, 'ถ้วย': 1, 'ช้อน': 1,
-  'น้ำดำ': 1, 'น้ำกระดูกหมู': 1
-};
-function hasExpiry_(name) {
-  var n = String(name || '').trim();
-  if (NO_EXPIRY_EXACT[n]) return false;
-  // ตระกูลบะหมี่กึ่งสำเร็จรูป/เส้น/น้ำจิ้ม ทุกรส (เก็บได้นาน ไม่ต้องแจ้งหมดอายุ)
-  if (/มาม่า|ยำยำ|ควิซ|เส้น|บะหมี่|น้ำจิ้ม/.test(n)) return false;
-  // บรรจุภัณฑ์และของใช้ — ถ้วย 2 ออน / ถ้วย1000 มล / ถุงหูหิ้ว / ถุงร้อนใหญ่ / ช้อน
-  // ผูกกับต้นชื่อ ไม่ใช่ค้นทั้งชื่อ ไม่งั้น "ข้าวโพดถุง" จะโดนด้วย
-  if (/^(ถ้วย|ถุง|ช้อน|ตะเกียบ|กระดาษ|ไม้เสียบ)/.test(n)) return false;
-  return true;
+function branchShelfDays_(item) {
+  if (!item) return 0;
+  if (typeof KIND_PACKED === 'string' && item.kind && item.kind !== KIND_PACKED) return 0;
+  if (!(Number(item.price) > 0)) return 0;                    // ไม่ได้ขาย ไม่นับวันหมดอายุ
+  var n = String(item.name || '').trim();
+  if (BRANCH_SHELF_DAYS.hasOwnProperty(n)) return BRANCH_SHELF_DAYS[n];
+  // ของพัน — วัตถุดิบเป็นกลุ่มเนื้อหมู (@เนื้อหมู) หรือชื่อหมูพัน...
+  var wrapped = /^หมูพัน/.test(n) || (item.raws || []).some(function (r) { return String(r).charAt(0) === '@'; });
+  if (wrapped) return 3;
+  if (/^หมู/.test(n)) return 5;
+  return BRANCH_SHELF_DEFAULT;
+}
+function branchShelfOf_(name) {
+  var it = (typeof findStockItem_ === 'function') ? findStockItem_(String(name || '').trim()) : null;
+  return branchShelfDays_(it);
 }
 
 var INCOMING_SHEET_NAME = 'จำนวนของเข้า';   // ชื่อชีตที่เก็บข้อมูลของเข้า
@@ -208,14 +179,15 @@ function checkNewIncoming() {
     // ของแห้ง/มาม่า ไม่มีวันหมดอายุ แต่ก็ยังต้องแจ้งว่าเข้ามา แค่ไม่บอกวันทิ้ง
     var inDate = (colDate !== -1 ? parseThaiDate_(row[colDate]) : null) || new Date();
     var branch = colBranch !== -1 ? String(row[colBranch] || '') : '';
-    // ครัวกลางไม่ต้องบอกวันทิ้ง — ยังไม่เริ่มนับอายุ
-    var hasExp = hasExpiry_(name) && !isCentral_(branch);
+    // ครัวกลางไม่ต้องบอกวันทิ้ง — ยังไม่เริ่มนับอายุ · ของไม่ได้ขายก็ไม่บอก
+    var days = isCentral_(branch) ? 0 : branchShelfOf_(name);
     var expireStr = '';
-    if (hasExp) {
-      var days = getItemExpiryDays_(name);
-      var expire = new Date(inDate.getTime());
-      expire.setDate(expire.getDate() + days - 1);
-      expireStr = thaiDMY_(expire);
+    if (days) {
+      var lastSell = new Date(inDate.getTime());
+      lastSell.setDate(lastSell.getDate() + days);
+      var toss = new Date(lastSell.getTime());
+      toss.setDate(toss.getDate() + 1);
+      expireStr = 'ขายได้ถึง ' + thaiDMY_(lastSell) + ' · ทิ้ง ' + thaiDMY_(toss) + ' ก่อนขาย';
     }
     items.push({
       name:       name,
@@ -295,7 +267,7 @@ function buildIncomingMessage_(items) {
     lines.push(b);
     byBranch[b].forEach(function(it) {
       lines.push('• ' + it.name + qtyText_(it) +
-        (it.expireStr ? ' → ทิ้ง ' + it.expireStr : ''));
+        (it.expireStr ? ' → ' + it.expireStr : ''));
     });
   });
   return lines.join('\n');
@@ -309,114 +281,133 @@ function buildIncomingMessage_(items) {
  * ฟังก์ชันหลัก — Trigger รายวันจะเรียกตัวนี้
  */
 function notifyExpiringItems() {
-  var result = getItemsToDiscard_();
-  if (result.today.length === 0) {
-    Logger.log('วันนี้ไม่มีของต้องทิ้ง — ไม่ส่งแจ้งเตือน');
-    return;
-  }
+  // เลิกแจ้งตอน 1 ทุ่มจากวันที่ของเข้าแล้ว (8/10) — ของขายหมดไปแล้วก็ยังโดนแจ้งให้ทิ้ง
+  // ย้ายไปแจ้งหลังพนักงานเช็คสต็อกสาขาแทน (expiryAfterCount_) แจ้งเฉพาะของที่ยังเหลืออยู่จริง
+  Logger.log('แจ้งของหมดอายุย้ายไปแจ้งหลังเช็คสต็อกสาขาแล้ว — trigger ตัวนี้ไม่ส่งอะไร');
+}
 
-  // แยกส่งตามสาขา — สาขาไหนถึงวันทิ้ง แจ้งเข้ากลุ่มสาขานั้น
-  var branches = {};
-  result.today.forEach(function(it) {
-    var b = String(it.branch || '').trim();
-    (branches[b] = branches[b] || { today: [] }).today.push(it);
-  });
+// ============================================================
+// 3) หลังเช็คสต็อกสาขา — ของที่เหลือแล้วถึงกำหนดทิ้ง
+// ============================================================
 
-  Object.keys(branches).forEach(function(b) {
-    var msg = buildMessage_({
-      today:    branches[b].today,
-      todayKey: result.todayKey
+/** วันทำการ — ตี 4 ยังเป็นวันก่อน (ตรงกับปิดร้าน) */
+function expiryDay_(ms) {
+  if (typeof cashBizDay_ === 'function') return cashBizDay_(ms);
+  return Utilities.formatDate(new Date(ms), TZ, 'yyyy-MM-dd');
+}
+function expiryAddDays_(key, n) {
+  var d = new Date(key + 'T12:00:00+07:00');
+  return Utilities.formatDate(new Date(d.getTime() + n * 86400000), TZ, 'yyyy-MM-dd');
+}
+function expiryDM_(key) {
+  var p = String(key).split('-');
+  return Number(p[2]) + '/' + Number(p[1]) + '/' + p[0];
+}
+
+/**
+ * ของที่สาขาแต่ละชุด เข้ามาเมื่อไหร่ เหลือเท่าไหร่ — ไล่ตามเวลาแบบเข้าก่อนออกก่อน
+ *   ของเข้าร้าน     = ชุดใหม่ วันที่ของเข้า
+ *   ของเสีย / ขาย   = ตัดชุดเก่าสุดก่อน (นับได้น้อยกว่าที่มี = ขายไป)
+ *   นับได้มากกว่า   = ของเข้าที่ไม่ได้ลง → ถือว่าเข้าวันที่นับเจอ (ไม่ให้ของใหม่โดนสั่งทิ้ง)
+ * เริ่มจากวันเริ่มนับของสาขา (ยอดฐาน) — ก่อนนั้นไม่เอามาคิด
+ */
+function branchLots_(loc, itemName, uptoMs) {
+  var start = (typeof costStartDate_ === 'function') ? costStartDate_(loc) : 0;
+  var ev = [];
+  function add(sheet, type, step) {
+    readMoves_(sheet).forEach(function (m) {
+      if (m.loc !== loc || m.item !== itemName) return;
+      if (type === 'count' && typeof KIND_LEVEL_COUNT === 'string' && m.kind === KIND_LEVEL_COUNT) return;
+      if (type === 'in' && m.kind && m.kind !== 'ของเข้าร้าน') return;
+      var t = timeOf_(m.when);
+      if (!t || (start && t < start) || t > uptoMs + 60000) return;
+      ev.push({ t: t, type: type, step: step, qty: Number(m.qty) || 0 });
     });
-    sendLine_(msg, getBranchTarget_(b));
-    Logger.log('ส่งแจ้งเตือนสาขา "' + (b || 'ไม่ระบุ') + '":\n' + msg);
-  });
-}
-
-/**
- * อ่านชีต "จำนวนของเข้า" แล้วหาของที่ครบกำหนดทิ้งวันนี้ / เลยกำหนดแล้ว
- */
-function getItemsToDiscard_() {
-  var ss = ss_();
-  var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
-  if (!sheet) throw new Error('ไม่พบชีตชื่อ "' + INCOMING_SHEET_NAME + '"');
-
-  var values = sheet.getDataRange().getValues();
-  if (values.length < 2) return { today: [], overdue: [], todayKey: todayKey_() };
-
-  var headers = values[0].map(function(h) { return String(h).trim(); });
-  var colDate   = findCol_(headers, ['วันที่เวลา', 'วันที่', 'timestamp']);
-  var colBranch = findCol_(headers, ['สาขา', 'branch']);
-  var colName   = findCol_(headers, ['รายการ', 'ชื่อรายการ', 'ชื่อ', 'name']);
-  var colQty    = findCol_(headers, ['จำนวน', 'qty']);
-  var colUnit   = findCol_(headers, ['หน่วย', 'unit']);
-  if (colDate === -1 || colName === -1) {
-    throw new Error('หาคอลัมน์ วันที่เวลา/รายการ ในชีตไม่เจอ — หัวตารางปัจจุบัน: ' + headers.join(', '));
   }
+  add(SHEET_INCOMING, 'in', 1);
+  add(SHEET_WASTE, 'waste', 2);
+  add(SHEET_COUNT, 'count', 3);
+  ev.sort(function (a, b) { return (a.t - b.t) || (a.step - b.step); });
 
-  var tKey = todayKey_();
-  var today = [], overdue = [];
-
-  for (var i = 1; i < values.length; i++) {
-    var row = values[i];
-    var inDate = parseThaiDate_(row[colDate]);
-    if (!inDate) continue;
-
-    var name = String(row[colName] || '').trim();
-    if (!name) continue;
-    if (!hasExpiry_(name)) continue; // ของแห้ง/มาม่า/น้ำจิ้ม/ของใช้ — ไม่แจ้งวันหมดอายุ
-    // ครัวกลางไม่นับวันหมดอายุ อายุเริ่มนับตอนของถึงหน้าร้าน
-    if (colBranch !== -1 && isCentral_(row[colBranch])) continue;
-
-    // อยู่ได้ N วัน นับรวมวันของเข้า → วันที่ต้องทิ้ง = วันเข้า + (N-1)
-    var expiryDays = getItemExpiryDays_(name);
-    var expire = new Date(inDate.getTime());
-    expire.setDate(expire.getDate() + expiryDays - 1);
-    var expireKey = dateKey_(expire);
-
-    // แจ้งเฉพาะของที่ครบกำหนดทิ้ง "วันนี้" เท่านั้น (เลยกำหนดแล้วไม่ต้องแจ้ง)
-    if (expireKey === tKey) {
-      today.push({
-        name:   name,
-        qty:    colQty    !== -1 ? row[colQty]    : '',
-        unit:   colUnit   !== -1 ? String(row[colUnit] || '')   : '',
-        branch: colBranch !== -1 ? String(row[colBranch] || '') : '',
-        inDate: thaiDMY_(inDate)
-      });
+  var lots = [];
+  var total = function () { return lots.reduce(function (s, l) { return s + l.qty; }, 0); };
+  var takeOld = function (q) {
+    while (q > 0.0001 && lots.length) {
+      var n = Math.min(lots[0].qty, q);
+      lots[0].qty -= n; q -= n;
+      if (lots[0].qty <= 0.0001) lots.shift();
     }
-  }
-  return { today: today, overdue: overdue, todayKey: tKey };
+  };
+  ev.forEach(function (e) {
+    if (e.type === 'in') { if (e.qty > 0) lots.push({ t: e.t, qty: e.qty }); }
+    else if (e.type === 'waste') takeOld(e.qty);
+    else {
+      var have = total();
+      if (e.qty < have - 0.0001) takeOld(have - e.qty);
+      else if (e.qty > have + 0.0001) lots.push({ t: e.t, qty: e.qty - have, found: true });
+    }
+  });
+  return lots;
 }
 
 /**
- * สร้างข้อความแจ้งเตือน จัดกลุ่มตามสาขา
+ * นับสต็อกสาขาเสร็จ → ของที่ยังเหลือ และวันนี้เป็นวันสุดท้ายที่ขายได้ (หรือเลยมาแล้ว)
+ * counts = [{ item, counted }] จาก handleStockCount_ · คืน [{ item, qty, toss, last, arrived, days }]
  */
-function buildMessage_(result) {
-  var lines = ['🔔 แจ้งเตือนของหมดอายุ (' + thaiDMY_(keyToDate_(result.todayKey)) + ')'];
-
-  if (result.today.length) {
-    lines.push('');
-    lines.push('🗑️ ของที่ต้องทิ้ง "วันนี้":');
-    lines = lines.concat(groupByBranch_(result.today, function(it) {
-      return '• ' + it.name + (it.qty !== '' && it.qty != null ? ' ' + it.qty + ' ' + it.unit : '') + ' (เข้า ' + it.inDate + ')';
-    }));
-  }
-
-  return lines.join('\n');
-}
-
-function groupByBranch_(items, formatFn) {
-  var byBranch = {};
-  items.forEach(function(it) {
-    var b = it.branch || 'ไม่ระบุสาขา';
-    if (!byBranch[b]) byBranch[b] = [];
-    byBranch[b].push(formatFn(it));
-  });
-  var out = [];
-  Object.keys(byBranch).forEach(function(b) {
-    out.push('📍 ' + b);
-    out = out.concat(byBranch[b]);
+function expiryAfterCount_(loc, counts, now) {
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : CENTRAL_NAME;
+  if (!loc || loc === central) return [];
+  var ms = (now || new Date()).getTime(), today = expiryDay_(ms), out = [];
+  (counts || []).forEach(function (c) {
+    var it = c.item, days = branchShelfDays_(it);
+    if (!days || !(c.counted > 0)) return;
+    var due = 0, last = '', arrived = '';
+    branchLots_(loc, it.name, ms).forEach(function (l) {
+      var a = expiryDay_(l.t), lastSell = expiryAddDays_(a, days);
+      if (lastSell > today) return;
+      due += l.qty;
+      if (!last || lastSell < last) { last = lastSell; arrived = a; }
+    });
+    due = Math.min(Math.round(due * 1000) / 1000, c.counted);
+    if (due > 0) out.push({ item: it, qty: due, last: last, toss: expiryAddDays_(last, 1),
+                            arrived: arrived, days: days });
   });
   return out;
+}
+
+/** ข้อความแจ้งพนักงาน (หน้าเว็บ + กลุ่มไลน์สาขา) */
+function expiryText_(loc, list, now) {
+  var today = expiryDay_((now || new Date()).getTime());
+  var L = ['🗑️ ของที่ต้องทิ้งก่อนขาย — ' + loc];
+  list.forEach(function (x) {
+    var q = (typeof fmtPack_ === 'function') ? fmtPack_(x.qty, x.item) : x.qty + ' ' + x.item.subUnit;
+    var when = x.toss > today ? 'ทิ้งวันที่ ' + expiryDM_(x.toss) + ' ก่อนขาย'
+                              : 'ทิ้งเลยก่อนขาย (ครบกำหนดทิ้ง ' + expiryDM_(x.toss) + ')';
+    L.push('• ' + x.item.name + ' ' + q + ' — ' + when +
+           ' (เข้า ' + expiryDM_(x.arrived) + ' อยู่ได้ ' + x.days + ' วัน)');
+  });
+  L.push('', 'ทิ้งแล้วลง "ของเสีย" ในหน้าสต็อกด้วย');
+  return L.join('\n');
+}
+
+/** ลองดูจากยอดนับล่าสุดของสาขา โดยไม่ส่งไลน์ (ผลอยู่ใน Logs) */
+function previewDiscard() {
+  var groups = (typeof stockLineGroups_ === 'function') ? stockLineGroups_() : lineGroups_();
+  Object.keys(groups).forEach(function (loc) {
+    if (isCentral_(loc)) return;
+    var last = 0, qty = {};
+    readMoves_(SHEET_COUNT).forEach(function (m) {
+      if (m.loc !== loc || m.kind === KIND_LEVEL_COUNT) return;
+      var t = timeOf_(m.when);
+      if (t > last + 60000) { last = t; qty = {}; }
+      if (Math.abs(t - last) <= 60000) qty[m.item] = Number(m.qty) || 0;
+    });
+    if (!last) return;
+    var counts = Object.keys(qty).map(function (n) { return { item: findStockItem_(n), counted: qty[n] }; })
+      .filter(function (c) { return c.item; });
+    var list = expiryAfterCount_(loc, counts, new Date(last));
+    Logger.log(list.length ? expiryText_(loc, list, new Date(last)) : loc + ' — ยอดนับล่าสุดไม่มีของต้องทิ้ง');
+  });
 }
 
 /**
@@ -535,15 +526,12 @@ function showLineGroups() {
  * ทดสอบรันแจ้งเตือนจริงทันที (ไม่ต้องรอ Trigger)
  */
 function testNotifyNow() {
-  notifyExpiringItems();
+  previewDiscard();
 }
 
-/**
- * ดูรายการที่จะถูกแจ้งเตือน โดยไม่ส่ง LINE (ดูผลใน Logs)
- */
+/** ชื่อเดิม — ตอนนี้ดูของที่ต้องทิ้งจากยอดนับล่าสุดแทน */
 function previewItems() {
-  var result = getItemsToDiscard_();
-  Logger.log('ต้องทิ้งวันนี้: ' + JSON.stringify(result.today, null, 2));
+  previewDiscard();
 }
 
 // ============================================================

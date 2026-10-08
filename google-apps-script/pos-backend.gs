@@ -2343,6 +2343,15 @@ function handleStockCount_(body) {
     catch (e) { Logger.log('cashCheckAfterCount_: ' + e.message); }
   }
 
+  // ของที่ยังเหลือแล้ววันนี้เป็นวันสุดท้ายที่ขายได้ — บอกให้ทิ้งก่อนขายรอบหน้า (line-expiry-alert.gs)
+  var toss = [], tossText = '';
+  if (typeof expiryAfterCount_ === 'function') {
+    try {
+      toss = expiryAfterCount_(loc, counts, now);
+      if (toss.length) { tossText = expiryText_(loc, toss, now); stockNotify_(loc, tossText); }
+    } catch (e) { Logger.log('expiryAfterCount_: ' + e.message); }
+  }
+
   // ยอดหลังนับ = ตัวที่นับได้ ไม่ต้องไปไล่อ่านทุกชีตใหม่อีกรอบ
   var balNow = {};
   counts.forEach(function (c) { balNow[c.item.name] = c.counted; });
@@ -2354,7 +2363,8 @@ function handleStockCount_(body) {
   return { success: true, counted: items.length, diffs: isBase ? 0 : diffs.length,
            base: isBase, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
-           shrink: shrink, cashChecked: !!(cash && cash.expected != null) };
+           shrink: shrink, cashChecked: !!(cash && cash.expected != null),
+           toss: toss.length, tossText: tossText };
 }
 
 /** ข้อมูลตั้งต้นของหน้าสต็อก — รายการสินค้า สถานที่ และยอดคงเหลือ */

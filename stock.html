@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-07c';
+const PAGE_BUILD = '2026-10-08a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -1393,6 +1393,8 @@ async function submitCount() {
           '<span style="opacity:.8;font-size:12.5px">' +
           (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') +
           (r.refill ? '<br>🔔 ต้องเติม ' + r.refill + ' อย่าง' : '') + '</span>', 5500);
+    // ของที่ต้องทิ้ง — ต้องกดรับทราบ ไม่ใช่แค่ขึ้นแล้วหายไป
+    if (r.tossText) alert(r.tossText);
     btn.disabled = false;
     btn.innerHTML = 'บันทึกผลนับ';
     go('stock');
