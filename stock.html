@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09b';
+const PAGE_BUILD = '2026-10-09c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -755,9 +755,14 @@ function fillItems() {
  * "หมูติดมันสไลซ์" ไม่ต้องพิมพ์ให้ตรงเป๊ะ
  * พิมพ์แล้วไม่เจอเลย เอาทั้งลิสต์กลับมา ดีกว่าปล่อยช่องว่างจนงง
  */
+// ชื่อที่เรียกกันอีกแบบ — พิมพ์ค้นด้วยชื่อนี้ก็เจอ
+const FIND_ALIAS = { 'ครีมนม': 'นมสด' };
 function matchFind(name, q) {
   const k = x => String(x).toLowerCase().replace(/[\s()]/g, '');
-  return !q || k(name).indexOf(k(q)) !== -1;
+  if (!q) return true;
+  let kq = k(q);
+  Object.keys(FIND_ALIAS).forEach(a => { kq = kq.replace(k(a), k(FIND_ALIAS[a])); });
+  return k(name).indexOf(kq) !== -1;
 }
 function fillSelect(selId, findId, list) {
   const sel = document.getElementById(selId);
@@ -1252,7 +1257,7 @@ function viewBakery(v) {
   </div>
   <div class="card">
     <h2 style="font-size:16px">นับ${BK_ROUND}</h2>
-    <p class="note" style="margin-top:0">ไดฟุกุนับเป็นลูก (1 ชุด = 40 ลูก) · บราวนี่นับเป็นชิ้น</p>
+    <p class="note" style="margin-top:0">ไดฟุกุนับเป็นลูก (1 ชุด = 40 ลูก) · บราวนี่นับเป็นชิ้น · ไดฟุกุนมสด = ครีมนม</p>
     ${items.map((it, k) => row('bk-i-' + k, it.name, /^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น')).join('')}
     ${after ? '<h2 style="font-size:16px;margin-top:16px">เงินที่ได้วันนี้</h2>' +
               BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') : ''}
