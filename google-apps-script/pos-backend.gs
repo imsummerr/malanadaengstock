@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-09h · แพ็คของ: นมข้นจืด → นมผง (ถุง) ถุงละ 200 กรัม';
+var BACKEND_VERSION = '2026-10-09i · แพ็คของเหลือแค่ "นมผง" (ถุงละ 200 กรัม) · นมผงที่ซื้อมา = นมผง (ดิบ)';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2792,7 +2792,7 @@ var PACK_SIZE_EXCEPTION = {
   'ฟองเต้าหู้ม้วน': 12,
   // นับเป็นถุงอย่างเดียว ไม่มีชั้นแพ็ค — สาขาเห็นเป็นถุงที่พร้อมใช้
   'หม่าล่า(ผสมแล้ว)': 1,
-  'นมผง (ถุง)': 1,
+  'นมผง': 1,
   // สาขาชั่งกะหล่ำเป็นโล ไม่ได้แบ่งใส่ถุง
   'กะหล่ำ': 1
 };
@@ -2855,6 +2855,9 @@ var RAW_PACK = {
   // มาม่า 1 ห่อ/ซอง/ก้อน = 1 อัน (ไม่ใช่ทั้งถุง) — ไลน์จะได้แปลงให้ถูก
   // ของดิบยังนับเป็นถุงละ 21 ตามที่ซื้อมา ส่งสาขาแพ็คละ 10 (rawOnly)
   'มาม่าเปล่า':     { unit: 'อัน', packUnit: 'ถุง',  per: 21, pieces: ['ห่อ', 'ซอง', 'ก้อน'], rawOnly: true },
+  // ซื้อเป็นโล นับเป็นกรัม (แบ่งถุงละ 200 กรัม) — ชั้นบนคือ กก. อย่างเดียว
+  // packWords ว่าง = "1 ถุง" ไม่ได้แปลว่า 1 โล ถุงที่ซื้อมาไม่รู้ว่าหนักเท่าไหร่ ให้พิมพ์น้ำหนักมา
+  'นมผง':           { unit: 'กรัม', packUnit: 'กก.', per: 1000, packWords: [], rawOnly: true },
 
 };
 
@@ -3018,8 +3021,8 @@ var FILL_ITEMS = [
    'ถุงละ 400 กรัม ผสม 2:1:1 (เบส 200 · ผง 100 · พริกป่น 100) · กรอกแค่ว่าได้กี่ถุง'],
   // ครัวกลางแบ่งนมผงใส่ถุง ถุงละ 200 กรัม ส่งไปทั้งแบบยังไม่ผสม
   // สาขาเติมน้ำ 600 มล. เองตอนใช้ — นับสต็อกก็นับถุงที่ยังไม่ผสม
-  // เดิมชื่อ "นมข้นจืด" (9/10 เปลี่ยนเป็นนมผง) · "นมผง" เฉย ๆ คือนมผงในครัวกลางที่นับเป็นกรัม
-  ['นมผง (ถุง)', 'ถุง', ['นมผง x200'], 0,
+  // เดิมชื่อ "นมข้นจืด" (9/10 เปลี่ยนเป็นนมผง) · นมผงที่ซื้อเข้ามาคือ "นมผง (ดิบ)" นับเป็นกรัม
+  ['นมผง', 'ถุง', ['นมผง (ดิบ) x200'], 0,
    'นมผงแบ่งถุง ถุงละ 200 กรัม ยังไม่ผสม — สาขาเติมน้ำ 600 มล. ตอนใช้ · กรอกแค่ว่าได้กี่ถุง']
 ];
 
@@ -3079,6 +3082,7 @@ function itemCatalogue_() {
   //   ลงท้าย (ดิบ) = ของดิบที่ต้องงอกขึ้นมา · ที่เหลือ = ของใช้ที่มีอยู่แล้ว
   FILL_ITEMS.forEach(function (r) {
     r[2].forEach(function (rn) {
+      rn = String(rn).replace(RAW_PER_RE, '').trim();     // "นมผง (ดิบ) x200" → "นมผง (ดิบ)"
       if (rn.slice(-RAW_SUFFIX.length) === RAW_SUFFIX) {
         rawSeen[rn.slice(0, -RAW_SUFFIX.length)] = true;
       }
@@ -3328,7 +3332,9 @@ function removeDiscontinuedItems() {
  * ของเดียวกันแต่เรียกคนละชื่อ ถ้าปล่อยไว้ยอดคงเหลือจะแตกเป็นสองแถว
  */
 var ITEM_RENAME = {
-  'นมข้นจืด':            'นมผง (ถุง)',          // 9/10 แพ็คของส่งเป็นนมผงแบ่งถุง
+  // 9/10 แพ็คของส่งเป็นนมผงแบ่งถุง — นมผงที่ซื้อมาย้ายไป "นมผง (ดิบ)" ดู swapMilkPowder_
+  'นมข้นจืด':            'นมผง',
+  'นมผง (ถุง)':          'นมผง',
   'ไดฟุกุ นมสด':         'ไดฟุกุ ครีมนม',      // 9/10 เรียกว่าครีมนม
   'ปลาดอลลี่':           'ดอลลี่',
   'เห็ดออรินจิ':          'เห็ดออเร็นจิ',
@@ -3405,6 +3411,63 @@ var ITEM_RENAME = {
   // removeDiscontinuedItems จะลบออกจากชีตรายการสินค้าให้ ประวัติเก่ายังอยู่
 };
 
+/**
+ * 9/10 นมผงสลับชื่อ
+ *   • นมผงที่ซื้อเข้าครัวกลาง (เดิมชื่อ "นมผง" เป็นของใช้ นับกรัม) → "นมผง (ดิบ)" เหมือนของดิบตัวอื่น
+ *   • ชื่อ "นมผง" ว่างแล้ว ให้ถุงที่แพ็คส่งสาขาใช้ (เดิม "นมข้นจืด") ผ่าน ITEM_RENAME
+ *
+ * ใส่ใน ITEM_RENAME ไม่ได้ เพราะ "นมผง" เป็นทั้งชื่อเก่าและชื่อใหม่ — รันรอบสอง
+ * ถุงนมผงจะโดนย้ายไปเป็นของดิบ จึงดูจากชีตรายการสินค้าก่อน:
+ * แถว "นมผง" ยังไม่ใช่ของแพ็ค = ยังไม่ได้สลับ · เป็นของแพ็คแล้ว = สลับไปแล้ว ข้าม
+ *
+ * เปลี่ยนทั้งชื่อในชีตประวัติ ช่องวัตถุดิบในชีตแพ็คของ (ถุงเดิมตัดนมผงจากช่องนี้)
+ * และชีตซื้อของเข้า (บัญชีจับราคาที่ซื้อด้วยชื่อ)
+ */
+var MILK_SWAP_FROM = 'นมผง', MILK_SWAP_TO = 'นมผง (ดิบ)';
+function swapMilkPowder_(ss) {
+  var sh = ss.getSheetByName(SHEET_ITEMS);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var map = ensureCols_(sh, ITEM_COLS);
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var row = -1, hasTo = false;
+  v.forEach(function (r, i) {
+    var n = String(r[map['สินค้า']] || '').trim();
+    if (n === MILK_SWAP_FROM && row === -1) row = i;
+    if (n === MILK_SWAP_TO) hasTo = true;
+  });
+  if (row === -1 || String(v[row][map['ชนิด']] || '').trim() === KIND_PACKED) return 0;
+
+  if (hasTo) sh.deleteRow(row + 2);
+  else sh.getRange(row + 2, map['สินค้า'] + 1).setValue(MILK_SWAP_TO);
+
+  var hit = 0;
+  function swapCol(h, col) {
+    if (col === undefined || col === -1 || h.getLastRow() < 2) return;
+    var rng = h.getRange(2, col + 1, h.getLastRow() - 1, 1);
+    var cv = rng.getValues(), n = 0;
+    for (var i = 0; i < cv.length; i++) {
+      if (String(cv[i][0] || '').trim() === MILK_SWAP_FROM) { cv[i][0] = MILK_SWAP_TO; n++; }
+    }
+    if (n) { rng.setValues(cv); hit += n; }
+  }
+  historySheets_().forEach(function (name) {
+    var h = ss.getSheetByName(name);
+    if (!h || h.getLastRow() < 2) return;
+    swapCol(h, ensureCols_(h, MOVE_COLS)['รายการ']);
+    if (name !== SHEET_PACK) return;
+    var pmap = ensureCols_(h, PACK_COLS);
+    for (var k = 0; k < PACK_RAW_SLOTS; k++) swapCol(h, pmap[packRawCols_(k).name]);
+  });
+  var buy = ss.getSheetByName(typeof INTAKE_SHEET === 'string' ? INTAKE_SHEET : 'ซื้อของเข้า');
+  if (buy && buy.getLastRow() > 1) {
+    var head = buy.getRange(1, 1, 1, buy.getLastColumn()).getValues()[0]
+      .map(function (x) { return String(x).trim(); });
+    swapCol(buy, head.indexOf('รายการ'));
+  }
+  Logger.log('นมผงที่ซื้อมา → "' + MILK_SWAP_TO + '" (เปลี่ยนในประวัติ ' + hit + ' ช่อง)');
+  return hit;
+}
+
 /** ชีตที่เก็บชื่อสินค้าไว้ในคอลัมน์ "รายการ" */
 function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SHEET_PACK]; }
 
@@ -3417,6 +3480,7 @@ function historySheets_() { return [SHEET_INCOMING, SHEET_COUNT, SHEET_WASTE, SH
  */
 function mergeItemNames() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  swapMilkPowder_(ss);         // ต้องก่อน ITEM_RENAME — นมข้นจืดจะมาใช้ชื่อ "นมผง"
   var sh = ss.getSheetByName(SHEET_ITEMS);
   if (!sh) { Logger.log('ไม่พบชีต "' + SHEET_ITEMS + '"'); return; }
   var map = ensureCols_(sh, ITEM_COLS);
@@ -3744,9 +3808,7 @@ var SUPPLY_ITEMS = [
   ['พริกป่น',       'กรัม', SCOPE_CENTRAL, 1,    'ถุง', 'ชั่งเป็นกรัมมาลง — ยังไม่ได้ตั้งว่าถุงละกี่กรัม (แก้ช่อง "หน่วยย่อยต่อแพ็ค" ในชีตได้)'],
   ['ซุปก้อน',       'กล่อง', SCOPE_CENTRAL, 1,  'ลัง',  'คนอร์'],
   ['ถ้วย 2 ออน',    'ใบ',   SCOPE_CENTRAL, 50, 'แพ็ค', ''],
-  // ซื้อนมผงเข้าครัวกลาง แบ่งใส่ถุงละ 200 กรัม (นมผง (ถุง)) แล้วค่อยส่งสาขา
-  // นับเป็นกรัมเพราะสูตรชงคิดเป็นกรัม ซื้อเป็นโลก็ลงได้ ระบบคูณ 1000 ให้
-  ['นมผง',          'กรัม', SCOPE_CENTRAL, 1000, 'กก.', 'ซื้อเป็นโล ชงคิดเป็นกรัม'],
+  // นมผงที่ซื้อเข้ามาเป็นของดิบแล้ว (นมผง (ดิบ)) ดู RAW_PACK
   ['ไม้เสียบเบอร์ 8', 'แพ็ค', SCOPE_CENTRAL, 1,    'แพ็ค', 'นับเป็นแพ็ค'],
 
   // ── ใช้ทั้งครัวกลางและหน้าร้าน ──
