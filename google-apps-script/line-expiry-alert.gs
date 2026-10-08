@@ -207,7 +207,14 @@ function checkNewIncoming() {
     // ครัวกลางไม่ต้องบอกวันทิ้ง — ยังไม่เริ่มนับอายุ · ของไม่ได้ขายก็ไม่บอก
     var days = isCentral_(branch) ? 0 : branchShelfOf_(name);
     var expireStr = '';
-    if (days) {
+    // เบเกอรี่ — อายุเริ่มที่ครัวกลาง (ไดฟุกุนับจากวันเข้าที่กรอก) ถึงสาขาได้ 7 วันแต่ไม่เกินอายุเดิม
+    if (typeof bakeryOriginDays_ === 'function' && bakeryOriginDays_(name)) {
+      try {
+        var lt = (bakeryLots_(name, inDate.getTime())[String(branch).trim()] || []);
+        var lastKey = lt.length ? lt[lt.length - 1].last : '';
+        if (lastKey) expireStr = 'หมดอายุ ' + expiryDM_(lastKey) + ' (ทิ้ง ' + expiryDM_(expiryAddDays_(lastKey, 1)) + ')';
+      } catch (e) { Logger.log('bakery expiry text: ' + e.message); }
+    } else if (days) {
       var lastSell = new Date(inDate.getTime());
       lastSell.setDate(lastSell.getDate() + days);
       var toss = new Date(lastSell.getTime());

@@ -572,6 +572,21 @@ var INTAKE_PERKG_RE =
 var INTAKE_PERBAG_RE =
   /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(อัน|ห่อ|ก้อน|ชิ้น|ซอง)?(?!\s*(?:\d|บาท|฿|บ\.))/;
 
+/** วันที่ในบรรทัด — คำนำหน้าวันเข้า/ผลิตใส่หรือไม่ใส่ก็ได้ · ตามด้วยหน่วย (1/2 โล) ไม่นับเป็นวันที่ */
+var INTAKE_DATE_RE = /(?:^|\s)(?:วันเข้า|เข้าวันที่|วันที่เข้า|วันผลิต|ผลิต|เข้า)?\s*(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?(?!\s*(?:กก|กิโล|โล|กรัม|ขีด|ลิตร|มล|ถุง|แพ็ค|แพ้ค|แพค|ชิ้น|อัน|ไม้|ลูก|ชุด|บาท|฿|ห่อ|กล่อง|ลัง|ขวด|ใบ|\d))(?=\s|$)/;
+/** วัน/เดือน(/ปี) → 'yyyy-MM-dd' · ไม่บอกปี = ปีนี้ ถ้าเลยวันนี้ไปแล้วแปลว่าปีที่แล้ว (พิมพ์ 28/12 ตอนมกราคม) */
+function intakeDateKeyOf_(d, m, y) {
+  var now = new Date();
+  var yy = y ? Number(y) : Number(Utilities.formatDate(now, intakeTz_(), 'yyyy'));
+  if (yy < 100) yy += 2000;
+  if (yy > 2400) yy -= 543;                                   // พ.ศ.
+  var key = yy + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+  if (!y && key > Utilities.formatDate(new Date(now.getTime() + 86400000), intakeTz_(), 'yyyy-MM-dd')) {
+    key = (yy - 1) + key.slice(4);
+  }
+  return key;
+}
+
 function intakeUnitRe_() {
   return new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(' + INTAKE_UNIT_RE + ')?', 'gi');
 }
@@ -828,14 +843,12 @@ function intakeParseLine_(line) {
     if (!text) return null;
   }
 
-  // "วันเข้า 5/10" — ไดฟุกุนับอายุจากวันนี้ ตัดออกก่อน ไม่งั้นเลขวันที่ไปปนกับจำนวน
+  // วันเข้า (ไดฟุกุนับอายุจากวันนี้) — "วันเข้า 5/10" / "เข้า 27/9" / "26/9" เฉย ๆ ก็ได้
+  // ตัดออกก่อน ไม่งั้นเลขวันที่ไปปนกับจำนวน · เลขที่มีหน่วยตามหลัง (1/2 โล) ไม่ใช่วันที่
   var start = '';
-  var sd = text.match(/(?:วันเข้า|เข้าวันที่|วันที่เข้า)\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?/);
-  if (sd) {
-    var yy = sd[3] ? Number(sd[3]) : Number(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy'));
-    if (yy < 100) yy += 2000;
-    if (yy > 2400) yy -= 543;                                   // พ.ศ.
-    start = yy + '-' + ('0' + sd[2]).slice(-2) + '-' + ('0' + sd[1]).slice(-2);
+  var sd = text.match(INTAKE_DATE_RE);
+  if (sd && Number(sd[1]) >= 1 && Number(sd[1]) <= 31 && Number(sd[2]) >= 1 && Number(sd[2]) <= 12) {
+    start = intakeDateKeyOf_(sd[1], sd[2], sd[3]);
     text = (text.slice(0, sd.index) + ' ' + text.slice(sd.index + sd[0].length)).replace(/\s+/g, ' ').trim();
     if (!text) return null;
   }
@@ -1026,6 +1039,11 @@ var INTAKE_ALIAS = {
   'พริกผงจีน': 'ผงหม่าล่า', 'พริกป่นไทย': 'พริกป่น',
   // ไดฟุกุครีมนม (เดิมเรียกนมสด — ชื่อเก่ายังพิมพ์ได้)
   'ไดฟุกุนมสด': 'ไดฟุกุ ครีมนม', 'ไดฟุกุนม': 'ไดฟุกุ ครีมนม', 'ครีมนม': 'ไดฟุกุ ครีมนม',
+  // "ช็อก" มีคำว่า "อก" (อกไก่) อยู่ข้างใน ต้องจับตรง ๆ ไม่งั้นกลายเป็นไก่
+  'ช็อก': 'ไดฟุกุ ช็อกโกแลต', 'ช็อค': 'ไดฟุกุ ช็อกโกแลต', 'ช๊อก': 'ไดฟุกุ ช็อกโกแลต', 'ช๊อค': 'ไดฟุกุ ช็อกโกแลต',
+  'ช็อกโกแลต': 'ไดฟุกุ ช็อกโกแลต', 'ช็อคโกแลต': 'ไดฟุกุ ช็อกโกแลต', 'ช๊อกโกแลต': 'ไดฟุกุ ช็อกโกแลต',
+  'ไดฟุกุช็อก': 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุช็อค': 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุช็อคโกแลต': 'ไดฟุกุ ช็อกโกแลต',
+  'ชาเขียว': 'ไดฟุกุ ชาเขียว', 'มัทฉะ': 'ไดฟุกุ ชาเขียว', 'นูเทลล่า': 'บราวนี่ นูเทลล่า',
   'ไม้เสียบ': 'ไม้เสียบเบอร์ 8', 'ไม้เสียบเบอร์8': 'ไม้เสียบเบอร์ 8', 'ไม้เบอร์8': 'ไม้เสียบเบอร์ 8',
   'เส้นมันเทศ': 'มันเทศ', 'เส้นอุด้ง': 'อุด้ง', 'วุ้นเส้น': 'วุ้นเส้นหม่าล่า',
   'แป้งต็อก': 'ต็อกแท่งเล็ก', 'ต็อก': 'ต็อกแท่งเล็ก',
@@ -1748,7 +1766,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
     if (base && !byName[base]) { names.push(base); byName[base] = x; }
   });
 
-  var buyLines = [], expLines = [], stockLines = [], rndLines = [], unitWarns = [];
+  var buyLines = [], expLines = [], stockLines = [], rndLines = [], unitWarns = [], noDate = [];
   var expByLoc = {}, expLocs = [];   // ค่าใช้จ่ายแยกหัวตามสาขา — ไม่ต้องเขียนชื่อสาขาทุกบรรทัด
   var packWarns = [];
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
@@ -1883,13 +1901,15 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         if (!makeOnly && q && q.base > 0) {
           var srow = intakeAddStockIn_(byName[hit.name], q, ctx, it.start);
           if (srow && typeof bakeryNeedsStart_ === 'function' && bakeryNeedsStart_(hit.name) && !it.start) {
-            unitWarns.push(hit.name + ' — ไม่ได้บอกวันเข้า นับอายุจากวันนี้\n' +
-                           '       ถ้าไม่ใช่วันนี้ ลบแล้วพิมพ์ใหม่ เช่น ' + hit.name + ' 20 ชิ้น 130 วันเข้า 5/10');
+            noDate.push(hit.name);          // ลงสต็อกแล้ว แค่ไม่รู้วันเข้า — ไม่ใช่ "ยังไม่ได้ลงสต็อก"
           }
           if (srow) {
             saved.s.push(srow);
-            stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + byName[hit.name].subUnit +
-                            (q.packs ? '  (' + q.packs + ' ' + byName[hit.name].packUnit + ')' : '') +
+            var it0 = byName[hit.name];
+            var baseU = (it0.bakery && typeof bakeryUnits_ === 'function') ? bakeryUnits_(hit.name).piece : it0.subUnit;
+            stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + baseU +
+                            (q.packs ? '  (' + q.packs + ' ' + it0.packUnit + ')' : '') +
+                            (it.start && it0.bakery ? '  วันเข้า ' + intakeDM_(it.start) : '') +
                             (q.unitNote ? '  (' + q.unitNote + ')' : '') +
                             (q.unitWarn ? '  ⚠️' : ''));
           }
@@ -1945,6 +1965,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
            '\nค่าใช้จ่ายบันทึกแล้ว แต่สต็อกยังไม่ขยับ' +
            '\nพิมพ์ใหม่โดยใส่จำนวนเป็นหน่วยที่ชีตตั้งไว้ (ไม่ต้องใส่ราคาซ้ำ)';
   }
+  // ไดฟุกุลงสต็อกแล้ว แต่ไม่ได้บอกวันเข้า — อายุนับจากวันนี้ (แยกจากของที่ยังไม่ได้ลงสต็อก)
+  if (noDate.length) {
+    msg += '\n\n📅 ไม่ได้บอกวันเข้า — นับอายุจากวันนี้\n' +
+           noDate.map(function (n) { return '• ' + n; }).join('\n') +
+           '\nถ้าไม่ใช่วันนี้ พิมพ์ "ลบ" แล้วส่งใหม่พร้อมวันเข้า เช่น ' + noDate[0].replace(/^ไดฟุกุ\s*/, '') + ' 1 แพ็ค 520 เข้า 5/10';
+  }
   // ของที่ต้องพันเอง ไม่ใช่ของซื้อ ต้องบอกให้ไปลงที่ถูกช่อง
   if (packWarns.length) {
     msg += '\n\n🍢 ของที่ต้องพันเอง ' + packWarns.length + ' รายการ — ไม่เข้าครัวกลาง\n' +
@@ -1980,6 +2006,12 @@ function intakeAmountText_(it) {
   if (it.perKg > 0) out += ' (' + intakeMoney_(it.perKg) + ' บาท/กก.)';
   else if (it.baht && it.gram) out += ' (' + intakeMoney_(it.baht / it.gram * 1000) + ' บาท/กก.)';
   return out || '—';
+}
+
+/** 'yyyy-MM-dd' → 'd/M' */
+function intakeDM_(key) {
+  var p = String(key || '').split('-');
+  return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) : String(key || '');
 }
 
 function intakeMoney_(n) {
