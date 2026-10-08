@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-08b';
+const PAGE_BUILD = '2026-10-09a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -504,7 +504,7 @@ function render() {
 /* ── บัญชี — เจ้าของร้านคนเดียว ── */
 /** ตัวเลขบัญชีโหลดแยก เพราะต้องไล่ทุกแถวย้อนหลัง หนักกว่าหน้าอื่น */
 let MONEY = null;
-let MONEY_BIZ = 'หม่าล่า';   // บัญชีที่ดูอยู่ — หม่าล่า / เบเกอรี่
+let MONEY_BIZ = 'รวม';      // บัญชีที่ดูอยู่ — รวม / หม่าล่า / เบเกอรี่
 
 const baht = n => (Math.round((Number(n) || 0) * 100) / 100)
   .toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -517,7 +517,10 @@ function viewMoney(v) {
   }
   // บัญชีหม่าล่ากับเบเกอรี่แยกกัน — สลับด้วยปุ่มด้านบน (หลังบ้านเก่าไม่มีเบเกอรี่ = หม่าล่าอย่างเดียว)
   const isBk = MONEY_BIZ === 'เบเกอรี่' && MONEY.bakery;
-  const M = isBk ? Object.assign({ central: MONEY.central, warn: [] }, MONEY.bakery) : MONEY;
+  const isAll = MONEY_BIZ === 'รวม' && MONEY.total;
+  const M = isBk  ? Object.assign({ central: MONEY.central, warn: [] }, MONEY.bakery)
+          : isAll ? Object.assign({ central: MONEY.central, warn: MONEY.warn }, MONEY.total)
+          : MONEY;
   const locs = Object.keys(M.pl).sort((a, b) =>
     a === M.central ? -1 : b === M.central ? 1 : a.localeCompare(b, 'th'));
 
@@ -531,7 +534,10 @@ function viewMoney(v) {
     const sales = isBk ? `
         <tr><td>เงินสด</td><td class="num">${baht(p['เงินสด'])}</td></tr>
         <tr><td>เงินโอน</td><td class="num">${baht(p['เงินโอน'])}</td></tr>
-        <tr><td>ไทยช่วยไทย</td><td class="num">${baht(p['ไทยช่วยไทย'])}</td></tr>` : `
+        <tr><td>ไทยช่วยไทย</td><td class="num">${baht(p['ไทยช่วยไทย'])}</td></tr>` : isAll ? `
+        <tr><td>หม่าล่า หน้าร้าน</td><td class="num">${baht(p['หน้าร้าน'])}</td></tr>
+        <tr><td>หม่าล่า เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>
+        <tr><td>เบเกอรี่</td><td class="num">${baht(p['ขายเบเกอรี่'])}</td></tr>` : `
         <tr><td>ขายหน้าร้าน</td><td class="num">${baht(p['หน้าร้าน'])}</td></tr>
         <tr><td>เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>`;
     const money = isC ? '' : `
@@ -543,6 +549,8 @@ function viewMoney(v) {
         <tr><td>− ค่าใช้จ่ายอื่น</td><td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>
         <tr><td><b>กำไรสุทธิ</b></td><td class="num ${p['กำไรสุทธิ'] < 0 ? 'low' : ''}">
             <b>${baht(p['กำไรสุทธิ'])}</b></td></tr>
+        ${isAll ? `<tr><td><small>· มาจากหม่าล่า</small></td><td class="num"><small>${baht(p['กำไรหม่าล่า'])}</small></td></tr>
+        <tr><td><small>· มาจากเบเกอรี่</small></td><td class="num"><small>${baht(p['กำไรเบเกอรี่'])}</small></td></tr>` : ''}
       </tbody></table>`;
 
     const debt = (!isC && o) ? `
@@ -601,11 +609,11 @@ function viewMoney(v) {
   const tabBtn = (z, label) => `<button class="key" style="${MONEY_BIZ === z ? '' : 'opacity:.45'}"
       onclick="MONEY_BIZ='${z}';render()">${label}</button>`;
   v.innerHTML = `<div class="card">
-      <h2>💰 บัญชี${isBk ? ' · เบเกอรี่' : ' · หม่าล่า'}</h2>
+      <h2>💰 บัญชี · ${isBk ? 'เบเกอรี่' : isAll ? 'รวมหม่าล่า + เบเกอรี่' : 'หม่าล่า'}</h2>
       <p class="lead">คิดสดจากของที่เคลื่อนไหวจริง แบบเข้าก่อนออกก่อน ·
          ครัวกลางส่งต่อที่ต้นทุน ไม่มีกำไรไม่มีขาดทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ''}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
+        ${MONEY.total ? tabBtn('รวม', '📊 รวม') : ''}${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
         <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
       </div>
     </div>${isBk ? '' : warn}${cards || '<div class="card"><div class="empty">ยังไม่มีข้อมูล</div></div>'}`;
@@ -700,6 +708,11 @@ function viewMove(v, kind) {
       </div>
     </div>
 
+    <div id="wrap-start" class="hidden">
+      <label class="fld">วันเข้า (ไดฟุกุ — นับอายุ 30 วันจากวันนี้)</label>
+      <input id="f-start" type="date">
+    </div>
+
     ${c.reason ? `<label class="fld">สาเหตุ</label>
       <select id="f-reason">
         <option>หมดอายุ</option><option>ของเสีย/เน่า</option>
@@ -770,6 +783,14 @@ function fillSelect(selId, findId, list) {
 function syncUnits() {
   const it = itemOf(document.getElementById('f-item').value);
   if (!it) return;
+  // ไดฟุกุรับเข้าครัวกลาง ต้องกรอกวันเข้า (นับอายุจากวันนั้น ไม่ใช่วันที่ลงระบบ)
+  const ws = document.getElementById('wrap-start');
+  if (ws) {
+    const need = tab === 'in' && /^ไดฟุกุ/.test(it.name);
+    ws.classList.toggle('hidden', !need);
+    const sd = document.getElementById('f-start');
+    if (need && !sd.value) sd.value = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+  }
   document.getElementById('lbl-packs').textContent = it.packUnit;
   document.getElementById('lbl-rem').textContent = 'เศษ (' + it.subUnit + ')';
   // ลูกชิ้นเสียบไม้ละหลายชิ้น ต้องมีช่องกรอกลูกที่ยังไม่ได้เสียบ
@@ -839,6 +860,9 @@ async function submitMove(kind) {
   const pcEl2 = document.getElementById('f-pieces');
   const pieces = pcEl2 ? pcEl2.value : '';
   if (!(toBase(packs, rem, pieces, it) > 0)) return toast('กรอกจำนวนก่อน');
+  const ws = document.getElementById('wrap-start');
+  const start = ws && !ws.classList.contains('hidden') ? document.getElementById('f-start').value : '';
+  if (ws && !ws.classList.contains('hidden') && !start) return toast('กรอกวันเข้าของไดฟุกุก่อน');
 
   const locEl = document.getElementById('f-loc');
   const btn = document.getElementById('f-btn');
@@ -849,7 +873,7 @@ async function submitMove(kind) {
       action: c.action, item: it.name, location: locEl ? locEl.value : D.central,
       packs: packs, rem: rem, pieces: pieces,
       reason: c.reason ? document.getElementById('f-reason').value : '',
-      note: document.getElementById('f-note').value
+      note: document.getElementById('f-note').value, start: start
     });
     toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
           esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
@@ -1250,6 +1274,7 @@ async function submitBakery() {
                               round: BK_ROUND, rows: rows.map(x => ({ item: x.item, qty: Number(x.qty) })),
                               money: after ? money : null, id: after ? BK_ID : '' });
     toast('บันทึกแล้ว ✅ ' + esc(BK_ROUND) + (r.duplicated ? ' (ส่งไปแล้ว)' : ''), 4500);
+    if (r.tossText) alert(r.tossText);          // ของหมดอายุ — ต้องกดรับทราบ
     BK_ID = 'BK' + Date.now();
     render();                       // ล้างช่อง
   } catch (e) {

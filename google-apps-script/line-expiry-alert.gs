@@ -19,16 +19,24 @@
 // เฉพาะของขาย (ราคาขาย > 0) — หม่าล่า นมข้นจืด น้ำจิ้ม ของแถม ของใช้ ไม่นับวันหมดอายุ
 // ครัวกลางไม่นับ อายุเริ่มตอนของถึงหน้าร้าน
 //
+//   (แก้ 8/10 รอบสอง — ตารางเต็มดู BRANCH_SHELF_DAYS ข้างล่าง)
 //   ของพัน (ครัวกลางพันเอง เช่น หมูพัน...)  3 วัน
-//   หมูสด (ชื่อขึ้นต้นด้วย "หมู")           5 วัน
-//   ทะเล · ดอลลี่                         5 วัน
-//   หมึกกรอบ · แมงกะพรุน                  7 วัน
-//   ลูกชิ้น และที่เหลือทั้งหมด              7 วัน
+//   หมูสด · ไก่ · ดอลลี่ · ผัก/เห็ด           5 วัน
+//   หมึกกรอบ · แมงกะพรุน · มันเทศ · อุด้ง     7 วัน
+//   มาม่าเปล่า · ต็อก · ชีส                  15 วัน
+//   วุ้นเส้นหม่าล่า · ฟองเต้าหู้ม้วน           30 วัน
+//   ลูกชิ้น และที่เหลือทั้งหมด                 7 วัน
+//   เบเกอรี่ คิดแยก (bakeryLots_) — สาขา 7 วัน และไม่เกินอายุจากครัวกลาง
 var BRANCH_SHELF_DEFAULT = 7;
+// ผัก/เห็ด 5 วัน — กะหล่ำเป็นของแถม ไม่นับ
+var BRANCH_VEG = ['ผักกาดขาว', 'กวางตุ้ง', 'เห็ดเข็ม', 'ข้าวโพดฝัก', 'กระเจี๊ยบ', 'มันฝรั่ง', 'ฟักทอง',
+                  'รากบัว', 'เห็ดหูหนูขาว', 'เห็ดหูหนูดำ', 'เห็ดหอม', 'เห็ดออเร็นจิ'];
 // ตัวที่ระบุชื่อตรง ๆ — มาก่อนกฎอื่น แก้/เพิ่มตรงนี้ได้
 var BRANCH_SHELF_DAYS = {
-  'ดอลลี่': 5,
-  'ปลาหมึกกรอบ': 7, 'แมงกะพรุน': 7
+  'ดอลลี่': 5, 'ไก่': 5,
+  'ปลาหมึกกรอบ': 7, 'แมงกะพรุน': 7, 'มันเทศ': 7, 'อุด้ง': 7,
+  'มาม่าเปล่า': 15, 'ต็อกแท่งเล็ก': 15, 'ชีส': 15,
+  'วุ้นเส้นหม่าล่า': 30, 'ฟองเต้าหู้ม้วน': 30
 };
 function branchShelfDays_(item) {
   if (!item) return 0;
@@ -36,11 +44,26 @@ function branchShelfDays_(item) {
   if (!(Number(item.price) > 0)) return 0;                    // ไม่ได้ขาย ไม่นับวันหมดอายุ
   var n = String(item.name || '').trim();
   if (BRANCH_SHELF_DAYS.hasOwnProperty(n)) return BRANCH_SHELF_DAYS[n];
+  if (BRANCH_VEG.indexOf(n) !== -1) return 5;
   // ของพัน — วัตถุดิบเป็นกลุ่มเนื้อหมู (@เนื้อหมู) หรือชื่อหมูพัน...
   var wrapped = /^หมูพัน/.test(n) || (item.raws || []).some(function (r) { return String(r).charAt(0) === '@'; });
   if (wrapped) return 3;
   if (/^หมู/.test(n)) return 5;
   return BRANCH_SHELF_DEFAULT;
+}
+
+/** ตารางอายุทุกรายการของขาย — รัน listShelfLife ดูใน Logs */
+function listShelfLife() {
+  var by = {};
+  getStockItems_().forEach(function (it) {
+    var d = branchShelfDays_(it);
+    if (it.bakery) d = 'เบเกอรี่';
+    if (!d) return;
+    (by[d] = by[d] || []).push(it.name);
+  });
+  var out = Object.keys(by).map(function (d) { return (isNaN(d) ? d : d + ' วัน') + ': ' + by[d].join(', '); });
+  Logger.log(out.join('\n'));
+  return by;
 }
 function branchShelfOf_(name) {
   var it = (typeof findStockItem_ === 'function') ? findStockItem_(String(name || '').trim()) : null;
@@ -133,6 +156,8 @@ function checkNewIncoming() {
   // ทุกวันอาทิตย์ + สิ้นเดือน หลัง 4 ทุ่ม — บอกยอดที่สาขาควรคืนครัวกลาง
   try { if (typeof checkPaybackReminder === 'function') checkPaybackReminder(); }
   catch (e) { Logger.log('checkPaybackReminder: ' + e.message); }
+  // เบเกอรี่ในครัวกลางหมดอายุ — วันละครั้ง
+  try { checkBakeryExpiryDaily(); } catch (e) { Logger.log('checkBakeryExpiryDaily: ' + e.message); }
   var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) return;
@@ -388,6 +413,138 @@ function expiryText_(loc, list, now) {
   });
   L.push('', 'ทิ้งแล้วลง "ของเสีย" ในหน้าสต็อกด้วย');
   return L.join('\n');
+}
+
+// ============================================================
+// 4) เบเกอรี่ — อายุตามชุด ข้ามจากครัวกลางไปสาขา
+// ============================================================
+//   บราวนี่  14 วัน นับจากวันที่เข้าครัวกลาง
+//   ไดฟุกุ   30 วัน นับจาก "วันเข้า" ที่กรอกตอนรับเข้า
+//   ถึงสาขาแล้ว 7 วัน แต่ไม่เกินอายุเดิม (ส่งไปตอนใกล้หมดอายุ ก็หมดตามเดิม)
+//   ขายหมดก่อน = ไม่แจ้ง
+
+/** วันที่ในช่องวันเริ่มนับอายุ → 'yyyy-MM-dd' */
+function bakeryStartKey_(v) {
+  if (!v) return '';
+  if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+  var t = String(v).trim(), m;
+  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) {
+    var y = Number(m[3]); if (y > 2400) y -= 543;
+    return y + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  }
+  return '';
+}
+
+/**
+ * ชุดเบเกอรี่ที่ยังเหลือแต่ละที่ { loc: [{ qty, last, from }] } — last = วันสุดท้ายที่ขายได้
+ * รับเข้าครัวกลาง → ชุดใหม่ · ส่งร้าน → ยกชุดเก่าสุดของครัวกลางไป อายุ = min(เดิม, ถึงร้าน + 7)
+ * ของเสีย / ขาย (นับได้น้อยลง) → ตัดชุดเก่าสุด · นับได้เกิน → ชุดใหม่นับจากวันที่นับเจอ
+ */
+function bakeryLots_(itemName, uptoMs) {
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : CENTRAL_NAME;
+  var origin = bakeryOriginDays_(itemName), ev = [];
+  readMoves_(SHEET_INCOMING).forEach(function (m) {
+    if (m.item !== itemName) return;
+    var t = timeOf_(m.when);
+    if (!t || t > uptoMs + 60000 || !(m.qty > 0)) return;
+    if (m.kind === 'ของเข้าร้าน' && m.loc !== central) ev.push({ t: t, step: 2, type: 'send', loc: m.loc, qty: m.qty });
+    else ev.push({ t: t, step: 1, type: 'in', loc: m.loc, qty: m.qty, start: bakeryStartKey_(m.start) });
+  });
+  readMoves_(SHEET_WASTE).forEach(function (m) {
+    var t = timeOf_(m.when);
+    if (m.item === itemName && t && t <= uptoMs + 60000) ev.push({ t: t, step: 3, type: 'waste', loc: m.loc, qty: m.qty });
+  });
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    var t = timeOf_(m.when);
+    if (m.item !== itemName || !t || t > uptoMs + 60000) return;
+    if (typeof KIND_LEVEL_COUNT === 'string' && m.kind === KIND_LEVEL_COUNT) return;
+    ev.push({ t: t, step: 4, type: 'count', loc: m.loc, qty: m.qty });
+  });
+  ev.sort(function (a, b) { return (a.t - b.t) || (a.step - b.step); });
+
+  var lots = {};
+  var box = function (loc) { return lots[loc] || (lots[loc] = []); };
+  var total = function (loc) { return box(loc).reduce(function (s, l) { return s + l.qty; }, 0); };
+  var take = function (loc, q) {
+    var a = box(loc), parts = [];
+    while (q > 0.0001 && a.length) {
+      var n = Math.min(a[0].qty, q);
+      parts.push({ qty: n, last: a[0].last, from: a[0].from });
+      a[0].qty -= n; q -= n;
+      if (a[0].qty <= 0.0001) a.shift();
+    }
+    return { parts: parts, short: q > 0.0001 ? q : 0 };
+  };
+  var life = function (loc, day) {
+    return expiryAddDays_(day, loc === central ? origin : BAKERY_BRANCH_DAYS);
+  };
+  ev.forEach(function (e) {
+    var day = expiryDay_(e.t);
+    if (e.type === 'in') {
+      var st = e.start || day;
+      box(e.loc).push({ qty: e.qty, last: expiryAddDays_(st, origin), from: st });
+    } else if (e.type === 'send') {
+      var cap = expiryAddDays_(day, BAKERY_BRANCH_DAYS);
+      var tk = take(central, e.qty);
+      tk.parts.forEach(function (pt) {
+        box(e.loc).push({ qty: pt.qty, last: pt.last < cap ? pt.last : cap, from: pt.from });
+      });
+      if (tk.short) box(e.loc).push({ qty: tk.short, last: cap, from: day });
+    } else if (e.type === 'waste') {
+      take(e.loc, e.qty);
+    } else {
+      var have = total(e.loc);
+      if (e.qty < have - 0.0001) take(e.loc, have - e.qty);
+      else if (e.qty > have + 0.0001) box(e.loc).push({ qty: e.qty - have, last: life(e.loc, day), from: day, found: true });
+    }
+  });
+  return lots;
+}
+
+/** เบเกอรี่ที่ยังเหลือที่นี่ และวันนี้ขายได้เป็นวันสุดท้าย (หรือเลยมาแล้ว) */
+function bakeryExpiryAt_(loc, nowMs) {
+  if (typeof BAKERY_ITEMS === 'undefined') return [];
+  var today = expiryDay_(nowMs), out = [];
+  BAKERY_ITEMS.forEach(function (b) {
+    var due = 0, last = '';
+    (bakeryLots_(b[0], nowMs)[loc] || []).forEach(function (l) {
+      if (l.last > today || !(l.qty > 0)) return;
+      due += l.qty;
+      if (!last || l.last < last) last = l.last;
+    });
+    due = Math.round(due * 1000) / 1000;
+    if (due > 0) out.push({ name: b[0], qty: due, last: last, toss: expiryAddDays_(last, 1) });
+  });
+  return out;
+}
+
+function bakeryExpiryText_(loc, list, nowMs) {
+  var today = expiryDay_(nowMs);
+  var L = ['🗑️ เบเกอรี่หมดอายุ — ' + loc];
+  list.forEach(function (x) {
+    L.push('• ' + x.name + ' ' + x.qty + ' ชิ้น — ' +
+           (x.toss > today ? 'ทิ้งวันที่ ' + expiryDM_(x.toss) + ' ก่อนขาย'
+                           : 'ทิ้งเลย (หมดอายุ ' + expiryDM_(x.last) + ')'));
+  });
+  L.push('', 'ทิ้งแล้วลง "ของเสีย" ในหน้าสต็อกด้วย');
+  return L.join('\n');
+}
+
+/** ครัวกลาง — เช็ควันละครั้ง (หลัง 8 โมง) อาศัย trigger เช็คของเข้าทุก 5 นาที */
+function checkBakeryExpiryDaily(now) {
+  if (typeof BAKERY_ITEMS === 'undefined') return false;
+  var d = now || new Date();
+  if (Number(Utilities.formatDate(d, TZ, 'HH')) < 8) return false;
+  var props = PropertiesService.getScriptProperties();
+  var key = Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  if (props.getProperty('BAKERY_EXPIRY_LAST') === key) return false;
+  props.setProperty('BAKERY_EXPIRY_LAST', key);
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : CENTRAL_NAME;
+  var list = bakeryExpiryAt_(central, d.getTime());
+  if (!list.length) return false;
+  if (typeof stockNotify_ === 'function') stockNotify_(central, bakeryExpiryText_(central, list, d.getTime()));
+  return true;
 }
 
 /** ลองดูจากยอดนับล่าสุดของสาขา โดยไม่ส่งไลน์ (ผลอยู่ใน Logs) */

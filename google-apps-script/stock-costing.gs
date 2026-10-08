@@ -42,6 +42,12 @@ function costBizCell_(v) {
   return /เบเกอรี/.test(b) ? 'เบเกอรี่' : 'หม่าล่า';
 }
 var COST_BIZES = ['หม่าล่า', 'เบเกอรี่'];
+/**
+ * ค่าใช้จ่ายที่ใช้ร่วมกัน — ไม่ได้เขียนธุรกิจกำกับ แบ่งให้เบเกอรี่ตามสัดส่วนนี้ ที่เหลือหม่าล่า
+ *   ค่าที่ 120 → หม่าล่า 60 เบเกอรี่ 60 · ค่าพนักงาน (ค่าแรง) 300 → 150 / 150
+ * ค่าน้ำ ค่าน้ำแข็ง ค่าไฟ และอื่น ๆ ที่ไม่ได้อยู่ในนี้ = หม่าล่าทั้งหมด
+ */
+var COST_SHARED_TYPES = { 'ค่าที่': 0.5, 'ค่าแรง': 0.5 };
 
 function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
 
@@ -773,13 +779,22 @@ function costOutgo_(biz) {
   var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา'), iBiz = h.indexOf('ธุรกิจ');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
-    // ค่าใช้จ่ายแยกบัญชีหม่าล่า/เบเกอรี่ — ช่องว่าง = หม่าล่า (ของเดิมทั้งหมด + หน้า POS)
-    if (biz && costBizCell_(iBiz === -1 ? '' : v[r][iBiz]) !== biz) continue;
     if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
     var type = iType === -1 ? 'อื่น ๆ' : (String(v[r][iType] || '').trim() || 'อื่น ๆ');
+    // แยกบัญชีหม่าล่า/เบเกอรี่ — เขียนธุรกิจกำกับมา = ของธุรกิจนั้นทั้งก้อน
+    // ไม่ได้เขียน: ค่าที่ / ค่าแรง(ค่าพนักงาน) แบ่งครึ่ง · อย่างอื่นเป็นหม่าล่าหมด
+    if (biz) {
+      var tag = iBiz === -1 ? '' : String(v[r][iBiz] || '').trim();
+      var share = tag ? (costBizCell_(tag) === biz ? 1 : 0)
+                      : (COST_SHARED_TYPES.hasOwnProperty(type)
+                          ? (biz === 'เบเกอรี่' ? COST_SHARED_TYPES[type] : 1 - COST_SHARED_TYPES[type])
+                          : (biz === 'หม่าล่า' ? 1 : 0));
+      if (!share) continue;
+      baht = costBaht_(baht * share);
+    }
     if (!out[loc]) out[loc] = { รวม: 0, ตามประเภท: {} };
     out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
     out[loc]['ตามประเภท'][type] = costBaht_((out[loc]['ตามประเภท'][type] || 0) + baht);
@@ -935,10 +950,62 @@ function costSummary_() {
   }
 
   var mala = part('หม่าล่า'), bakery = part('เบเกอรี่');
-  // ตัวบนสุดคือหม่าล่า (เหมือนเดิม) — เบเกอรี่อยู่ใน biz['เบเกอรี่']
+  // ตัวบนสุดคือหม่าล่า (เหมือนเดิม) — เบเกอรี่อยู่ใน biz['เบเกอรี่'] · รวมทั้งสองอยู่ใน biz['รวม']
   return { central: central, stock: mala.stock, owed: mala.owed,
            used: mala.used, pl: mala.pl, warn: rep.warn,
-           biz: { 'หม่าล่า': mala, 'เบเกอรี่': bakery } };
+           biz: { 'หม่าล่า': mala, 'เบเกอรี่': bakery, 'รวม': costCombine_(mala, bakery) } };
+}
+
+/**
+ * บัญชีรวม หม่าล่า + เบเกอรี่ — บวกกันตรง ๆ
+ * ค่าใช้จ่ายที่ใช้ร่วม (ค่าที่ ค่าแรง) แบ่งไปแล้วฝั่งละครึ่ง รวมกลับก็ได้ยอดเต็มพอดี ไม่นับซ้ำ
+ */
+function costCombine_(a, b) {
+  var num = function (x) { return Number(x) || 0; };
+  var sumObj = function (x, y, keys) {
+    var o = {};
+    keys.forEach(function (k) { o[k] = costBaht_(num((x || {})[k]) + num((y || {})[k])); });
+    return o;
+  };
+  var stock = {};
+  [a.stock, b.stock].forEach(function (src) {
+    Object.keys(src).forEach(function (loc) {
+      var st = stock[loc] || (stock[loc] = { rows: [], total: 0 });
+      st.rows = st.rows.concat(src[loc].rows);
+      st.total = costBaht_(st.total + src[loc].total);
+    });
+  });
+  Object.keys(stock).forEach(function (loc) {
+    stock[loc].rows.sort(function (x, y) { return y.value - x.value; });
+  });
+  var owedKeys = ['ส่งไปแล้ว', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ค้างชำระ', 'ค่าของที่ใช้ไปแล้ว',
+                  'เงินในมือ', 'จ่ายได้เลย', 'วัตถุดิบคงเหลือ'];
+  var owed = {};
+  Object.keys(a.owed).concat(Object.keys(b.owed)).forEach(function (loc) {
+    if (!owed[loc]) owed[loc] = sumObj(a.owed[loc], b.owed[loc], owedKeys);
+  });
+  var plKeys = ['รายได้', 'หน้าร้าน', 'เดลิเวอรี่', 'ค่าคอมแอป', 'เงินเข้าจริง', 'ค่าใช้จ่ายวัตถุดิบ',
+                'ของเสีย', 'กำไรขั้นต้น', 'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'];
+  var pl = {};
+  Object.keys(a.pl).concat(Object.keys(b.pl)).forEach(function (loc) {
+    if (pl[loc]) return;
+    var x = a.pl[loc] || {}, y = b.pl[loc] || {};
+    var p = sumObj(x, y, plKeys);
+    p['ธุรกิจ'] = 'รวม';
+    // แยกให้เห็นว่ารายได้มาจากไหน
+    p['หน้าร้าน'] = num(x['หน้าร้าน']);            // หม่าล่าหน้าร้าน
+    p['เดลิเวอรี่'] = num(x['เดลิเวอรี่']);
+    p['ขายเบเกอรี่'] = num(y['รายได้']);
+    p['กำไรหม่าล่า'] = num(x['กำไรสุทธิ']);
+    p['กำไรเบเกอรี่'] = num(y['กำไรสุทธิ']);
+    var tp = {};
+    [x['ตามประเภท'] || {}, y['ตามประเภท'] || {}].forEach(function (o) {
+      Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
+    });
+    p['ตามประเภท'] = tp;
+    pl[loc] = p;
+  });
+  return { stock: stock, owed: owed, pl: pl };
 }
 
 /* ═══════════════════ เขียนลงชีต ═══════════════════ */
@@ -1054,20 +1121,29 @@ function buildLocationPL() {
   cacheClear_();
   var s = costSummary_();
   var rows = [];
-  COST_BIZES.forEach(function (z) {
-    var pls = s.biz ? s.biz[z].pl : (z === 'หม่าล่า' ? s.pl : {});
-    Object.keys(pls).sort().forEach(function (loc) {
-      var p = pls[loc];
-      rows.push([z === 'หม่าล่า' ? loc : loc + ' · ' + z, p['หน้าร้าน'], p['เดลิเวอรี่'], p['ค่าคอมแอป'], p['รายได้'],
+  // ทีละที่ — รวม / หม่าล่า / เบเกอรี่ เรียงติดกัน อ่านเทียบกันได้ในตารางเดียว
+  var biz = s.biz || { 'หม่าล่า': { pl: s.pl } };
+  var locs = {};
+  Object.keys(biz).forEach(function (z) { Object.keys(biz[z].pl).forEach(function (l) { locs[l] = true; }); });
+  Object.keys(locs).sort(function (x, y) {
+    return x === s.central ? -1 : y === s.central ? 1 : x.localeCompare(y, 'th');
+  }).forEach(function (loc) {
+    ['รวม', 'หม่าล่า', 'เบเกอรี่'].forEach(function (z) {
+      var p = biz[z] && biz[z].pl[loc];
+      if (!p) return;
+      var bakerySales = z === 'รวม' ? p['ขายเบเกอรี่'] : (z === 'เบเกอรี่' ? p['รายได้'] : 0);
+      rows.push([loc, z, z === 'เบเกอรี่' ? 0 : p['หน้าร้าน'], z === 'เบเกอรี่' ? 0 : p['เดลิเวอรี่'],
+                 p['ค่าคอมแอป'], bakerySales, p['รายได้'],
                  p['ค่าใช้จ่ายวัตถุดิบ'], p['ของเสีย'], p['กำไรขั้นต้น'],
                  p['ค่าใช้จ่ายอื่น'], p['กำไรสุทธิ'], p['วัตถุดิบคงเหลือ']]);
     });
   });
   costWriteSheet_(COST_SHEET_PL,
-    ['สถานที่', 'ขายหน้าร้าน', 'เดลิเวอรี่ (ราคาบนแอป)', 'ค่าคอม+VAT', 'รายได้รวม',
-     'ค่าใช้จ่ายวัตถุดิบ', 'ของเสีย', 'กำไรขั้นต้น',
+    ['สถานที่', 'บัญชี', 'ขายหน้าร้าน (หม่าล่า)', 'เดลิเวอรี่ (ราคาบนแอป)', 'ค่าคอม+VAT', 'ขายเบเกอรี่',
+     'รายได้รวม', 'ค่าใช้จ่ายวัตถุดิบ', 'ของเสีย', 'กำไรขั้นต้น',
      'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'], rows,
-    'ตัวเลขสะสมตั้งแต่เริ่มระบบ · ครัวกลางไม่มีรายได้เพราะส่งต่อที่ต้นทุน · อัปเดตเมื่อ ' +
+    'ตัวเลขสะสมตั้งแต่เริ่มระบบ · แต่ละที่มี 3 แถว รวม / หม่าล่า / เบเกอรี่ · ค่าที่ ค่าแรง แบ่งครึ่ง · ' +
+    'ครัวกลางไม่มีรายได้เพราะส่งต่อที่ต้นทุน · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm'));
   Logger.log('เขียนชีต "' + COST_SHEET_PL + '" แล้ว ' + rows.length + ' แถว');
 }

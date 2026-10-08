@@ -1305,6 +1305,20 @@ function handleBakeryCount_(body) {
     });
     appendRows_(sh, map, rows);
 
+    // เหลือแล้วหมดอายุ → แจ้งให้ทิ้ง · เหลือน้อย → แจ้งให้เติม
+    var tossText = '';
+    if (typeof bakeryExpiryAt_ === 'function') {
+      try {
+        var toss = bakeryExpiryAt_(loc, now.getTime());
+        if (toss.length) { tossText = bakeryExpiryText_(loc, toss, now.getTime()); stockNotify_(loc, tossText); }
+      } catch (e) { Logger.log('bakeryExpiryAt_: ' + e.message); }
+    }
+    try {
+      var balNow = {};
+      rows.forEach(function (r) { balNow[r['รายการ']] = r['จำนวน']; });
+      checkLowStock_(Object.keys(balNow), loc, balNow);
+    } catch (e) { Logger.log('bakery low: ' + e.message); }
+
     var L = [];
     if (!after) {
       L.push('🍡 เบเกอรี่ก่อนขาย — ' + loc + ' (' + session.name + ')');
@@ -1320,7 +1334,7 @@ function handleBakeryCount_(body) {
         sold.forEach(function (x) { L.push('• ' + x.name + ' ' + x.qty + ' ชิ้น'); });
       }
       stockNotify_(loc, L.join('\n'));
-      res = { success: true, message: 'บันทึกก่อนขายแล้ว' };
+      res = { success: true, message: 'บันทึกก่อนขายแล้ว', tossText: tossText };
     } else {
       var cash = num_(m.cash), tr = num_(m.transfer), thai = num_(m.thai);
       var money = auditRound_(cash + tr + thai), expected = auditRound_(soldN * BAKERY_PRICE);
@@ -1345,7 +1359,7 @@ function handleBakeryCount_(body) {
       L.push('', 'เหลือ ' + (left.length ? left.join(' · ') : 'หมด'));
       stockNotify_(loc, L.join('\n'));
       // พนักงานไม่เห็นยอดที่ควรได้ — ไม่งั้นจะกรอกให้ตรงแทนการนับเงินจริง
-      res = { success: true, message: 'บันทึกหลังขายแล้ว ระบบเทียบเงินและแจ้งเจ้าของร้านแล้ว' };
+      res = { success: true, message: 'บันทึกหลังขายแล้ว ระบบเทียบเงินและแจ้งเจ้าของร้านแล้ว', tossText: tossText };
       if (session.role === 'owner') { res.expected = expected; res.diff = diff; res.sold = soldN; }
     }
   } finally {

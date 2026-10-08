@@ -77,7 +77,8 @@ var INTAKE_EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสี�
 var INTAKE_EXPENSE_ALIAS = {
   'ค่าเช่า': 'ค่าที่', 'ค่าเช่าที่': 'ค่าที่', 'ค่าแผง': 'ค่าที่', 'ค่าล็อค': 'ค่าที่', 'ค่าล็อก': 'ค่าที่',
   'ค่าไม้': 'ค่าไม้เสียบ', 'ค่าแก้ส': 'ค่าแก๊ส', 'ค่าน้ำแข็งเปล่า': 'ค่าน้ำแข็ง',
-  'ค่าจ้าง': 'ค่าแรง', 'ค่าลูกจ้าง': 'ค่าแรง', 'ค่าแรงงาน': 'ค่าแรง'
+  'ค่าจ้าง': 'ค่าแรง', 'ค่าลูกจ้าง': 'ค่าแรง', 'ค่าแรงงาน': 'ค่าแรง',
+  'ค่าพนักงาน': 'ค่าแรง', 'ค่าแรงพนักงาน': 'ค่าแรง'
 };
 
 /**
@@ -827,6 +828,18 @@ function intakeParseLine_(line) {
     if (!text) return null;
   }
 
+  // "วันเข้า 5/10" — ไดฟุกุนับอายุจากวันนี้ ตัดออกก่อน ไม่งั้นเลขวันที่ไปปนกับจำนวน
+  var start = '';
+  var sd = text.match(/(?:วันเข้า|เข้าวันที่|วันที่เข้า)\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?/);
+  if (sd) {
+    var yy = sd[3] ? Number(sd[3]) : Number(Utilities.formatDate(new Date(), intakeTz_(), 'yyyy'));
+    if (yy < 100) yy += 2000;
+    if (yy > 2400) yy -= 543;                                   // พ.ศ.
+    start = yy + '-' + ('0' + sd[2]).slice(-2) + '-' + ('0' + sd[1]).slice(-2);
+    text = (text.slice(0, sd.index) + ' ' + text.slice(sd.index + sd[0].length)).replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+  }
+
   // "ถุงละ 30 อัน" — ตัดออกก่อน ไม่งั้น 30 อันจะกลายเป็นจำนวนทั้งหมด
   var perBag = 0;
   var pb = text.match(INTAKE_PERBAG_RE);
@@ -903,6 +916,7 @@ function intakeParseLine_(line) {
     pay: pay.method, expense: intakeIsExpense_(name),
     branch: branch.loc,                               // ป้ายสาขา ใช้กับค่าใช้จ่าย
     biz: biz,                                         // ป้ายธุรกิจ (เบเกอรี่/หม่าล่า) ใช้กับค่าใช้จ่าย
+    start: start,                                     // วันเข้า (ไดฟุกุ) ใช้นับอายุ
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
     saidMoney: saidMoney, saidUnit: saidUnit
@@ -1004,7 +1018,6 @@ var INTAKE_ALIAS = {
   'พันสาหร่าย': 'หมูพันสาหร่าย', 'เบคอนพัน': 'เบคอนพันไส้กรอก',
   'ไส้กรอกเบคอน': 'เบคอนพันไส้กรอก', 'ไส้กรอกพันเบคอน': 'เบคอนพันไส้กรอก',
   'กรอกชีส': 'ไส้กรอกชีส', 'กรอกเล็ก': 'ไส้กรอกอันเล็ก',
-  'กรอกแดง': 'ไส้กรอกแดง (ดิบ)', 'ไส้กรอกแดง': 'ไส้กรอกแดง (ดิบ)',
   'เต้าหมู': 'เต้าหู้หมู', 'เต้าหลอด': 'เต้าหู้หลอด',
   'เต้าเหลี่ยม': 'เต้าหู้ปลาสี่เหลี่ยม', 'เต้าหู้ปลา': 'เต้าหู้ปลาสี่เหลี่ยม',
   'ปลาสี่เหลี่ยม': 'เต้าหู้ปลาสี่เหลี่ยม',
@@ -1214,7 +1227,7 @@ function intakeStockQty_(item, counts, gram, perBag) {
  * พอมีแถวใหม่ บอทของเข้าใน line-expiry-alert.gs จะเห็นภายใน 5 นาที
  * แล้วแจ้งกลุ่มเองว่าของเข้าอะไร วันไหน และต้องทิ้งวันไหน
  */
-function intakeAddStockIn_(item, qty, ctx) {
+function intakeAddStockIn_(item, qty, ctx, start) {
   if (typeof ensureCols_ !== 'function' || typeof appendByCols_ !== 'function') return 0;
 
   var sheetName = (typeof SHEET_INCOMING === 'string') ? SHEET_INCOMING : 'จำนวนของเข้า';
@@ -1222,9 +1235,10 @@ function intakeAddStockIn_(item, qty, ctx) {
   if (!sh) return 0;   // ยังไม่ได้ตั้งระบบสต็อก — ไม่สร้างชีตให้เอง เดี๋ยวคอลัมน์ไม่ตรง
 
   var cols = (typeof MOVE_COLS !== 'undefined' ? MOVE_COLS : []).concat(['messageId']);
+  if (item.bakery && typeof BAKERY_START_COL === 'string') cols = cols.concat([BAKERY_START_COL]);
   var map  = ensureCols_(sh, cols);
 
-  appendByCols_(sh, map, {
+  var row = {
     'วันที่เวลา': new Date(),
     'สาขา':      ctx.location,
     'ผู้ตรวจ':    ctx.who || 'ไลน์',
@@ -1240,7 +1254,9 @@ function intakeAddStockIn_(item, qty, ctx) {
     'ประเภท':     'ของเข้าครัวกลาง',
     'หมายเหตุ':   'บันทึกจากไลน์',
     'messageId':  ctx.msgId
-  });
+  };
+  if (start && item.bakery && typeof BAKERY_START_COL === 'string') row[BAKERY_START_COL] = start;
+  appendByCols_(sh, map, row);
   return sh.getLastRow();
 }
 
@@ -1747,7 +1763,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         expSeq++;
         var type = intakeExpenseType_(it.raw);
         var expLoc = it.branch || ctx.location;
-        var expBiz = it.biz || 'หม่าล่า';
+        // ไม่เขียนธุรกิจ = ปล่อยว่าง (ค่าที่/ค่าแรง แบ่งครึ่ง อย่างอื่นเป็นหม่าล่า — ดู COST_SHARED_TYPES)
+        var expBiz = it.biz || '';
         expRows.push([
           date, time, 'E' + stamp + '-' + ('00' + expSeq).slice(-3),
           expLoc, ctx.who, type,
@@ -1755,10 +1772,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           it.baht || 0, ctx.msgId + '-' + i, it.pay, expBiz
         ]);
         expTotal += it.baht || 0;
-        var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay);
+        var shared = !expBiz && typeof COST_SHARED_TYPES === 'object' && COST_SHARED_TYPES.hasOwnProperty(type);
+        var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay) +
+                      (shared ? '  (แบ่งครึ่ง หม่าล่า/เบเกอรี่)' : '');
         expLines.push(expLine);
         // หัวแยกตามสาขา + ธุรกิจ — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
-        var expKey = expLoc + '|' + expBiz;
+        var expKey = expLoc + '|' + (expBiz || 'หม่าล่า');
         if (!expByLoc[expKey]) { expByLoc[expKey] = []; expLocs.push(expKey); }
         expByLoc[expKey].push(expLine);
 
@@ -1846,7 +1865,11 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             intakeStaleUnitHint_(hit.name, byName[hit.name].subUnit));
         }
         if (!makeOnly && q && q.base > 0) {
-          var srow = intakeAddStockIn_(byName[hit.name], q, ctx);
+          var srow = intakeAddStockIn_(byName[hit.name], q, ctx, it.start);
+          if (srow && typeof bakeryNeedsStart_ === 'function' && bakeryNeedsStart_(hit.name) && !it.start) {
+            unitWarns.push(hit.name + ' — ไม่ได้บอกวันเข้า นับอายุจากวันนี้\n' +
+                           '       ถ้าไม่ใช่วันนี้ ลบแล้วพิมพ์ใหม่ เช่น ' + hit.name + ' 20 ชิ้น 130 วันเข้า 5/10');
+          }
           if (srow) {
             saved.s.push(srow);
             stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + byName[hit.name].subUnit +

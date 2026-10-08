@@ -100,4 +100,38 @@ s = g.costSummary_();
 eq('เบเกอรี่ ค่าใช้จ่ายอื่น 50 · กำไรสุทธิ 8.5', [s.biz['เบเกอรี่'].pl[SHOP]['ค่าใช้จ่ายอื่น'], s.biz['เบเกอรี่'].pl[SHOP]['กำไรสุทธิ']], [50, 8.5]);
 eq('หม่าล่าได้ค่าแก๊ส 450 (ช่องว่าง = หม่าล่า)', s.pl[SHOP]['ค่าใช้จ่ายอื่น'], 450);
 
+section('บัญชีรวม = หม่าล่า + เบเกอรี่');
+const tot = s.biz['รวม'].pl[SHOP];
+eq('รายได้รวม', tot['รายได้'], (s.pl[SHOP]['รายได้'] || 0) + 160);
+eq('ขายเบเกอรี่แยกให้เห็น', tot['ขายเบเกอรี่'], 160);
+eq('ค่าใช้จ่ายอื่นรวม 500', tot['ค่าใช้จ่ายอื่น'], 500);
+eq('กำไรสุทธิรวม = สองฝั่งบวกกัน', tot['กำไรสุทธิ'], Math.round((s.pl[SHOP]['กำไรสุทธิ'] + s.biz['เบเกอรี่'].pl[SHOP]['กำไรสุทธิ']) * 100) / 100);
+eq('สต็อกรวมมีเบเกอรี่', s.biz['รวม'].stock[g.CENTRAL].rows.some(r => r.item === 'ไดฟุกุ นมสด'), true);
+g.buildLocationPL();
+const PL = g.__env.SHEETS['บัญชี_กำไรแต่ละที่'];
+const plRows = (PL.rows || []).filter(r => r[0] === SHOP).map(r => r[1]);
+eq('ชีตบัญชี 3 แถวต่อที่', plRows, ['รวม', 'หม่าล่า', 'เบเกอรี่']);
+
+section('ค่าที่ / ค่าพนักงาน แบ่งครึ่ง · อย่างอื่นหม่าล่า');
+{
+  const g2 = setup();
+  const EX = g2.__env.SHEETS[g2.SHEET_EXPENSE] || (g2.__env.SHEETS[g2.SHEET_EXPENSE] = { headers: g2.EXPENSE_HEADERS.slice(), rows: [] });
+  if (EX.headers.indexOf('ธุรกิจ') === -1) { EX.headers.push('ธุรกิจ'); EX.rows.forEach(r => r.push('')); }
+  const d = g2.Utilities.formatDate(new Date(NOW), '', 'yyyy-MM-dd'), t = g2.Utilities.formatDate(new Date(NOW), '', 'HH:mm:ss');
+  const ex = (type, amt, biz) => push(g2, g2.SHEET_EXPENSE, { 'วันที่': d, 'เวลา': t, 'สาขา': SHOP, 'ประเภท': type, 'จำนวนเงิน': amt, 'ธุรกิจ': biz || '' });
+  ex('ค่าที่', 120); ex('ค่าแรง', 300); ex('ค่าน้ำแข็ง', 10); ex('อื่น ๆ', 40); ex('ค่าที่', 20, 'หม่าล่า');
+  g2.cacheClear_();
+  const sm = g2.costSummary_();
+  const m = sm.pl[SHOP], b = sm.biz['เบเกอรี่'].pl[SHOP];
+  eq('หม่าล่า: ค่าที่ 60+20 · ค่าแรง 150 · น้ำแข็ง 10 · อื่น 40 = 280', m['ค่าใช้จ่ายอื่น'], 280);
+  eq('เบเกอรี่: ค่าที่ 60 · ค่าแรง 150 = 210', b['ค่าใช้จ่ายอื่น'], 210);
+  eq('แยกตามประเภท', [b['ตามประเภท']['ค่าที่'], b['ตามประเภท']['ค่าแรง'], b['ตามประเภท']['ค่าน้ำแข็ง']], [60, 150, undefined]);
+  // ไลน์: ค่าพนักงาน = ค่าแรง ไม่เขียนธุรกิจ = แบ่งครึ่ง
+  const ctx = { location: g2.CENTRAL, who: 'เจ้าของ', msgId: 'm', isGroup: true };
+  const o = g2.intakeSaveAndSummarize_(g2.intakeParseText_('สาขาทรัพย์พัฒนา ค่าพนักงาน 300'), ctx, 'ข้อความ', 'x', []);
+  const last = EX.rows.slice(-1)[0];
+  eq('ไลน์ ค่าพนักงาน → ค่าแรง ธุรกิจว่าง', [last[EX.headers.indexOf('ประเภท')], last[EX.headers.indexOf('ธุรกิจ')]], ['ค่าแรง', '']);
+  eq('ตอบว่าแบ่งครึ่ง', /แบ่งครึ่ง หม่าล่า\/เบเกอรี่/.test(o), true);
+}
+
 done();

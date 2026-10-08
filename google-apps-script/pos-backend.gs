@@ -1243,6 +1243,26 @@ function bakeryCost_(name) {
 /** สินค้านี้อยู่บัญชีไหน */
 function bizOfItem_(name) { return isBakeryItem_(name) ? BIZ_BAKERY : BIZ_MALA; }
 
+/* อายุเบเกอรี่ (ตั้ง 8/10)
+ *   บราวนี่  อยู่ได้ 14 วัน นับจากวันที่เข้าครัวกลาง
+ *   ไดฟุกุ   อยู่ได้ 30 วัน นับจาก "วันเข้า" ที่กรอกตอนรับเข้าครัวกลาง (ไม่ใช่วันที่ลงระบบ)
+ *   ถึงสาขาแล้วอยู่ได้อีก 7 วัน แต่ไม่เกินอายุเดิมจากครัวกลาง */
+var BAKERY_LIFE = { 'ไดฟุกุ': 30, 'บราวนี่': 14 };
+var BAKERY_BRANCH_DAYS = 7;
+var BAKERY_START_COL = 'วันเริ่มนับอายุ';
+function bakeryKind_(name) { var m = String(name || '').match(/^(ไดฟุกุ|บราวนี่)/); return m ? m[1] : ''; }
+function bakeryOriginDays_(name) { return BAKERY_LIFE[bakeryKind_(name)] || 0; }
+/** ไดฟุกุต้องกรอกวันเข้าเอง — บราวนี่นับจากวันที่ลงของเข้าครัวกลาง */
+function bakeryNeedsStart_(name) { return bakeryKind_(name) === 'ไดฟุกุ'; }
+
+/* เหลือเท่านี้แจ้งไลน์ให้เติม (ชิ้น ต่อรส) */
+var BAKERY_LOW = { 'ไดฟุกุ': { shop: 20, central: 40 }, 'บราวนี่': { shop: 10, central: 20 } };
+function bakeryLowPieces_(name, loc) {
+  var k = BAKERY_LOW[bakeryKind_(name)];
+  if (!k) return 0;
+  return String(loc || '').trim() === CENTRAL ? k.central : k.shop;
+}
+
 // ค่าที่ใส่ได้ในคอลัมน์ "ใช้ที่" — เว้นว่าง = ใช้ทุกที่
 //   ครัวกลาง = ของที่มีเฉพาะครัวกลาง เช่น วัตถุดิบดิบ ผงปรุง ของใช้
 //   ร้าน     = ของที่มีเฉพาะหน้าร้าน เช่น น้ำซุปที่ผสมเสร็จแล้ว
@@ -1371,7 +1391,8 @@ function appendRows_(sheet, map, list) {
       _cache[movesKey].push({
         when: values['วันที่เวลา'], loc: String(values['สาขา'] || '').trim(), item: item,
         qty: Number(values['จำนวน']) || 0, kind: String(values['ประเภท'] || '').trim(),
-        note: String(values['หมายเหตุ'] || '').trim()
+        note: String(values['หมายเหตุ'] || '').trim(),
+        start: values[BAKERY_START_COL] || ''
       });
     });
   }
@@ -1555,6 +1576,9 @@ function getStockItemsRaw_() {
 
 /** จุดเตือนของแต่ละที่ (หน่วยแพ็ค) — สาขาเว้นว่างไว้ก็ใช้ตัวเดียวกับครัวกลาง */
 function lowPacksFor_(item, loc) {
+  // เบเกอรี่ตั้งจุดเตือนไว้ในโค้ดเป็นชิ้น (BAKERY_LOW) — แปลงเป็นแพ็ค
+  var bk = item && item.bakery ? bakeryLowPieces_(item.name, loc) : 0;
+  if (bk) return bk / (item.perPack > 0 ? item.perPack : 1);
   if (String(loc || '').trim() === CENTRAL) return item.lowPacks || 0;
   return item.lowPacksBranch > 0 ? item.lowPacksBranch : (item.lowPacks || 0);
 }
@@ -1588,7 +1612,8 @@ function readMovesRaw_(sheetName) {
       item: name,
       qty:  Number(v[i][map['จำนวน']]) || 0,
       kind: String(v[i][map['ประเภท']] || '').trim(),
-      note: String(v[i][map['หมายเหตุ']] || '').trim()
+      note: String(v[i][map['หมายเหตุ']] || '').trim(),
+      start: map[BAKERY_START_COL] === undefined ? '' : v[i][map[BAKERY_START_COL]]
     });
   }
   return out;
@@ -1865,8 +1890,9 @@ function checkLowStock_(itemNames, location, balOverride) {
 
     var isLow = have <= limit;
     if (isLow && !wasLow) {
-      hits.push('• ' + name + ' เหลือ ' + fmtPack_(have, it) +
-                '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')');
+      hits.push('• ' + name + ' เหลือ ' + (it.bakery ? have + ' ' + it.subUnit : fmtPack_(have, it)) +
+                (it.bakery ? '  (จุดเตือน ' + limit + ' ' + it.subUnit + ')'
+                           : '  (จุดเตือน ' + lowPacks + ' ' + it.packUnit + ')'));
       toSet[key] = '1';
     } else if (!isLow && wasLow) {
       toDel.push(key);
@@ -1878,8 +1904,9 @@ function checkLowStock_(itemNames, location, balOverride) {
   toDel.forEach(function (k) { props.deleteProperty(k); });
 
   if (!hits.length) return;
-  stockNotify_(loc, '⚠️ ของ' + loc + 'ใกล้หมด\n\n' + hits.join('\n') + '\n\n' +
-    (loc === CENTRAL ? 'สั่งของเพิ่มด้วยครับ' : 'แจ้งครัวกลางเบิกของเพิ่มด้วยครับ'));
+  var bakeryOnly = (itemNames || []).every(function (n) { return items[n] && items[n].bakery; });
+  stockNotify_(loc, '⚠️ ' + (bakeryOnly ? 'เบเกอรี่' : 'ของ') + loc + 'ใกล้หมด\n\n' + hits.join('\n') + '\n\n' +
+    (loc === CENTRAL ? 'สั่งของเพิ่มด้วยครับ' : (bakeryOnly ? 'เติมของจากครัวกลางด้วยครับ' : 'แจ้งครัวกลางเบิกของเพิ่มด้วยครับ')));
 }
 
 /* ───────────────────────── บันทึกความเคลื่อนไหว ───────────────────────── */
@@ -2079,19 +2106,27 @@ function handleStockIn_(body) {
              'ให้ลงในแท็บ "แพ็คของ" — ของเข้าครัวกลางรับเฉพาะของที่ซื้อมา' };
   }
 
+  // ไดฟุกุนับอายุจากวันเข้าที่กรอก ไม่ใช่วันที่ลงระบบ — ไม่กรอกไม่รับ
+  var start = String(body.start || '').trim();
+  if (bakeryNeedsStart_(p.item.name) && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    return { success: false, message: 'ไดฟุกุต้องกรอก "วันเข้า" ด้วย (ใช้นับอายุ ' + BAKERY_LIFE['ไดฟุกุ'] + ' วัน)' };
+  }
+
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
-  var map = ensureCols_(sh, MOVE_COLS);
+  var map = ensureCols_(sh, p.item.bakery ? MOVE_COLS.concat([BAKERY_START_COL]) : MOVE_COLS);
 
   var now = new Date();
-  appendByCols_(sh, map, {
+  var row = {
     'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': p.session.name,
     'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าครัวกลาง',
     'หมายเหตุ': String(body.note || '')
-  });
+  };
+  if (start && p.item.bakery) row[BAKERY_START_COL] = start;
+  appendByCols_(sh, map, row);
 
   // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs เห็นแถวใหม่
   // ในชีตนี้ทุก 5 นาที แล้วแจ้งให้เอง พร้อมจำนวนแพ็คและวันหมดอายุ
@@ -2448,6 +2483,7 @@ function handleCostBoard_(p) {
     stock: s.stock, owed: s.owed, pl: s.pl,
     // บัญชีเบเกอรี่แยกจากหม่าล่า — หน้าเว็บมีปุ่มสลับ
     bakery: { stock: bk.stock, owed: bk.owed, pl: bk.pl },
+    total: (s.biz && s.biz['รวม']) ? { stock: s.biz['รวม'].stock, owed: s.biz['รวม'].owed, pl: s.biz['รวม'].pl } : null,
     warn: s.warn.slice(0, 30)
   } };
 }
@@ -2757,8 +2793,7 @@ var PACK_SIZE_EXCEPTION = {
 var PIECES_PER_STICK = {
   'เต้าชีส': 2,
   'เต้าหู้หมู': 4,
-  'เต้าหู้ปลาสี่เหลี่ยม': 4,
-  'ไส้กรอกแดง': 4
+  'เต้าหู้ปลาสี่เหลี่ยม': 4
 };
 
 /** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
@@ -2790,8 +2825,7 @@ var RAW_KG = [
   'วุ้นเส้นเกาหลี'
 ];
 var RAW_BAG = { 'มันเทศ': 'อัน', 'ข้าวโพดฝัก': 'ฝัก',
-                'น้ำจิ้มงา': 'ถุง', 'น้ำจิ้มสุกี้': 'กิโลลิตร',
-                'ไส้กรอกแดง': 'แพ็ค' };
+                'น้ำจิ้มงา': 'ถุง', 'น้ำจิ้มสุกี้': 'กิโลลิตร' };   // ไส้กรอกแดงเลิกขาย (8/10)
 
 /**
  * ของดิบที่ซื้อมาเป็นแพ็ค แล้วนับย่อยลงไปได้อีกชั้น
@@ -2903,7 +2937,6 @@ var STICK_ITEMS = [
   ['เห็ดหูหนูดำ',          '',            ''],
   ['ปูอัดยาว',            '',            ''],
   ['ไส้กรอกชีส',          '',            ''],
-  ['ไส้กรอกแดง',          '',            'ไม้ละ 4 ชิ้น'],
   ['เต้าหู้หลอด',         '',            ''],
   ['ไส้กรอกอันเล็ก',      '',            ''],
   ['เต้าหู้หมู',          '',            ''],

@@ -40,7 +40,7 @@ eq('ยอดกลับมา 10 ถุง', g.stockBalances_()[SHOP]['วุ�
 section('ของที่ไม้ละหลายชิ้น แก้เป็นแพ็คได้ คิดเป็นชิ้นให้เอง');
 g = fresh();
 g.checkToken_ = () => ({ role: 'owner', branch: '', branches: [], name: 'เจ้าของ' });
-g.handleStockWaste_({ token: 't', location: SHOP, item: 'ไส้กรอกแดง', packs: 0, rem: 3, reason: 'หมดอายุ' });
+g.handleStockWaste_({ token: 't', location: SHOP, item: 'เต้าหู้หมู', packs: 0, rem: 3, reason: 'หมดอายุ' });
 eq('3 ไม้ = 12 ชิ้น', cell(g, g.SHEET_WASTE, 2, 'จำนวน'), 12);
 setCell(g, g.SHEET_WASTE, 2, 'แพ็ค', 1); setCell(g, g.SHEET_WASTE, 2, 'เศษ', 0);
 edit(g, g.SHEET_WASTE, 2, 'แพ็ค');

@@ -78,11 +78,11 @@ eq('ไม่มีคำเตือนราคา 0', g2.costSummary_().warn.
 section('ยอดตั้งต้นสาขาที่ไม่มีราคา ไม่ต้องเตือน (ตั้งใจให้เป็น 0)');
 const g3 = fresh();
 g3.setLocationStart(SHOP, '2026-10-01');
-count(g3, 1, SHOP, 'ไส้กรอกแดง', 20, OCT, 8);
-eq('ไม่เตือน', g3.costSummary_().warn.some(w => w.item === 'ไส้กรอกแดง'), false);
+count(g3, 1, SHOP, 'ไส้กรอกอันเล็ก', 20, OCT, 8);
+eq('ไม่เตือน', g3.costSummary_().warn.some(w => w.item === 'ไส้กรอกอันเล็ก'), false);
 // แต่ของที่นับเกินหลังรอบตั้งต้นแล้วไม่รู้ราคา ยังต้องเตือน
-count(g3, 2, SHOP, 'ไส้กรอกแดง', 30, OCT, 21);
-eq('นับเกินหลังฐานยังเตือน', g3.costSummary_().warn.some(w => w.item === 'ไส้กรอกแดง'), true);
+count(g3, 2, SHOP, 'ไส้กรอกอันเล็ก', 30, OCT, 21);
+eq('นับเกินหลังฐานยังเตือน', g3.costSummary_().warn.some(w => w.item === 'ไส้กรอกอันเล็ก'), true);
 
 section('ครัวกลางกับสาขาเริ่มใหม่พร้อมกัน 1/10');
 const g4 = fresh();
