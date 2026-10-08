@@ -281,6 +281,54 @@ section('ลืมนับและลืมกรอกเงินตอน�
   eq('ขายวันนี้แล้ว กรอกใหม่ = เงินของวันนี้', g.cashDayOfRow_(SHOP, { ms: NOW + 120000 }), today);
 }
 
+section('ขาย 7/10 · ปิดร้าน 8/10 · นับเช้า 9/10 = ยอดของ 7/10 · นับเย็น 9/10 = ยอดของ 9/10');
+{
+  const mk = () => {
+    const g = fresh();
+    g.CASH_DAY_CUT_HOURS = CUT;
+    g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
+    g.__env.SHEETS[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
+    return g;
+  };
+  let g = mk();
+  const today = g.cashBizDay_(NOW), t0 = g.cashDayStart_(today);
+  const T = h => new Date(t0 + h * 3600000);
+  const day7 = g.cashBizDay_(T(-46).getTime());
+  const cnt = (g, d, q) => push(g, g.SHEET_COUNT, { 'วันที่เวลา': d, 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': q, 'ประเภท': 'เช็คสต็อก' });
+  const ord = (g, d, net, how) => push(g, g.SHEET_ORDERS, { 'วันที่': ymd(d), 'เวลา': hms(d), 'สาขา': SHOP,
+    'ยอดรวม': net, 'ส่วนลด': 0, 'ยอดสุทธิ': net, 'รวมไม้': net / 10, 'วิธีชำระเงิน': how || 'เงินสด' });
+  const cashRow = (g, d, amt) => {
+    g.cashSheet_();
+    const S = g.__env.SHEETS[g.SHEET_CASH];
+    S.rows.push([ymd(d), hms(d), SHOP, 'ลลิตา', amt, '', 'C' + d.getTime()]);
+  };
+  const exp = (g, d, amt) => push(g, g.SHEET_EXPENSE, { 'วันที่': ymd(d), 'เวลา': hms(d), 'สาขา': SHOP, 'ประเภท': 'ค่าน้ำแข็ง', 'จำนวนเงิน': amt, 'วิธีจ่าย': 'เงินสด' });
+  // วันที่ 7: นับก่อนขาย 30 · ขาย เงินสด 80 + โอน 40 · กรอกเงิน 80 ตอนปิด (ยังไม่ได้นับปิด)
+  cnt(g, T(-47), 30); ord(g, T(-45), 80); ord(g, T(-44.5), 40, 'สแกน/โอนผ่านธนาคาร'); cashRow(g, T(-43), 80);
+  // วันที่ 8: ปิดร้าน ไม่มีบิล (จ่ายค่าน้ำแข็งวันปิด ไม่ใช่เงินลิ้นชักวันที่ 7)
+  exp(g, T(-20), 10);
+  // วันที่ 9: เช้านับ 18 (ขายไป 12 = 120)
+  cnt(g, T(1), 18);
+  eq('วันขายก่อนหน้า 9/10 คือ 7/10 (ข้ามวันปิด)', g.cashPrevSalesDay_(SHOP, today), day7);
+  let c = g.cashCheckAfterCount_(SHOP, T(1));
+  eq('นับเช้า → เทียบเงินของวันที่ 7', c && c.expected, 80);
+  eq('ตรง', c && c.ok, true);
+  eq('ค่าน้ำแข็งวันปิดไม่ถูกหักจากเงินวันที่ 7', /ค่าใช้จ่ายเงินสดวันที่/.test(c.text), false);
+  // วันที่ 9: ขาย 50 เงินสด · นับเย็น 13 · กรอกเงิน 50
+  ord(g, T(3), 50); cnt(g, T(5), 13); cashRow(g, T(5.1), 50);
+  c = g.cashCheck_(SHOP, today);
+  eq('เย็นวันที่ 9 = ยอดของวันที่ 9 (เริ่มจากรอบนับเช้า)', [c.expected, c.ok], [50, true]);
+  eq('ช่วงสต็อก เช้า → เย็นวันที่ 9', /ขายไปตามสต็อก 5 ชิ้น/.test(c.text), true);
+
+  // ลืมกรอกเงินวันที่ 7 — มากรอกเช้าวันที่ 9 ก่อนขาย = เงินของวันที่ 7
+  g = mk();
+  cnt(g, T(-47), 30); ord(g, T(-45), 80); cnt(g, T(1), 22); cashRow(g, T(1.2), 80);
+  eq('เงินที่กรอกเช้า 9/10 เป็นของ 7/10', g.cashDayOfRow_(SHOP, { ms: T(1.2).getTime() }), day7);
+  c = g.cashCheck_(SHOP, day7);
+  eq('เทียบได้ ตรง', [c && c.expected, c && c.ok], [80, true]);
+  eq('ไม่นับเป็นเงินวันที่ 9', g.cashRowsForDay_(SHOP, today).length, 0);
+}
+
 section('ส่งไลน์รวมทีเดียว');
 {
   const gb = fresh();

@@ -805,33 +805,49 @@ function cashRows_(loc) {
 }
 
 /**
+ * วันขายล่าสุดก่อนวันทำการ day — ข้ามวันที่ปิดร้าน (ไม่มีบิล) ย้อนได้ 7 วัน
+ * 8/10 ปิดร้าน → ก่อน 9/10 คือ 7/10
+ */
+function cashPrevSalesDay_(loc, day) {
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  for (var k = 1; k <= 7; k++) {
+    var start = cashDayStart_(day) - k * 86400000;
+    if (auditSales_(loc, st(start - 1000), st(start + 86400000 - 1000)).orders) return cashBizDay_(start);
+  }
+  return '';
+}
+
+/**
+ * แถวเงินนี้กรอกก่อนเปิดขาย เพื่อปิดยอดวันขายก่อนหน้า (ลืมกรอกตอนปิดร้าน) ใช่ไหม
+ * ใช่ = คืนวันขายนั้น · ไม่ใช่ = ''
+ *   วันนี้ยังไม่มีบิล + วันขายก่อนหน้ายังไม่มีแถวเงินของตัวเอง → เป็นเงินของวันนั้น
+ */
+function cashLateDayOf_(loc, c, all) {
+  var d = cashBizDay_(c.ms), start = cashDayStart_(d);
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  if (auditSales_(loc, st(start - 1000), st(c.ms)).orders) return '';          // วันนี้ขายไปแล้ว
+  var prev = cashPrevSalesDay_(loc, d);
+  if (!prev) return '';
+  if (all.some(function (x) { return x !== c && cashBizDay_(x.ms) === prev; })) return '';
+  return prev;
+}
+
+/**
  * ยอดเงินที่กรอกของวันทำการ day
- * กรอกเช้าวันรุ่งขึ้นก่อนเปิดขาย (ยังไม่มีบิลของวันนั้น) และเมื่อวานมีขายแต่ไม่ได้กรอก
- * = เงินของเมื่อวาน (ลืมกรอกตอนปิดร้าน)
+ * กรอกเช้าวันขายถัดไปก่อนเปิดขาย และวันนี้ไม่ได้กรอก = เงินของวันนี้ (ลืมกรอกตอนปิดร้าน)
+ * วันที่ปิดร้านคั่นกลางข้ามได้ (ขาย 7/10 · ปิด 8/10 · กรอกเช้า 9/10 = เงินของ 7/10)
  */
 function cashRowsForDay_(loc, day) {
   var all = cashRows_(loc);
-  var next = cashBizDay_(cashDayStart_(day) + 30 * 3600000);
-  var own = all.filter(function (c) { return cashBizDay_(c.ms) === day && !cashMorningOfPrev_(loc, c, all); });
-  var late = all.filter(function (c) { return cashBizDay_(c.ms) === next && cashMorningOfPrev_(loc, c, all); });
-  // ของตัวเองยังมี = กรอกตอนปิดแล้ว ส่วนที่กรอกเช้าเป็นของวันถัดไป
-  return own.length ? own : late;
-}
-
-/** แถวเงินนี้กรอกเช้าก่อนเปิดขาย เพื่อปิดยอดของเมื่อวานใช่ไหม */
-function cashMorningOfPrev_(loc, c, all) {
-  var d = cashBizDay_(c.ms), start = cashDayStart_(d);
-  var prev = cashBizDay_(start - 3600000);
-  if (all.some(function (x) { return cashBizDay_(x.ms) === prev; })) return false;
-  var st = function (ms) { return auditStamp_(new Date(ms)); };
-  if (auditSales_(loc, st(start - 1000), st(c.ms)).orders) return false;          // วันนี้ขายไปแล้ว
-  return auditSales_(loc, st(cashDayStart_(prev) - 1000), st(start - 1000)).orders > 0;
+  var own = all.filter(function (c) { return cashBizDay_(c.ms) === day && !cashLateDayOf_(loc, c, all); });
+  if (own.length) return own;
+  var from = cashDayStart_(day) + 86400000, to = cashDayStart_(day) + 8 * 86400000;
+  return all.filter(function (c) { return c.ms >= from && c.ms < to && cashLateDayOf_(loc, c, all) === day; });
 }
 
 /** ยอดเงินแถวนี้เป็นของวันทำการไหน */
 function cashDayOfRow_(loc, c) {
-  var d = cashBizDay_(c.ms);
-  return cashMorningOfPrev_(loc, c, cashRows_(loc)) ? cashBizDay_(cashDayStart_(d) - 3600000) : d;
+  return cashLateDayOf_(loc, c, cashRows_(loc)) || cashBizDay_(c.ms);
 }
 
 /** รอบนับสต็อกจริง (ไม่ใช่เช็คระดับ/ล้างยอด/ก่อนวันเริ่ม) ของที่นี้ — เวลาแต่ละรอบ เรียงใหม่ → เก่า */
@@ -983,7 +999,9 @@ function cashCheck_(loc, day, opt) {
   var st = function (ms) { return auditStamp_(new Date(ms)); };
   var u = cashUsage_(loc, countMs);
   var s = auditSales_(loc, st(prevMs), st(countMs + 60000));                 // ช่วงนับสต็อก
-  var sDay = auditSales_(loc, st(dayStart - 1000), st(Math.max(countMs + 60000, cash.ms)));  // ทั้งวัน
+  // ลิ้นชักของวันนั้นทั้งวัน — นับปิดหลังวันปิดร้าน (เช้าวันขายถัดไป) ไม่ดึงค่าใช้จ่ายวันปิดร้านมาหัก
+  var drawerEnd = Math.max(cash.ms, Math.min(countMs + 60000, dayStart + 86400000 - 1000));
+  var sDay = auditSales_(loc, st(dayStart - 1000), st(drawerEnd));                         // ทั้งวัน
   var pre = prevMs > dayStart ? auditSales_(loc, st(dayStart - 1000), st(prevMs)).cashSales : 0;
   var old = prevMs < dayStart ? auditSales_(loc, st(prevMs), st(dayStart - 1000)).cashSales : 0;
   var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
@@ -1124,10 +1142,11 @@ function cashCheckAfterCount_(loc, now) {
   var ms = (now || new Date()).getTime(), day = cashBizDay_(ms);
   var r = cashCheck_(loc, day);
   if (r) return r;
-  // นับเช้าวันรุ่งขึ้นก่อนเปิดร้าน = รอบนับปิดของเมื่อวาน → เทียบเงินของเมื่อวาน
-  // (ทับผลเดิมได้ เช่นเมื่อวานกรอกเงินตอนยังไม่นับปิด แล้วระบบเก่าเทียบผิดไว้)
-  var prev = cashBizDay_(cashDayStart_(day) - 3600000);
-  if (!cashRowsForDay_(loc, prev).length) return null;
+  // นับเช้าก่อนเปิดร้าน = รอบนับปิดของวันขายก่อนหน้า → เทียบเงินของวันนั้น
+  // ข้ามวันที่ปิดร้านได้ (ขาย 7/10 · ปิด 8/10 · นับเช้า 9/10 = ยอดของ 7/10)
+  // (ทับผลเดิมได้ เช่นกรอกเงินตอนยังไม่นับปิด แล้วระบบเก่าเทียบผิดไว้)
+  var prev = cashPrevSalesDay_(loc, day);
+  if (!prev || !cashRowsForDay_(loc, prev).length) return null;
   var cc = cashCloseCount_(loc, prev);
   if (cc.countMs && Math.abs(cc.countMs - ms) <= 5 * 60000) return cashCheck_(loc, prev);
   return null;
