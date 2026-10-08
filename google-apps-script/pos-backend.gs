@@ -75,7 +75,7 @@ function deliveryCutRate_(platform) {
 // 'วิธีจ่าย' ต่อท้ายไว้ ไม่แทรกกลาง แถวเก่าที่ยังว่างถือเป็นเงินสด
 var EXPENSE_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id',
-  'วิธีจ่าย'
+  'วิธีจ่าย', 'ธุรกิจ'      // ธุรกิจ: หม่าล่า / เบเกอรี่ (ว่าง = หม่าล่า) — หน้า POS เป็นหม่าล่าเสมอ
 ];
 
 // ประเภทค่าใช้จ่ายที่เลือกได้ ต้องตรงกับ EXPENSE_TYPES ใน pos.html
@@ -227,6 +227,11 @@ function doPost(e) {
       case 'stockWaste':  return json_(withLineBatch_(function () { return handleStockWaste_(body); }));
       case 'stockCount':  return json_(handleStockCount_(body));
       case 'stockPack':   return json_(withLineBatch_(function () { return handleStockPack_(body); }));
+      case 'bakeryCount':
+        if (typeof handleBakeryCount_ !== 'function') {
+          return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
+        }
+        return json_(withLineBatch_(function () { return handleBakeryCount_(body); }));
       default:         return json_({ success: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -266,7 +271,7 @@ function handleVersion_() {
     version: BACKEND_VERSION,
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockPack', 'stockBootstrap'],
+              'stockPack', 'stockBootstrap', 'bakeryCount'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -1211,6 +1216,32 @@ function isFreeItem_(name) { return FREE_ITEMS.indexOf(String(name || '').trim()
 var KIND_RAW    = 'วัตถุดิบ';
 var KIND_PACKED = 'ของแพ็ค';
 var KIND_SUPPLY = 'ของใช้';
+var KIND_BAKERY = 'เบเกอรี่';
+
+/* ───────────── เบเกอรี่ (ตั้ง 8/10/2026) ─────────────
+ * ขายแยกจากหม่าล่า บัญชีแยก — ชิ้นละ 10 บาท ไม่มีลดไม่มีแถม
+ * ต้นทุนคงที่ต่อชิ้น (ไม่ได้คิดจากบิลซื้อ) · มีสต็อกทั้งครัวกลางและสาขา
+ * สาขานับในแท็บ 🍡 เบเกอรี่ วันละ 2 รอบ (ก่อนขาย / หลังขาย) ไม่ได้นับรวมกับเช็คสต็อกหม่าล่า
+ * [ชื่อ, ต้นทุน/ชิ้น] */
+var BAKERY_PRICE = 10;
+var BAKERY_ITEMS = [
+  ['ไดฟุกุ นมสด', 6.5], ['ไดฟุกุ ช็อกโกแลต', 6.5], ['ไดฟุกุ ชาเขียว', 6.5], ['ไดฟุกุ โอริโอ้', 6.5],
+  ['บราวนี่ นูเทลล่า', 6], ['บราวนี่ โอริโอ้', 6]
+];
+var BIZ_MALA = 'หม่าล่า', BIZ_BAKERY = 'เบเกอรี่';
+/** แถวนับเบเกอรี่ในชีตเช็คสต็อก — แยกประเภทไว้ ไม่ให้ปนกับรอบนับปิดร้านหม่าล่า */
+var KIND_BAKERY_COUNT = 'นับเบเกอรี่';
+function isBakeryItem_(name) {
+  var n = String(name || '').trim();
+  return BAKERY_ITEMS.some(function (b) { return b[0] === n; });
+}
+function bakeryCost_(name) {
+  var n = String(name || '').trim();
+  for (var i = 0; i < BAKERY_ITEMS.length; i++) if (BAKERY_ITEMS[i][0] === n) return BAKERY_ITEMS[i][1];
+  return 0;
+}
+/** สินค้านี้อยู่บัญชีไหน */
+function bizOfItem_(name) { return isBakeryItem_(name) ? BIZ_BAKERY : BIZ_MALA; }
 
 // ค่าที่ใส่ได้ในคอลัมน์ "ใช้ที่" — เว้นว่าง = ใช้ทุกที่
 //   ครัวกลาง = ของที่มีเฉพาะครัวกลาง เช่น วัตถุดิบดิบ ผงปรุง ของใช้
@@ -1339,7 +1370,8 @@ function appendRows_(sheet, map, list) {
       if (!item) return;
       _cache[movesKey].push({
         when: values['วันที่เวลา'], loc: String(values['สาขา'] || '').trim(), item: item,
-        qty: Number(values['จำนวน']) || 0, kind: String(values['ประเภท'] || '').trim()
+        qty: Number(values['จำนวน']) || 0, kind: String(values['ประเภท'] || '').trim(),
+        note: String(values['หมายเหตุ'] || '').trim()
       });
     });
   }
@@ -1514,7 +1546,8 @@ function getStockItemsRaw_() {
       lowPacksBranch: Number(v[i][map['เตือนสาขาเมื่อเหลือ(แพ็ค)']]) || 0,
       scope:    String(v[i][map['ใช้ที่']] || '').trim(),
       level:    isLevelItem_(name),
-      free:     isFreeItem_(name)
+      free:     isFreeItem_(name),
+      bakery:   isBakeryItem_(name)
     });
   }
   return out;
@@ -1554,7 +1587,8 @@ function readMovesRaw_(sheetName) {
       loc:  String(v[i][map['สาขา']] || '').trim(),
       item: name,
       qty:  Number(v[i][map['จำนวน']]) || 0,
-      kind: String(v[i][map['ประเภท']] || '').trim()
+      kind: String(v[i][map['ประเภท']] || '').trim(),
+      note: String(v[i][map['หมายเหตุ']] || '').trim()
     });
   }
   return out;
@@ -2230,6 +2264,12 @@ function stockItemsAt_(loc) {
   return getStockItems_().filter(function (it) { return !it.scope || it.scope === want; });
 }
 
+/** ของที่ต้องนับในเช็คสต็อกปิดร้าน — สาขาไม่นับเบเกอรี่ตรงนี้ (มีแท็บนับของตัวเอง) */
+function countItemsAt_(loc) {
+  var central = String(loc || '').trim() === CENTRAL;
+  return stockItemsAt_(loc).filter(function (it) { return central || !it.bakery; });
+}
+
 function handleStockCount_(body) {
   var session = checkToken_(body.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -2242,7 +2282,7 @@ function handleStockCount_(body) {
   var rows = body.rows || [];
   // นับเฉพาะของที่มีที่นี่ — ตรงกับที่หน้าเว็บโชว์ (itemsFor ใน stock.html)
   // ถ้าเอาทุกรายการ สาขาจะโดนถามหาของดิบที่อยู่แค่ครัวกลาง แล้วบันทึกไม่ได้เลย
-  var items = stockItemsAt_(loc);
+  var items = countItemsAt_(loc);
   if (!items.length) return { success: false, message: 'ยังไม่มีรายการสินค้าในชีต "' + SHEET_ITEMS + '"' };
 
   var got = {};
@@ -2268,7 +2308,7 @@ function handleStockCount_(body) {
   // รอบแรกหลังเริ่มนับใหม่ = ยอดตั้งต้น ไม่ได้เทียบกับอะไร
   // ถ้าเอายอดระบบมาเทียบ จะขึ้นว่า "ไม่ตรง" ทุกรายการ ทั้งที่ไม่มีอะไรผิด
   var isBase = !readMoves_(SHEET_COUNT).some(function (m) {
-    if (m.loc !== loc || m.kind === KIND_LEVEL_COUNT) return false;
+    if (m.loc !== loc || m.kind === KIND_LEVEL_COUNT || m.kind === KIND_BAKERY_COUNT) return false;
     if (typeof costBefore_ === 'function' && costBefore_(m.when, loc)) return false;
     return timeOf_(m.when) < now.getTime() - 60000;
   });
@@ -2402,9 +2442,12 @@ function handleCostBoard_(p) {
     return { success: false, message: 'ยังไม่ได้ติดตั้งไฟล์ stock-costing.gs ในโปรเจกต์นี้' };
   }
   var s = costSummary_();
+  var bk = (s.biz && s.biz['เบเกอรี่']) || { stock: {}, owed: {}, pl: {} };
   return { success: true, data: {
     version: BACKEND_VERSION, central: s.central,
     stock: s.stock, owed: s.owed, pl: s.pl,
+    // บัญชีเบเกอรี่แยกจากหม่าล่า — หน้าเว็บมีปุ่มสลับ
+    bakery: { stock: bk.stock, owed: bk.owed, pl: bk.pl },
     warn: s.warn.slice(0, 30)
   } };
 }
@@ -3022,6 +3065,14 @@ function itemCatalogue_() {
     });
   });
 
+
+  // เบเกอรี่ — ซื้อ/รับเข้าครัวกลาง ส่งสาขา ขายเป็นชิ้น ไม่ต้องแพ็ค
+  BAKERY_ITEMS.forEach(function (b) {
+    out.push({ name: b[0], kind: KIND_BAKERY, subUnit: 'ชิ้น', packUnit: 'แพ็ค', perPack: PACK_SIZE,
+               perStick: 1, price: BAKERY_PRICE, scope: '', raws: [],
+               note: 'เบเกอรี่ ชิ้นละ ' + BAKERY_PRICE + ' · ต้นทุนชิ้นละ ' + b[1] +
+                     ' · สาขานับในแท็บเบเกอรี่ (ก่อนขาย/หลังขาย)' });
+  });
   return out;
 }
 

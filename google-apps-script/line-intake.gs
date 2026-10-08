@@ -48,8 +48,27 @@ var INTAKE_EXPENSE_SHEET = 'POS_Expenses';
 
 var INTAKE_EXPENSE_HEADERS = [
   'วันที่', 'เวลา', 'เลขที่', 'สาขา', 'พนักงาน', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน', 'order_id',
-  'วิธีจ่าย'
+  'วิธีจ่าย', 'ธุรกิจ'
 ];
+
+/**
+ * ค่าใช้จ่ายของธุรกิจไหน — หม่าล่า (ค่าเริ่มต้น) หรือ เบเกอรี่ บัญชีแยกกัน
+ *   สาขาทรัพย์พัฒนาเบเกอรี่ ค่ารถ 50   → เบเกอรี่ ของสาขาทรัพย์พัฒนา
+ *   สาขาทรัพย์พัฒนาหม่าล่า ค่าแก๊ส 450 → หม่าล่า
+ * ใช้กับค่าใช้จ่าย (ขึ้นต้น "ค่า") และบรรทัดหัวเท่านั้น — "เบสหม่าล่า" ที่ซื้อเข้าสต็อกไม่โดน
+ */
+var INTAKE_BIZ_WORDS = [
+  { re: /เบเกอรี่|เบเกอรี|เบเกอร์รี่|bakery/i, biz: 'เบเกอรี่' },
+  { re: /หม่าล่า|หมาล่า|มาล่า|mala/i,         biz: 'หม่าล่า' }
+];
+function intakeBizOf_(text) {
+  var t = String(text || '');
+  for (var i = 0; i < INTAKE_BIZ_WORDS.length; i++) {
+    var m = t.match(INTAKE_BIZ_WORDS[i].re);
+    if (m) return { biz: INTAKE_BIZ_WORDS[i].biz, text: (t.slice(0, m.index) + ' ' + t.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim() };
+  }
+  return { biz: '', text: t };
+}
 
 /** ต้องตรงกับ EXPENSE_TYPES ใน pos-backend.gs */
 var INTAKE_EXPENSE_TYPES = ['ค่าที่', 'ค่าไม้เสียบ', 'ค่าแก๊ส', 'ค่าน้ำแข็ง', 'ค่าของสด', 'ค่าแรง', 'อื่น ๆ'];
@@ -447,12 +466,13 @@ var INTAKE_PAYBACK_RE = /^(?:คืนเงิน|จ่ายคืน|โอ�
 function intakePaybackOf_(text) {
   var m = String(text || '').trim().match(INTAKE_PAYBACK_RE);
   if (!m) return null;
-  var b = intakeBranchOf_(m[1]);
+  var z = intakeBizOf_(m[1]);                    // "คืนเงิน เบเกอรี่ 300" = คืนบัญชีเบเกอรี่
+  var b = intakeBranchOf_(z.text);
   var p = intakePayOf_(b.text);
   var rest = p.text;
   var n = rest.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:บาท|฿)?/);
   var note = n ? (rest.slice(0, n.index) + ' ' + rest.slice(n.index + n[0].length)) : rest;
-  return { loc: b.loc, baht: n ? intakeNum_(n[1]) : 0,
+  return { loc: b.loc, baht: n ? intakeNum_(n[1]) : 0, biz: z.biz || 'หม่าล่า',
            method: p.cash ? 'เงินสด' : p.method,         // คืนเงินเป็นเงินสดได้ (ต่างจากซื้อของ)
            note: note.replace(/\s+/g, ' ').trim() };
 }
@@ -466,7 +486,7 @@ function intakePayback_(pb, ctx) {
   if (!loc) return 'คืนเงินจากสาขาไหนครับ? พิมพ์ชื่อสาขาด้วย เช่น\n  คืนเงิน ทรัพย์พัฒนา 500';
   if (!(pb.baht > 0)) return 'คืนเงินเท่าไหร่ครับ? เช่น\n  คืนเงิน 500\n  คืนเงิน ทรัพย์พัฒนา 500 โอน';
   if (typeof recordPayback_ !== 'function') return 'ยังไม่ได้ติดตั้ง stock-costing.gs ในโปรเจกต์นี้';
-  var text = recordPayback_(loc, pb.baht, pb.method, pb.note, ctx.who);
+  var text = recordPayback_(loc, pb.baht, pb.method, pb.note, ctx.who, pb.biz);
   // พิมพ์ในกลุ่มอื่น (เช่นกลุ่มสาขา) → ส่งเข้ากลุ่มครัวกลางที่บันทึกค่าใช้จ่ายด้วย
   if (ctx.location !== central && typeof stockNotify_ === 'function') {
     try { stockNotify_(central, text); } catch (e) { Logger.log('payback notify: ' + e.message); }
@@ -492,6 +512,9 @@ function intakeHelpText_() {
          '   ค่าแก๊ส 450\n' +
          '   ค่าถุง 9\n' +
          '   (หรือเติมท้ายบรรทัดเดียว: ค่าแก๊ส 450 ทรัพย์พัฒนา)\n\n' +
+         '🍡 ค่าใช้จ่ายเบเกอรี่ — เติมคำว่า "เบเกอรี่" (ไม่เขียน = หม่าล่า)\n' +
+         '   สาขาทรัพย์พัฒนาเบเกอรี่ ค่ารถ 50\n' +
+         '   (หรือหัวบรรทัดแรก: ค่าใช้จ่าย ทรัพย์พัฒนา เบเกอรี่)\n\n' +
          '💳 รูดบัตร — เติมคำว่า "บัตร" ท้ายบรรทัดนั้น\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
          '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
@@ -499,7 +522,8 @@ function intakeHelpText_() {
          '   จ่ายเงินสดหน้าร้าน ลงในหน้า POS ไม่ใช่ทางนี้\n\n' +
          '💸 สาขาคืนเงินครัวกลาง — ขึ้นต้นด้วย "คืนเงิน"\n' +
          '   คืนเงิน ทรัพย์พัฒนา 500\n' +
-         '   คืนเงิน 500 เงินสด\n\n' +
+         '   คืนเงิน 500 เงินสด\n' +
+         '   คืนเงิน เบเกอรี่ 300  (บัญชีเบเกอรี่)\n\n' +
          '🧪 ของลองสูตร — เติม "ทดลอง" ข้างหน้า\n' +
          '   ทดลอง ปลากะพง 200\n' +
          '   (ไม่เข้าสต็อก ไม่นับเป็นต้นทุนขาย)\n\n' +
@@ -643,10 +667,14 @@ function intakeBranchHeader_(line) {
   var t = String(line || '').replace(/[^\u0E00-\u0E7Fa-zA-Z0-9\s]/g, ' ').trim();
   if (!t || /\d/.test(t)) return null;
   var rest = function (x) { return String(x).replace(/ค่าใช้จ่าย|รายจ่าย|ของ|ให้|สำหรับ|\s/g, ''); };
+  var bz = intakeBizOf_(t);                    // "ค่าใช้จ่าย ทรัพย์พัฒนา เบเกอรี่" ก็เป็นหัว
+  t = bz.text;
   var b = intakeBranchOf_(t);
   if (b.loc) return rest(b.text) === '' ? b.loc : null;
   var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
-  return rest(t) === central ? '' : null;
+  if (rest(t) === central) return '';
+  // หัวที่มีแค่ "เบเกอรี่" / "ค่าใช้จ่ายเบเกอรี่" = ที่ของกลุ่มนี้ เปลี่ยนแค่ธุรกิจ
+  return (bz.biz && rest(t) === '') ? '' : null;
 }
 
 /** ขึ้นต้นด้วย "ค่า" = ค่าใช้จ่ายรายวัน ไม่ใช่ของที่ซื้อเข้าสต็อก */
@@ -705,13 +733,15 @@ function intakeParseText_(text) {
   var out = [];
   var rows = clean.split(/[\n\r]+/);
   var headBranch = '';     // บรรทัดหัว "ค่าใช้จ่าย ทรัพย์พัฒนา" — ใช้กับบรรทัดถัดไปทั้งหมด
+  var headBiz = '';        // หัวบอกธุรกิจด้วย ("ทรัพย์พัฒนา เบเกอรี่") — หัวใหม่ไม่บอก = หม่าล่า
   for (var r = 0; r < rows.length && out.length < INTAKE_MAX_ITEMS; r++) {
-    var head = intakeBranchHeader_(intakeStripPrefix_(rows[r]) !== null ? intakeStripPrefix_(rows[r]) : rows[r]);
-    if (head !== null) { headBranch = head; continue; }
+    var hl = intakeStripPrefix_(rows[r]) !== null ? intakeStripPrefix_(rows[r]) : rows[r];
+    var head = intakeBranchHeader_(hl);
+    if (head !== null) { headBranch = head; headBiz = intakeBizOf_(hl).biz; continue; }
     var cols = rows[r].split(/[,;]+/);
     for (var c = 0; c < cols.length && out.length < INTAKE_MAX_ITEMS; c++) {
       var one = intakeParseLine_(cols[c]);
-      if (one) { one.line = r; one.headBranch = headBranch; out.push(one); }
+      if (one) { one.line = r; one.headBranch = headBranch; one.headBiz = headBiz; out.push(one); }
     }
   }
 
@@ -740,6 +770,7 @@ function intakeParseText_(text) {
   }
   for (i = 0; i < out.length; i++) {
     out[i].branch = out[i].branch || branchOf[out[i].line] || out[i].headBranch || '';
+    out[i].biz = out[i].biz || out[i].headBiz || '';
   }
 
   return out;
@@ -780,6 +811,12 @@ function intakeParseLine_(line) {
   var branch = intakeBranchOf_(text);
   text = branch.text;
   if (!text) return null;
+
+  // "เบเกอรี่ ค่ารถ 50" / "ค่ารถ 50 เบเกอรี่" — ป้ายธุรกิจ ตัดเฉพาะค่าใช้จ่าย
+  // ของที่ซื้อเข้าสต็อก (เบสหม่าล่า ผงหม่าล่า) ชื่อมีคำว่าหม่าล่าอยู่แล้ว ห้ามตัด
+  var biz = '';
+  var bz = intakeBizOf_(text);
+  if (bz.biz && /^ค่า/.test(bz.text)) { biz = bz.biz; text = bz.text; }
 
   // เช่นเดียวกับ "ทดลอง" / "ลองสูตร" — ตัดออกไม่งั้นชื่อจะเป็น "ทดลอง ปลาดอลลี่"
   var rnd = INTAKE_RND_RE.test(text);
@@ -865,6 +902,7 @@ function intakeParseLine_(line) {
     perBag: perBag,                                   // "ถุงละ 30 อัน" ของที่ถุงไม่เท่ากัน
     pay: pay.method, expense: intakeIsExpense_(name),
     branch: branch.loc,                               // ป้ายสาขา ใช้กับค่าใช้จ่าย
+    biz: biz,                                         // ป้ายธุรกิจ (เบเกอรี่/หม่าล่า) ใช้กับค่าใช้จ่าย
     cash: !!pay.cash,                                 // เขียน "เงินสด" มา ซึ่งทางไลน์ไม่รับ
     rnd: rnd,                                         // ซื้อมาลองสูตร ไม่เข้าสต็อก ไม่ใช่ต้นทุนขาย
     saidMoney: saidMoney, saidUnit: saidUnit
@@ -1709,17 +1747,20 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         expSeq++;
         var type = intakeExpenseType_(it.raw);
         var expLoc = it.branch || ctx.location;
+        var expBiz = it.biz || 'หม่าล่า';
         expRows.push([
           date, time, 'E' + stamp + '-' + ('00' + expSeq).slice(-3),
           expLoc, ctx.who, type,
           intakeNorm_(it.raw) === intakeNorm_(type) ? '' : it.raw,
-          it.baht || 0, ctx.msgId + '-' + i, it.pay
+          it.baht || 0, ctx.msgId + '-' + i, it.pay, expBiz
         ]);
         expTotal += it.baht || 0;
         var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay);
         expLines.push(expLine);
-        if (!expByLoc[expLoc]) { expByLoc[expLoc] = []; expLocs.push(expLoc); }
-        expByLoc[expLoc].push(expLine);
+        // หัวแยกตามสาขา + ธุรกิจ — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
+        var expKey = expLoc + '|' + expBiz;
+        if (!expByLoc[expKey]) { expByLoc[expKey] = []; expLocs.push(expKey); }
+        expByLoc[expKey].push(expLine);
 
       } else {
         if (!buySheet) { buySheet = intakeSheet_(); buySeq = intakeSeqOf_(buySheet, date); }
@@ -1833,9 +1874,15 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   var blocks = [];
   if (buyLines.length)   blocks.push('🛒 ซื้อของ\n' + buyLines.join('\n'));
   // ของที่นี่ขึ้นก่อน แล้วค่อยสาขาอื่น — หัวบอกชื่อสาขา ไม่ต้องบอกทุกบรรทัด
-  expLocs.sort(function (a, b) { return (a === ctx.location ? 0 : 1) - (b === ctx.location ? 0 : 1); });
-  expLocs.forEach(function (loc) {
-    blocks.push('🧾 ค่าใช้จ่าย' + (loc !== ctx.location ? ' ' + loc : '') + '\n' + expByLoc[loc].join('\n'));
+  var keyLoc = function (k) { return k.split('|')[0]; }, keyBiz = function (k) { return k.split('|')[1]; };
+  expLocs.sort(function (a, b) {
+    return ((keyLoc(a) === ctx.location ? 0 : 2) + (keyBiz(a) === 'หม่าล่า' ? 0 : 1)) -
+           ((keyLoc(b) === ctx.location ? 0 : 2) + (keyBiz(b) === 'หม่าล่า' ? 0 : 1));
+  });
+  expLocs.forEach(function (k) {
+    var loc = keyLoc(k), biz = keyBiz(k);
+    blocks.push('🧾 ค่าใช้จ่าย' + (loc !== ctx.location ? ' ' + loc : '') +
+                (biz !== 'หม่าล่า' ? ' · ' + biz : '') + '\n' + expByLoc[k].join('\n'));
   });
   if (rndLines.length)   blocks.push('🧪 ลองสูตร (ไม่เข้าสต็อก)\n' + rndLines.join('\n'));
   if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));

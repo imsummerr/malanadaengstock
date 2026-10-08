@@ -226,7 +226,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-08a';
+const PAGE_BUILD = '2026-10-08b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -464,6 +464,7 @@ const TABS = [
   { id: 'pack',    label: '🔪 แพ็คของ',        who: 'central' },
   { id: 'toshop',  label: '🏪 ของเข้าร้าน',    who: 'branch'  },
   { id: 'count',   label: '📋 เช็คสต็อก',      who: 'both'    },
+  { id: 'bakery',  label: '🍡 เบเกอรี่',        who: 'branch'  },
   { id: 'waste',   label: '🗑️ ของเสีย',        who: 'both'    },
   { id: 'money',   label: '💰 บัญชี',           who: 'owner'   }
 ];
@@ -496,12 +497,14 @@ function render() {
   if (tab === 'toshop') return viewMove(v, 'toshop');
   if (tab === 'waste')  return viewMove(v, 'waste');
   if (tab === 'count')  return viewCount(v);
+  if (tab === 'bakery') return viewBakery(v);
   if (tab === 'money')  return viewMoney(v);
 }
 
 /* ── บัญชี — เจ้าของร้านคนเดียว ── */
 /** ตัวเลขบัญชีโหลดแยก เพราะต้องไล่ทุกแถวย้อนหลัง หนักกว่าหน้าอื่น */
 let MONEY = null;
+let MONEY_BIZ = 'หม่าล่า';   // บัญชีที่ดูอยู่ — หม่าล่า / เบเกอรี่
 
 const baht = n => (Math.round((Number(n) || 0) * 100) / 100)
   .toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -512,7 +515,9 @@ function viewMoney(v) {
     loadMoney();
     return;
   }
-  const M = MONEY;
+  // บัญชีหม่าล่ากับเบเกอรี่แยกกัน — สลับด้วยปุ่มด้านบน (หลังบ้านเก่าไม่มีเบเกอรี่ = หม่าล่าอย่างเดียว)
+  const isBk = MONEY_BIZ === 'เบเกอรี่' && MONEY.bakery;
+  const M = isBk ? Object.assign({ central: MONEY.central, warn: [] }, MONEY.bakery) : MONEY;
   const locs = Object.keys(M.pl).sort((a, b) =>
     a === M.central ? -1 : b === M.central ? 1 : a.localeCompare(b, 'th'));
 
@@ -523,12 +528,16 @@ function viewMoney(v) {
     const isC = loc === M.central;
 
     // ครัวกลางไม่มีรายได้ ส่งต่อที่ต้นทุน กำไรไปโผล่ที่สาขาทั้งหมด
-    const money = isC ? '' : `
-      <table><tbody>
+    const sales = isBk ? `
+        <tr><td>เงินสด</td><td class="num">${baht(p['เงินสด'])}</td></tr>
+        <tr><td>เงินโอน</td><td class="num">${baht(p['เงินโอน'])}</td></tr>
+        <tr><td>ไทยช่วยไทย</td><td class="num">${baht(p['ไทยช่วยไทย'])}</td></tr>` : `
         <tr><td>ขายหน้าร้าน</td><td class="num">${baht(p['หน้าร้าน'])}</td></tr>
-        <tr><td>เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>
+        <tr><td>เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>`;
+    const money = isC ? '' : `
+      <table><tbody>${sales}
         <tr><td><b>รายได้รวม</b></td><td class="num"><b>${baht(p['รายได้'])}</b></td></tr>
-        <tr><td>− ค่าใช้จ่ายวัตถุดิบ</td><td class="num">${baht(p['ค่าใช้จ่ายวัตถุดิบ'])}</td></tr>
+        <tr><td>− ${isBk ? 'ต้นทุนเบเกอรี่ที่ขายไป' : 'ค่าใช้จ่ายวัตถุดิบ'}</td><td class="num">${baht(p['ค่าใช้จ่ายวัตถุดิบ'])}</td></tr>
         <tr><td>− ของเสีย</td><td class="num">${baht(p['ของเสีย'])}</td></tr>
         <tr><td><b>กำไรขั้นต้น</b></td><td class="num"><b>${baht(p['กำไรขั้นต้น'])}</b></td></tr>
         <tr><td>− ค่าใช้จ่ายอื่น</td><td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>
@@ -589,12 +598,17 @@ function viewMoney(v) {
       ${M.warn.length > 6 ? '<br>…' : ''}
     </div></div>` : '';
 
+  const tabBtn = (z, label) => `<button class="key" style="${MONEY_BIZ === z ? '' : 'opacity:.45'}"
+      onclick="MONEY_BIZ='${z}';render()">${label}</button>`;
   v.innerHTML = `<div class="card">
-      <h2>💰 บัญชี</h2>
+      <h2>💰 บัญชี${isBk ? ' · เบเกอรี่' : ' · หม่าล่า'}</h2>
       <p class="lead">คิดสดจากของที่เคลื่อนไหวจริง แบบเข้าก่อนออกก่อน ·
-         ครัวกลางส่งต่อที่ต้นทุน ไม่มีกำไรไม่มีขาดทุน</p>
-      <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
-    </div>${warn}${cards}`;
+         ครัวกลางส่งต่อที่ต้นทุน ไม่มีกำไรไม่มีขาดทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ''}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
+        <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
+      </div>
+    </div>${isBk ? '' : warn}${cards || '<div class="card"><div class="empty">ยังไม่มีข้อมูล</div></div>'}`;
 }
 
 async function loadMoney() {
@@ -858,7 +872,7 @@ async function submitMove(kind) {
 /* ── แพ็คของ — ตัดของดิบ เพิ่มของที่แพ็คแล้ว ── */
 
 /** ของแพ็คที่ครัวกลางทำได้ */
-const packOutputs = () => packedItems(D.central);
+const packOutputs = () => packedItems(D.central).filter(i => !i.bakery);   // เบเกอรี่ไม่ต้องแพ็ค
 
 /**
  * กรอกเศษเกินหนึ่งแพ็ค ให้ทดขึ้นไปเป็นแพ็คให้เลย
@@ -1172,7 +1186,78 @@ async function submitPack() {
 /** สินค้าที่ต้องนับที่สถานที่ที่เลือกอยู่ในแท็บเช็คสต็อก */
 function countItems() {
   const el = document.getElementById('c-loc');
-  return itemsFor(el ? el.value : D.central);
+  const loc = el ? el.value : D.central;
+  // สาขานับเบเกอรี่ในแท็บ 🍡 เบเกอรี่ (ก่อนขาย/หลังขาย) ไม่ได้นับตอนปิดร้านหม่าล่า
+  return itemsFor(loc).filter(i => loc === D.central || !i.bakery);
+}
+
+/* ── 🍡 เบเกอรี่ — สาขานับวันละ 2 รอบ (ก่อนขาย / หลังขาย) หลังขายกรอกเงินที่ได้ ──
+   พนักงานไม่เห็นยอดที่ควรได้หรือต้นทุน เห็นแค่ว่าบันทึกแล้ว — ระบบเทียบแล้วแจ้งเจ้าของเอง */
+const bakeryItems = () => D.items.filter(i => i.bakery);
+let BK_ROUND = 'ก่อนขาย';
+let BK_ID = 'BK' + Date.now();       // กันกดซ้ำ/เน็ตหลุดแล้วส่งใหม่ ลงเงินซ้ำ
+const BK_MONEY = [['cash', 'เงินสด'], ['transfer', 'เงินโอน'], ['thai', 'ไทยช่วยไทย']];
+
+function viewBakery(v) {
+  const locs = allowedLocs().filter(l => l !== D.central);
+  const items = bakeryItems();
+  if (!items.length || !locs.length) {
+    v.innerHTML = `<div class="card"><div class="warnbox" style="margin:0">
+      ${!items.length ? '⚠️ ยังไม่มีรายการเบเกอรี่ — เจ้าของร้านรัน fixItemList ใน Apps Script หนึ่งครั้ง'
+                      : 'นับเบเกอรี่ได้เฉพาะที่สาขา'}</div></div>`;
+    return;
+  }
+  const after = BK_ROUND === 'หลังขาย';
+  const rbtn = r => `<button class="key" style="flex:1;${BK_ROUND === r ? '' : 'opacity:.45'}"
+      onclick="BK_ROUND='${r}';render()">${r === 'ก่อนขาย' ? '🌅 ก่อนขาย' : '🌙 หลังขาย'}</button>`;
+  const row = (id, label, unit) => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
+      <span style="flex:1">${esc(label)}</span>
+      <input id="${id}" type="number" inputmode="decimal" min="0" placeholder="0"
+             style="width:110px;text-align:right">
+      <span class="note" style="width:28px;margin:0">${unit}</span></div>`;
+  v.innerHTML = `<div class="card">
+    <h2>🍡 เบเกอรี่</h2>
+    <p class="lead">นับวันละ 2 รอบ — ก่อนขาย และหลังขาย · หลังขายกรอกเงินที่ได้ด้วย</p>
+    <label class="fld">สาขา</label>
+    <select id="bk-loc">${locs.map(l => `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <label class="fld">รอบ</label>
+    <div style="display:flex;gap:8px">${rbtn('ก่อนขาย')}${rbtn('หลังขาย')}</div>
+  </div>
+  <div class="card">
+    <h2 style="font-size:16px">นับ${BK_ROUND} (ชิ้น)</h2>
+    ${items.map((it, k) => row('bk-i-' + k, it.name, 'ชิ้น')).join('')}
+    ${after ? '<h2 style="font-size:16px;margin-top:16px">เงินที่ได้วันนี้</h2>' +
+              BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') : ''}
+    <button class="key btn-red submit" id="bk-btn" onclick="submitBakery()">บันทึก${BK_ROUND}</button>
+    <p class="note">ไม่มีของ / ไม่มีเงินช่องไหน ใส่ 0</p>
+  </div>`;
+}
+
+async function submitBakery() {
+  const items = bakeryItems(), after = BK_ROUND === 'หลังขาย';
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const rows = items.map((it, k) => ({ item: it.name, qty: val('bk-i-' + k) }));
+  const miss = rows.filter(r => r.qty === '' || Number(r.qty) < 0).map(r => r.item);
+  const money = {};
+  BK_MONEY.forEach(m => { money[m[0]] = val('bk-m-' + m[0]); });
+  if (after) BK_MONEY.forEach(m => { if (money[m[0]] === '' || Number(money[m[0]]) < 0) miss.push(m[1]); });
+  if (miss.length) { toast('ยังไม่ได้กรอก: ' + esc(miss.join(', ')) + '<br><span style="opacity:.8;font-size:12.5px">ไม่มีใส่ 0</span>', 5000); return; }
+  const btn = document.getElementById('bk-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
+  try {
+    const r = await apiPost({ action: 'bakeryCount', location: document.getElementById('bk-loc').value,
+                              round: BK_ROUND, rows: rows.map(x => ({ item: x.item, qty: Number(x.qty) })),
+                              money: after ? money : null, id: after ? BK_ID : '' });
+    toast('บันทึกแล้ว ✅ ' + esc(BK_ROUND) + (r.duplicated ? ' (ส่งไปแล้ว)' : ''), 4500);
+    BK_ID = 'BK' + Date.now();
+    render();                       // ล้างช่อง
+  } catch (e) {
+    if (/เวอร์ชันเก่า|ไม่รู้จัก action/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 6000);
+    btn.disabled = false;
+    btn.innerHTML = 'บันทึก' + BK_ROUND;
+  }
 }
 
 function viewCount(v) {

@@ -82,4 +82,20 @@ section('ทุกวันอาทิตย์ + สิ้นเดือน �
     /\(วันอาทิตย์ \+ สิ้นเดือน\)/.test(g4.__env.SENT.slice(-1)[0].messages[0].text)), true);
 }
 
+section('คืนเงินบัญชีเบเกอรี่');
+{
+  const g5 = fresh();
+  g5.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
+  const pb = g5.intakePaybackOf_('คืนเงิน เบเกอรี่ 300 โอน');
+  eq('อ่านว่าเป็นเบเกอรี่', [pb.biz, pb.baht, pb.method], ['เบเกอรี่', 300, 'โอน']);
+  eq('ไม่บอก = หม่าล่า', g5.intakePaybackOf_('คืนเงิน 200').biz, 'หม่าล่า');
+  const t = g5.intakePayback_(pb, { location: g5.CENTRAL, who: 'เจ้าของ', isGroup: true });
+  eq('หัวข้อความบอกเบเกอรี่', /💸 สาขาคืนเงินครัวกลาง · เบเกอรี่/.test(t), true);
+  g5.intakePayback_(g5.intakePaybackOf_('คืนเงิน 200'), { location: g5.CENTRAL, who: 'เจ้าของ', isGroup: true });
+  g5.cacheClear_();
+  const sm = g5.costSummary_();
+  eq('คืนเบเกอรี่ 300 อยู่บัญชีเบเกอรี่', sm.biz['เบเกอรี่'].owed[SHOP]['จ่ายคืนแล้ว'], 300);
+  eq('คืนหม่าล่า 200 อยู่บัญชีหม่าล่า', sm.owed[SHOP]['จ่ายคืนแล้ว'], 200);
+}
+
 done();

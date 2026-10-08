@@ -26,12 +26,22 @@ var COST_SHEET_STOCK  = 'บัญชี_มูลค่าสต็อก';    
 var COST_SHEET_LEDGER = 'บัญชี_ครัวกลางกับสาขา';   // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 var COST_SHEET_PL     = 'บัญชี_กำไรแต่ละที่';       // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 
-var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ'];
+var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ', 'ธุรกิจ'];
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
 function costQty_(n)  { return Math.round((Number(n) || 0) * 10000) / 10000; }
+
+/** ธุรกิจของสินค้า / แถว — ว่าง = หม่าล่า */
+function costBizOf_(item) {
+  return (typeof bizOfItem_ === 'function') ? bizOfItem_(item) : 'หม่าล่า';
+}
+function costBizCell_(v) {
+  var b = String(v == null ? '' : v).trim();
+  return /เบเกอรี/.test(b) ? 'เบเกอรี่' : 'หม่าล่า';
+}
+var COST_BIZES = ['หม่าล่า', 'เบเกอรี่'];
 
 function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
 
@@ -471,7 +481,7 @@ function costReplay_() {
 
 function costReplayRaw_(all) {
   var central = costCentral_();
-  var lay = {}, used = {}, sent = {}, moved = {}, warn = [], log = [];
+  var lay = {}, used = {}, sent = {}, sentBiz = {}, moved = {}, warn = [], log = [];
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
   // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
   // ไม่งั้นนับวันแรกแล้วต้นทุนเป็น 0 กำไรวันนั้นจะดูดีเกินจริงทั้งก้อน
@@ -483,7 +493,10 @@ function costReplayRaw_(all) {
     return lay[loc][item];
   }
   function bucket(loc) {
-    if (!used[loc]) used[loc] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, items: {} };
+    if (!used[loc]) {
+      used[loc] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, items: {}, biz: {} };
+      COST_BIZES.forEach(function (z) { used[loc].biz[z] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, ตัดจากครัวกลาง: 0 }; });
+    }
     return used[loc];
   }
   function noteItem(loc, item, what, qty, value, when) {
@@ -494,6 +507,8 @@ function costReplayRaw_(all) {
     var b = bucket(loc);
     if (!b.items[item]) b.items[item] = { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0, qty: 0 };
     b[what] = costBaht_(b[what] + value);
+    var bz = b.biz[costBizOf_(item)];
+    bz[what] = costBaht_(bz[what] + value);
     b.items[item][what] = costBaht_(b.items[item][what] + value);
     if (what !== 'นับเกิน') b.items[item].qty = costQty_(b.items[item].qty + qty);
   }
@@ -527,6 +542,9 @@ function costReplayRaw_(all) {
              short: costQty_(qty), parts: parts };
   }
   function guessCost(loc, item) {
+    // เบเกอรี่ต้นทุนคงที่ต่อชิ้น (ไดฟุกุ 6.5 · บราวนี่ 6)
+    var bk = (typeof bakeryCost_ === 'function') ? bakeryCost_(item) : 0;
+    if (bk > 0) return bk;
     return lastCost[loc + '|' + item] || lastCost[central + '|' + item] ||
            book[loc + '|' + item] || book[central + '|' + item] || 0;
   }
@@ -546,7 +564,9 @@ function costReplayRaw_(all) {
       // ซื้อผ่านไลน์จะมีราคามาด้วย · กรอกในเว็บไม่มี ต้องเดาจากราคาล่าสุด
       // มูลค่า = เงินที่จ่ายจริง (75.25) · ราคาต่อโลที่โชว์ = ที่พิมพ์มา (โลละ 84)
       // ถ้าเอา 84 × 0.896 จะได้ 75.26 ไม่ตรงกับที่จ่าย เพราะร้านปัดเศษยอดรวม
-      var unit = e.paid > 0 ? e.paid / e.qty : (e.unit > 0 ? e.unit : guessCost(e.loc, e.item));
+      var bkc = (typeof bakeryCost_ === 'function') ? bakeryCost_(e.item) : 0;
+      var unit = bkc > 0 ? bkc
+               : e.paid > 0 ? e.paid / e.qty : (e.unit > 0 ? e.unit : guessCost(e.loc, e.item));
       if (!(unit > 0)) {
         warn.push({ when: e.t, loc: e.loc, item: e.item,
                     msg: 'ไม่รู้ราคาที่ซื้อมา — คิดต้นทุนเป็น 0' });
@@ -592,6 +612,9 @@ function costReplayRaw_(all) {
       }
       // ของออกจากครัวกลางแล้วเป็นหนี้ทันทีเต็มจำนวน — จะขายได้หรือทิ้งก็หนี้เท่าเดิม
       sent[e.loc] = costBaht_((sent[e.loc] || 0) + value);
+      if (!sentBiz[e.loc]) sentBiz[e.loc] = {};
+      var sz = costBizOf_(e.item);
+      sentBiz[e.loc][sz] = costBaht_((sentBiz[e.loc][sz] || 0) + value);
       moved[e.item] = costBaht_((moved[e.item] || 0) + value);
 
     } else if (e.type === 'ของเสีย') {
@@ -616,6 +639,8 @@ function costReplayRaw_(all) {
         if (e.chargeTo && e.chargeTo !== e.loc) {
           noteItem(e.chargeTo, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
           bucket(e.chargeTo).ตัดจากครัวกลาง = costBaht_((bucket(e.chargeTo).ตัดจากครัวกลาง || 0) + t4.value);
+          var cz = bucket(e.chargeTo).biz[costBizOf_(e.item)];
+          cz['ตัดจากครัวกลาง'] = costBaht_(cz['ตัดจากครัวกลาง'] + t4.value);
         } else {
           noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
         }
@@ -635,7 +660,7 @@ function costReplayRaw_(all) {
   });
 
   log.sort(function (a, b) { return a.t - b.t; });
-  return { layers: lay, used: used, sent: sent, moved: moved, warn: warn, log: log,
+  return { layers: lay, used: used, sent: sent, sentBiz: sentBiz, moved: moved, warn: warn, log: log,
            lastCost: lastCost };
 }
 
@@ -647,12 +672,14 @@ function costPriceBook_() {
 /* ═══════════════════ เงินที่สาขาจ่ายคืนแล้ว ═══════════════════ */
 
 /** ยอดที่สาขาโอนคืนครัวกลางแล้ว — กรอกเองในชีต COST_SHEET_PAY */
-function costPaidBack_() {
+function costPaidBack_(biz) {
   var out = {};
   var sh = sheet_(COST_SHEET_PAY);
   if (!sh || sh.getLastRow() < 2) return out;
   var map = ensureCols_(sh, COST_PAY_COLS);
   sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
+    // ไม่บอกธุรกิจ = หม่าล่า · ไม่ส่ง biz มา = รวมทุกธุรกิจ
+    if (biz && costBizCell_(r[map['ธุรกิจ']]) !== biz) return;
     var loc = String(r[map['สาขา']] || '').trim();
     if (costBefore_(r[map['วันที่']], loc)) return;
     var baht = Number(r[map['จำนวนเงิน']]) || 0;
@@ -736,16 +763,18 @@ function costIncome_() {
 }
 
 /** เงินสดที่จ่ายออกหน้าร้าน แยกตามสาขาและประเภท */
-function costOutgo_() {
+function costOutgo_(biz) {
   var out = {};
   var sh = sheet_(SHEET_EXPENSE);
   if (!sh || sh.getLastRow() < 2) return out;
   var v = sh.getDataRange().getValues();
   var h = v[0].map(function (x) { return String(x).trim(); });
   var iLoc = h.indexOf('สาขา'), iBaht = h.indexOf('จำนวนเงิน'), iType = h.indexOf('ประเภท');
-  var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา');
+  var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา'), iBiz = h.indexOf('ธุรกิจ');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
+    // ค่าใช้จ่ายแยกบัญชีหม่าล่า/เบเกอรี่ — ช่องว่าง = หม่าล่า (ของเดิมทั้งหมด + หน้า POS)
+    if (biz && costBizCell_(iBiz === -1 ? '' : v[r][iBiz]) !== biz) continue;
     if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
@@ -768,12 +797,14 @@ function costOutgo_() {
  */
 function costSummary_() {
   var rep = costReplay_();
-  var back = costPaidBack_();
   var central = costCentral_();
 
-  var stock = {};
+  // ของคงเหลือ — แยกตามธุรกิจของสินค้า (เบเกอรี่ / หม่าล่า)
+  var stockBy = {};
+  COST_BIZES.forEach(function (z) { stockBy[z] = {}; });
   Object.keys(rep.layers).forEach(function (loc) {
-    var rows = [], sum = 0;
+    var rows = {}, sum = {};
+    COST_BIZES.forEach(function (z) { rows[z] = []; sum[z] = 0; });
     Object.keys(rep.layers[loc]).forEach(function (item) {
       var qty = 0, value = 0, shown = null;
       rep.layers[loc][item].forEach(function (l) {
@@ -792,82 +823,122 @@ function costSummary_() {
       var unit = r4(shown > 0 ? shown : (qty > 0 ? value / qty : 0));
       // ต้นทุนต่อหน่วยที่ขาย (ไม้) ไม่ใช่ต่อชิ้น — เต้าชีส 2.88/ชิ้น = 5.77/ไม้
       var per = it && typeof perStickOf_ === 'function' ? perStickOf_(it) : 1;
-      rows.push({ item: item, qty: qty, value: value, baseUnit: bu,
-                  text: it && typeof fmtPack_ === 'function' ? fmtPack_(qty, it) : String(qty),
-                  unit: unit,
-                  subUnit: it ? it.subUnit : bu,
-                  unitSub: per > 1 ? r4(qty > 0 ? value / qty * per : unit * per) : unit });
-      sum += value;
+      var z = costBizOf_(item);
+      rows[z].push({ item: item, qty: qty, value: value, baseUnit: bu, biz: z,
+                     text: it && typeof fmtPack_ === 'function' ? fmtPack_(qty, it) : String(qty),
+                     unit: unit,
+                     subUnit: it ? it.subUnit : bu,
+                     unitSub: per > 1 ? r4(qty > 0 ? value / qty * per : unit * per) : unit });
+      sum[z] += value;
     });
-    rows.sort(function (a, b) { return b.value - a.value; });
-    stock[loc] = { rows: rows, total: costBaht_(sum) };
+    COST_BIZES.forEach(function (z) {
+      rows[z].sort(function (a, b) { return b.value - a.value; });
+      stockBy[z][loc] = { rows: rows[z], total: costBaht_(sum[z]) };
+    });
   });
 
-  var income = costIncome_(), outgo = costOutgo_();
-
-  var owed = {};
-  function seat(loc) {
-    if (owed[loc]) return owed[loc];
-    var u = rep.used[loc] || {};
-    var sent = rep.sent[loc] || 0;
-    var paid = back[loc] || 0;
-    // ของที่ตัดจากครัวกลางตอนตั้งยอด ไม่ได้ส่งผ่านระบบ จึงไม่ใช่หนี้ที่ต้องจ่ายคืน
-    var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0) - (u['ตัดจากครัวกลาง'] || 0));
-    // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนคืนครัวกลางไปแล้ว
-    var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
-                         ((outgo[loc] || {})['รวม'] || 0) - paid);
-    owed[loc] = {
-      ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
-      ใช้ไป:       u['ใช้ไป'] || 0,
-      ของเสีย:     u['ของเสีย'] || 0,
-      จ่ายคืนแล้ว: paid,
-      // จ่ายครบแล้วของที่เหลือไม่ใช่หนี้ เป็นวัตถุดิบคงเหลือของสาขาเฉย ๆ
-      ค้างชำระ:    costBaht_(sent - paid),
-      ค่าของที่ใช้ไปแล้ว: costBaht_(Math.max(0, gone - paid)),
-      เงินในมือ: cash,
-      // มีเงินเท่าไหร่ก็จ่ายเท่านั้น แต่ไม่เกินยอดที่ค้างอยู่
-      // ใช้ของไปแค่ 180 แต่มีเงิน 600 ค้างอยู่ 300 ก็เคลียร์ 300 ไปเลย
-      // ของที่ยังไม่ได้ใช้ก็ยังอยู่ในสต็อกสาขาเหมือนเดิม แค่จ่ายเงินล่วงหน้าไว้
-      จ่ายได้เลย: costBaht_(Math.max(0, Math.min(cash, sent - paid))),
-      วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
-    };
-    return owed[loc];
+  // รายได้เบเกอรี่มาจากยอดเงินที่พนักงานกรอกหลังขาย ไม่ใช่บิล POS
+  function bakeryIncome() {
+    var raw = (typeof bakeryIncome_ === 'function') ? bakeryIncome_() : {}, out = {};
+    Object.keys(raw).forEach(function (loc) {
+      var x = raw[loc];
+      out[loc] = { หน้าร้าน: x['รวม'], เดลิเวอรี่: 0, รวม: x['รวม'], ค่าคอม: 0, ตามแอป: {},
+                   เงินสด: x['เงินสด'], เงินโอน: x['เงินโอน'], ไทยช่วยไทย: x['ไทยช่วยไทย'] };
+    });
+    return out;
   }
-  Object.keys(rep.sent).forEach(seat);
-  Object.keys(rep.used).forEach(function (l) { if (l !== central) seat(l); });
-  Object.keys(back).forEach(seat);
-  // สาขาที่ขายได้แล้วแต่ยังไม่ได้รับของผ่านระบบ ก็ต้องเห็นเงินในมือ (รอบตัดยอดคืนครัวกลาง)
-  Object.keys(income).forEach(function (l) { if (l !== central) seat(l); });
-  delete owed[central];
 
-  // งบของแต่ละที่ — สาขามีรายได้ ครัวกลางไม่มี (ส่งต่อที่ต้นทุน)
-  var pl = {};
-  var locs = {};
-  [stock, owed, rep.used, income, outgo].forEach(function (o) {
-    Object.keys(o).forEach(function (l) { locs[l] = true; });
-  });
-  Object.keys(locs).forEach(function (loc) {
-    var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0, ค่าคอม: 0, ตามแอป: {} };
-    var u = rep.used[loc] || { ใช้ไป: 0, ของเสีย: 0 };
-    var ex = outgo[loc] || { รวม: 0, ตามประเภท: {} };
-    var cogs = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
-    var fee = inc['ค่าคอม'] || 0;
-    pl[loc] = {
-      รายได้: inc['รวม'], หน้าร้าน: inc['หน้าร้าน'], เดลิเวอรี่: inc['เดลิเวอรี่'],
-      ค่าคอมแอป: fee, ตามแอป: inc['ตามแอป'] || {},
-      // เงินที่เข้ากระเป๋าจริง = ราคาบนแอป − ค่า GP − VAT ของ GP
-      เงินเข้าจริง: costBaht_(inc['รวม'] - fee),
-      ค่าใช้จ่ายวัตถุดิบ: u['ใช้ไป'] || 0,
-      ของเสีย: u['ของเสีย'] || 0,
-      กำไรขั้นต้น: costBaht_(inc['รวม'] - fee - cogs),
-      ค่าใช้จ่ายอื่น: ex['รวม'], ตามประเภท: ex['ตามประเภท'],
-      กำไรสุทธิ: costBaht_(inc['รวม'] - fee - cogs - ex['รวม']),
-      วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
-    };
-  });
+  function part(biz) {
+    var stock = stockBy[biz];
+    var income = biz === 'เบเกอรี่' ? bakeryIncome() : costIncome_();
+    var outgo = costOutgo_(biz), back = costPaidBack_(biz);
+    var used = {};
+    Object.keys(rep.used).forEach(function (loc) {
+      used[loc] = rep.used[loc].biz ? rep.used[loc].biz[biz] : rep.used[loc];
+    });
 
-  return { central: central, stock: stock, owed: owed,
-           used: rep.used, pl: pl, warn: rep.warn };
+    var owed = {};
+    function seat(loc) {
+      if (owed[loc]) return owed[loc];
+      var u = used[loc] || {};
+      var sent = (rep.sentBiz[loc] || {})[biz] || 0;
+      var paid = back[loc] || 0;
+      // ของที่ตัดจากครัวกลางตอนตั้งยอด ไม่ได้ส่งผ่านระบบ จึงไม่ใช่หนี้ที่ต้องจ่ายคืน
+      var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0) - (u['ตัดจากครัวกลาง'] || 0));
+      // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนคืนครัวกลางไปแล้ว
+      var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
+                           ((outgo[loc] || {})['รวม'] || 0) - paid);
+      owed[loc] = {
+        ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
+        ใช้ไป:       u['ใช้ไป'] || 0,
+        ของเสีย:     u['ของเสีย'] || 0,
+        จ่ายคืนแล้ว: paid,
+        // จ่ายครบแล้วของที่เหลือไม่ใช่หนี้ เป็นวัตถุดิบคงเหลือของสาขาเฉย ๆ
+        ค้างชำระ:    costBaht_(sent - paid),
+        ค่าของที่ใช้ไปแล้ว: costBaht_(Math.max(0, gone - paid)),
+        เงินในมือ: cash,
+        // มีเงินเท่าไหร่ก็จ่ายเท่านั้น แต่ไม่เกินยอดที่ค้างอยู่
+        // ใช้ของไปแค่ 180 แต่มีเงิน 600 ค้างอยู่ 300 ก็เคลียร์ 300 ไปเลย
+        // ของที่ยังไม่ได้ใช้ก็ยังอยู่ในสต็อกสาขาเหมือนเดิม แค่จ่ายเงินล่วงหน้าไว้
+        จ่ายได้เลย: costBaht_(Math.max(0, Math.min(cash, sent - paid))),
+        วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
+      };
+      return owed[loc];
+    }
+    Object.keys(rep.sentBiz).forEach(function (l) { if ((rep.sentBiz[l] || {})[biz]) seat(l); });
+    Object.keys(used).forEach(function (l) {
+      var u = used[l] || {};
+      if (l !== central && (u['ใช้ไป'] || u['ของเสีย'] || u['นับเกิน'])) seat(l);
+    });
+    Object.keys(back).forEach(seat);
+    // สาขาที่ขายได้แล้วแต่ยังไม่ได้รับของผ่านระบบ ก็ต้องเห็นเงินในมือ (รอบตัดยอดคืนครัวกลาง)
+    Object.keys(income).forEach(function (l) { if (l !== central) seat(l); });
+    delete owed[central];
+
+    // งบของแต่ละที่ — สาขามีรายได้ ครัวกลางไม่มี (ส่งต่อที่ต้นทุน)
+    var pl = {}, locs = {};
+    // ที่ที่ไม่มีของของธุรกิจนี้เลย ไม่ต้องขึ้นการ์ดเปล่า
+    Object.keys(stock).forEach(function (l) { if (stock[l].rows.length) locs[l] = true; });
+    [owed, income, outgo].forEach(function (o) {
+      Object.keys(o).forEach(function (l) { locs[l] = true; });
+    });
+    Object.keys(used).forEach(function (l) {
+      var u = used[l] || {};
+      if (u['ใช้ไป'] || u['ของเสีย'] || u['นับเกิน']) locs[l] = true;
+    });
+    Object.keys(locs).forEach(function (loc) {
+      var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0, ค่าคอม: 0, ตามแอป: {} };
+      var u = used[loc] || { ใช้ไป: 0, ของเสีย: 0 };
+      var ex = outgo[loc] || { รวม: 0, ตามประเภท: {} };
+      var cogs = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
+      var fee = inc['ค่าคอม'] || 0;
+      pl[loc] = {
+        ธุรกิจ: biz,
+        รายได้: inc['รวม'], หน้าร้าน: inc['หน้าร้าน'], เดลิเวอรี่: inc['เดลิเวอรี่'],
+        ค่าคอมแอป: fee, ตามแอป: inc['ตามแอป'] || {},
+        // เงินที่เข้ากระเป๋าจริง = ราคาบนแอป − ค่า GP − VAT ของ GP
+        เงินเข้าจริง: costBaht_(inc['รวม'] - fee),
+        ค่าใช้จ่ายวัตถุดิบ: u['ใช้ไป'] || 0,
+        ของเสีย: u['ของเสีย'] || 0,
+        กำไรขั้นต้น: costBaht_(inc['รวม'] - fee - cogs),
+        ค่าใช้จ่ายอื่น: ex['รวม'], ตามประเภท: ex['ตามประเภท'],
+        กำไรสุทธิ: costBaht_(inc['รวม'] - fee - cogs - ex['รวม']),
+        วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
+      };
+      if (biz === 'เบเกอรี่') {
+        pl[loc]['เงินสด'] = inc['เงินสด'] || 0;
+        pl[loc]['เงินโอน'] = inc['เงินโอน'] || 0;
+        pl[loc]['ไทยช่วยไทย'] = inc['ไทยช่วยไทย'] || 0;
+      }
+    });
+    return { stock: stock, owed: owed, used: used, pl: pl };
+  }
+
+  var mala = part('หม่าล่า'), bakery = part('เบเกอรี่');
+  // ตัวบนสุดคือหม่าล่า (เหมือนเดิม) — เบเกอรี่อยู่ใน biz['เบเกอรี่']
+  return { central: central, stock: mala.stock, owed: mala.owed,
+           used: mala.used, pl: mala.pl, warn: rep.warn,
+           biz: { 'หม่าล่า': mala, 'เบเกอรี่': bakery } };
 }
 
 /* ═══════════════════ เขียนลงชีต ═══════════════════ */
@@ -890,13 +961,18 @@ function buildStockValue() {
   cacheClear_();
   var s = costSummary_();
   var rows = [];
-  Object.keys(s.stock).forEach(function (loc) {
-    if (!s.stock[loc].rows.length) return;      // ไม่มีของก็ไม่ต้องมีแถวรวม
-    s.stock[loc].rows.forEach(function (r) {
+  var both = {};
+  COST_BIZES.forEach(function (z) {
+    var st = s.biz ? s.biz[z].stock : (z === 'หม่าล่า' ? s.stock : {});
+    Object.keys(st).forEach(function (loc) { both[z === 'หม่าล่า' ? loc : loc + ' · ' + z] = st[loc]; });
+  });
+  Object.keys(both).forEach(function (loc) {
+    if (!both[loc].rows.length) return;      // ไม่มีของก็ไม่ต้องมีแถวรวม
+    both[loc].rows.forEach(function (r) {
       rows.push([loc, r.item, r.text || r.qty, r.unitSub != null ? r.unitSub : r.unit,
                  r.subUnit || r.baseUnit || '', r.value, r.qty, r.baseUnit || '']);
     });
-    rows.push([loc, '— รวม —', '', '', '', s.stock[loc].total, '', '']);
+    rows.push([loc, '— รวม —', '', '', '', both[loc].total, '', '']);
   });
   // คงเหลือแบบเดียวกับหน้าสต็อก · ต้นทุนต่อหน่วยที่ขาย (ไม้/ถุง/กก.) · จำนวนหน่วยเล็กสุดไว้ท้ายตาราง
   costWriteSheet_(COST_SHEET_STOCK,
@@ -930,6 +1006,20 @@ function buildBranchLedger() {
   var uc = s.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
   rows.push([c + ' (คงเหลือในครัว)', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '',
              (s.stock[c] || { total: 0 }).total]);
+  // เบเกอรี่แยกบัญชี
+  var bk = s.biz && s.biz['เบเกอรี่'];
+  if (bk) {
+    Object.keys(bk.owed).forEach(function (loc) {
+      var o = bk.owed[loc], st = bk.stock[loc] || { total: 0 };
+      rows.push([loc + ' · เบเกอรี่', o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+                 o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'], st.total]);
+    });
+    var ub = bk.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
+    if ((bk.stock[c] || {}).total || ub['ใช้ไป'] || ub['ของเสีย']) {
+      rows.push([c + ' · เบเกอรี่ (คงเหลือในครัว)', '', ub['ใช้ไป'] || 0, ub['ของเสีย'] || 0, '', '', '', '',
+                 (bk.stock[c] || { total: 0 }).total]);
+    }
+  }
 
   costWriteSheet_(COST_SHEET_LEDGER,
     ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย', 'จ่ายคืนแล้ว',
@@ -964,11 +1054,14 @@ function buildLocationPL() {
   cacheClear_();
   var s = costSummary_();
   var rows = [];
-  Object.keys(s.pl).sort().forEach(function (loc) {
-    var p = s.pl[loc];
-    rows.push([loc, p['หน้าร้าน'], p['เดลิเวอรี่'], p['ค่าคอมแอป'], p['รายได้'],
-               p['ค่าใช้จ่ายวัตถุดิบ'], p['ของเสีย'], p['กำไรขั้นต้น'],
-               p['ค่าใช้จ่ายอื่น'], p['กำไรสุทธิ'], p['วัตถุดิบคงเหลือ']]);
+  COST_BIZES.forEach(function (z) {
+    var pls = s.biz ? s.biz[z].pl : (z === 'หม่าล่า' ? s.pl : {});
+    Object.keys(pls).sort().forEach(function (loc) {
+      var p = pls[loc];
+      rows.push([z === 'หม่าล่า' ? loc : loc + ' · ' + z, p['หน้าร้าน'], p['เดลิเวอรี่'], p['ค่าคอมแอป'], p['รายได้'],
+                 p['ค่าใช้จ่ายวัตถุดิบ'], p['ของเสีย'], p['กำไรขั้นต้น'],
+                 p['ค่าใช้จ่ายอื่น'], p['กำไรสุทธิ'], p['วัตถุดิบคงเหลือ']]);
+    });
   });
   costWriteSheet_(COST_SHEET_PL,
     ['สถานที่', 'ขายหน้าร้าน', 'เดลิเวอรี่ (ราคาบนแอป)', 'ค่าคอม+VAT', 'รายได้รวม',
@@ -1005,14 +1098,16 @@ function costPaySheet_() {
 }
 
 /** ข้อความแจ้งกลุ่ม — บอกยอดค้างที่เหลือด้วย คนในกลุ่มจะได้ไม่ต้องไปเปิดชีต */
-function costPaybackText_(loc, baht, method, note, who) {
-  var L = ['💸 สาขาคืนเงินครัวกลาง',
+function costPaybackText_(loc, baht, method, note, who, biz) {
+  biz = costBizCell_(biz);
+  var L = ['💸 สาขาคืนเงินครัวกลาง' + (biz !== 'หม่าล่า' ? ' · ' + biz : ''),
            loc + ' — ' + costBaht_(baht).toLocaleString() + ' บาท' + (method ? ' (' + method + ')' : '')];
   if (note) L.push('หมายเหตุ: ' + note);
   if (who)  L.push('บันทึกโดย ' + who);
   try {
     cacheClear_();
-    var o = costSummary_().owed[loc];
+    var sum = costSummary_();
+    var o = (sum.biz ? sum.biz[biz].owed : sum.owed)[loc];
     if (o) {
       L.push('');
       L.push('รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
@@ -1029,16 +1124,17 @@ function costPaybackText_(loc, baht, method, note, who) {
  * บันทึกเงินที่สาขาคืนครัวกลาง (จากไลน์) — จดว่าแจ้งแล้ว เพราะคนสั่งได้ข้อความตอบกลับในกลุ่มไปแล้ว
  * คืนข้อความไว้ตอบกลับ
  */
-function recordPayback_(loc, baht, method, note, who) {
+function recordPayback_(loc, baht, method, note, who, biz) {
   var sh = costPaySheet_();
   var map = ensureCols_(sh, COST_PAY_COLS.concat([COST_PAY_NOTIFIED_COL]));
   var now = new Date(), r = {};
   r['วันที่'] = now; r['สาขา'] = loc; r['จำนวนเงิน'] = costBaht_(baht);
+  r['ธุรกิจ'] = costBizCell_(biz);
   r['วิธีจ่าย'] = method || ''; r['หมายเหตุ'] = [note, who ? 'ลงทางไลน์โดย ' + who : ''].filter(String).join(' · ');
   r[COST_PAY_NOTIFIED_COL] = Utilities.formatDate(now, costTz_(), 'd/M/yyyy HH:mm');
   appendRows_(sh, map, [r]);
   SpreadsheetApp.flush();
-  return costPaybackText_(loc, baht, method, note, who);
+  return costPaybackText_(loc, baht, method, note, who, biz);
 }
 
 /**
@@ -1064,7 +1160,7 @@ function checkNewPaybacks() {
     if (!loc || !baht) continue;                          // ยังกรอกไม่ครบ รอรอบหน้า
     if (first) { sh.getRange(i + 2, col).setValue('มีก่อนเริ่มแจ้ง'); continue; }
     var text = costPaybackText_(loc, baht, String(v[i][map['วิธีจ่าย']] || '').trim(),
-                                String(v[i][map['หมายเหตุ']] || '').trim(), '');
+                                String(v[i][map['หมายเหตุ']] || '').trim(), '', v[i][map['ธุรกิจ']]);
     var r = (typeof stockNotify_ === 'function') ? stockNotify_(costCentral_(), text) : { sent: false };
     if (!r.sent) { Logger.log('แจ้งคืนเงินไม่ได้: ' + (r.message || '')); continue; }   // ส่งไม่ได้ ลองรอบหน้า
     sh.getRange(i + 2, col).setValue(stamp);
@@ -1096,17 +1192,27 @@ function paybackReminderText_(d, due) {
   } catch (e) {}
   locs = locs.filter(function (l) { return l !== central; }).sort();
   if (!locs.length) return '';
+  var bko = (s.biz && s.biz['เบเกอรี่'].owed) || {};
   locs.forEach(function (loc) {
     var o = s.owed[loc];
-    L.push('', '🏪 ' + loc);
+    L.push('', '🏪 ' + loc + (bko[loc] ? ' · หม่าล่า' : ''));
     if (!o) { L.push('• ยังไม่มีของที่รับไปหรือยอดขายในระบบ'); return; }
     L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
     L.push('• คืนแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
     L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
     L.push('• เงินในมือสาขา ' + o['เงินในมือ'].toLocaleString() + ' บาท');
     L.push('👉 คืนได้รอบนี้ ' + o['จ่ายได้เลย'].toLocaleString() + ' บาท');
+    var b = bko[loc];
+    if (b) {
+      L.push('', '🍡 ' + loc + ' · เบเกอรี่');
+      L.push('• รับของจากครัวกลางไปแล้ว ' + b['ส่งไปแล้ว'].toLocaleString() + ' บาท');
+      L.push('• คืนแล้วรวม ' + b['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+      L.push('• ค้างชำระ ' + Math.max(0, b['ค้างชำระ']).toLocaleString() + ' บาท');
+      L.push('• เงินในมือเบเกอรี่ ' + b['เงินในมือ'].toLocaleString() + ' บาท');
+      L.push('👉 คืนได้รอบนี้ ' + b['จ่ายได้เลย'].toLocaleString() + ' บาท');
+    }
   });
-  L.push('', 'คืนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500');
+  L.push('', 'คืนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500  ·  คืนเงิน เบเกอรี่ 300');
   return L.join('\n');
 }
 

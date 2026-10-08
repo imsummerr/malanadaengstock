@@ -6,7 +6,7 @@ const { eq, section, done } = makeCheck('เช็คสต็อก');
 /** รายการที่หน้าเว็บส่งมาให้นับที่สถานที่นี้ — ตรงกับ itemsFor() ใน stock.html */
 function webList(g, loc) {
   const want = loc === g.CENTRAL ? g.SCOPE_CENTRAL : g.SCOPE_SHOP;
-  return g.getStockItems_().filter(i => !i.scope || i.scope === want);
+  return g.getStockItems_().filter(i => (!i.scope || i.scope === want) && (loc === g.CENTRAL || !i.bakery));
 }
 function rowsFor(g, loc, levels) {
   return webList(g, loc).map(i => (i.level && loc !== g.CENTRAL)
