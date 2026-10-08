@@ -23,19 +23,19 @@
 //   ของพัน (ครัวกลางพันเอง เช่น หมูพัน...)  3 วัน
 //   หมูสด · ไก่ · ดอลลี่ · ผัก/เห็ด           5 วัน
 //   หมึกกรอบ · แมงกะพรุน · มันเทศ · อุด้ง     7 วัน
-//   มาม่าเปล่า · ต็อก · ชีส                  15 วัน
+//   มาม่าเปล่า · ต็อก · ชีส · รากบัว         15 วัน
 //   วุ้นเส้นหม่าล่า · ฟองเต้าหู้ม้วน           30 วัน
 //   ลูกชิ้น และที่เหลือทั้งหมด                 7 วัน
 //   เบเกอรี่ คิดแยก (bakeryLots_) — สาขา 7 วัน และไม่เกินอายุจากครัวกลาง
 var BRANCH_SHELF_DEFAULT = 7;
 // ผัก/เห็ด 5 วัน — กะหล่ำเป็นของแถม ไม่นับ
 var BRANCH_VEG = ['ผักกาดขาว', 'กวางตุ้ง', 'เห็ดเข็ม', 'ข้าวโพดฝัก', 'กระเจี๊ยบ', 'มันฝรั่ง', 'ฟักทอง',
-                  'รากบัว', 'เห็ดหูหนูขาว', 'เห็ดหูหนูดำ', 'เห็ดหอม', 'เห็ดออเร็นจิ'];
+                  'เห็ดหูหนูขาว', 'เห็ดหูหนูดำ', 'เห็ดหอม', 'เห็ดออเร็นจิ'];
 // ตัวที่ระบุชื่อตรง ๆ — มาก่อนกฎอื่น แก้/เพิ่มตรงนี้ได้
 var BRANCH_SHELF_DAYS = {
   'ดอลลี่': 5, 'ไก่': 5,
   'ปลาหมึกกรอบ': 7, 'แมงกะพรุน': 7, 'มันเทศ': 7, 'อุด้ง': 7,
-  'มาม่าเปล่า': 15, 'ต็อกแท่งเล็ก': 15, 'ชีส': 15,
+  'มาม่าเปล่า': 15, 'ต็อกแท่งเล็ก': 15, 'ชีส': 15, 'รากบัว': 15,
   'วุ้นเส้นหม่าล่า': 30, 'ฟองเต้าหู้ม้วน': 30
 };
 function branchShelfDays_(item) {
@@ -541,9 +541,18 @@ function checkBakeryExpiryDaily(now) {
   if (props.getProperty('BAKERY_EXPIRY_LAST') === key) return false;
   props.setProperty('BAKERY_EXPIRY_LAST', key);
   var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : CENTRAL_NAME;
-  var list = bakeryExpiryAt_(central, d.getTime());
+  // เช็คทุกวัน แต่แจ้งเฉพาะชุดที่ยังไม่เคยแจ้ง — ไม่มีของต้องทิ้ง / ส่งร้านหมดแล้ว = เงียบ
+  // ชุดเดิมที่แจ้งไปแล้ว (รายการ|วันหมดอายุ) ไม่แจ้งซ้ำทุกวัน
+  var sent = {};
+  try { sent = JSON.parse(props.getProperty('BAKERY_EXPIRY_SENT') || '{}') || {}; } catch (e) {}
+  var list = bakeryExpiryAt_(central, d.getTime()).filter(function (x) { return !sent[x.name + '|' + x.last]; });
   if (!list.length) return false;
   if (typeof stockNotify_ === 'function') stockNotify_(central, bakeryExpiryText_(central, list, d.getTime()));
+  list.forEach(function (x) { sent[x.name + '|' + x.last] = key; });
+  // เก็บแค่ 60 วันล่าสุด
+  var old = expiryAddDays_(key, -60);
+  Object.keys(sent).forEach(function (k) { if (sent[k] < old) delete sent[k]; });
+  props.setProperty('BAKERY_EXPIRY_SENT', JSON.stringify(sent));
   return true;
 }
 
