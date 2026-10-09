@@ -31,14 +31,12 @@ var COST_SHEET_PL     = 'บัญชี_กำไรแต่ละที่'; 
 var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ', 'ธุรกิจ', 'ส่งกำไร'];
 
 /**
- * ค่าไม้เสียบ (9/10) — ครัวกลางคิดกับสาขาไม้ละ 0.09 (แพ็คละ 18 บาท 200 ไม้)
- * ติดไปกับต้นทุนของที่ขายเป็นไม้ทุกตัวตอนส่งเข้าร้าน = ต้นทุนสาขา + หนี้ที่ต้องคืนครัวกลาง
- * ครัวกลางไม่ตัดไม้ตอนแพ็ค — นับสต็อกแล้วไม้หายไปเท่าไหร่ เป็นค่าใช้จ่ายของครัวกลางเอง
+ * ของที่เลิกนับเป็นสต็อกแล้ว — ประวัติเก่าไม่เอามาคิดต้นทุน ไม่งั้นมูลค่าค้างอยู่ในครัวกลางตลอดไป
+ * ไม้เสียบ (9/10): ซื้อเมื่อไหร่ลงไลน์ "ค่าไม้เสียบ 18" = ค่าใช้จ่ายหม่าล่าของสาขา ไม่นับในครัวกลาง
  */
-var SKEWER_ITEM = 'ไม้เสียบเบอร์ 8';
-var SKEWER_PACK_BAHT = 18, SKEWER_PER_PACK = 200;
-var SKEWER_START_DATE = '2026-10-09';        // ส่งก่อนวันนี้ไม่คิดค่าไม้ย้อนหลัง
-function skewerPerStick_() { return SKEWER_PACK_BAHT / SKEWER_PER_PACK; }
+var COST_IGNORE_ITEMS = ['ไม้เสียบเบอร์ 8'];
+/** ค่าใช้จ่ายที่เป็นของหม่าล่าเสมอ แม้เขียนเบเกอรี่กำกับ — เบเกอรี่ไม่ใช้ไม้เสียบ */
+var COST_MALA_ONLY_TYPES = { 'ค่าไม้เสียบ': true };
 
 /**
  * เงินหมุนเวียนครัวกลาง (cash cycle) — ซื้อของ → แพ็คส่งสาขา → สาขาขายแล้วคืนเงิน → ซื้อรอบใหม่
@@ -57,15 +55,6 @@ function centralCashFrom_() {
 }
 /** ช่วงที่ใช้คิดว่าส่งของวันละเท่าไหร่ — เอาไว้บอกว่าเงินหมุนกลับมาในกี่วัน */
 var CASH_CYCLE_DAYS = 30;
-/** ส่งของนี้ qty (หน่วยเล็กสุด) ไปสาขา ใช้ไม้กี่ไม้ — ของที่ไม่ได้ขายเป็นไม้ = 0 */
-function skewerSticks_(item, qty, t) {
-  if (!(qty > 0) || typeof findStockItem_ !== 'function') return 0;
-  if (SKEWER_START_DATE && t && t < new Date(SKEWER_START_DATE + 'T00:00:00+07:00').getTime()) return 0;
-  var it = findStockItem_(item);
-  if (!it || it.kind !== KIND_PACKED || String(it.subUnit || '').trim() !== 'ไม้') return 0;
-  var per = typeof perStickOf_ === 'function' ? perStickOf_(it) : 1;
-  return costQty_(qty / (per > 0 ? per : 1));
-}
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
@@ -534,6 +523,11 @@ function costEvents_(all) {
       return !(e.t < costStartDate_(e.loc));
     });
   }
+  // ของที่เลิกนับเป็นสต็อกแล้ว (ไม้เสียบ) — ไม่เอาประวัติมาคิด
+  ev = ev.filter(function (e) { return COST_IGNORE_ITEMS.indexOf(e.item) === -1; });
+  ev.forEach(function (e) {
+    if (e.raws) e.raws = e.raws.filter(function (r) { return COST_IGNORE_ITEMS.indexOf(r.name) === -1; });
+  });
   ev.sort(function (a, b) { return (a.t - b.t) || (a.step - b.step); });
   return ev;
 }
@@ -556,7 +550,6 @@ function costReplay_() {
 function costReplayRaw_(all) {
   var central = costCentral_();
   var lay = {}, used = {}, sent = {}, sentBiz = {}, moved = {}, warn = [], log = [];
-  var skewer = {};       // สาขา → { sticks, baht } ค่าไม้เสียบที่ครัวกลางคิดกับสาขา
   var buys = [], sendLog = [];   // เงินหมุนเวียนครัวกลาง — ซื้อเข้า / ส่งสาขา ตามเวลา
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
   // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
@@ -680,18 +673,9 @@ function costReplayRaw_(all) {
                     msg: 'ส่งเข้าร้านมากกว่าที่ครัวกลางมี ขาด ' + t2.short +
                          ' — คิดต้นทุนจากราคาล่าสุดแทน' });
       }
-      // ค่าไม้เสียบ ไม้ละ 0.09 บวกเข้าต้นทุนต่อหน่วยที่สาขา (เต้าชีส 2 ชิ้น/ไม้ = ชิ้นละ 0.045)
-      var sticks = all ? 0 : skewerSticks_(e.item, e.qty, e.t);
-      var stickBaht = costBaht_(sticks * skewerPerStick_());
-      var plus = sticks > 0 ? sticks * skewerPerStick_() / e.qty : 0;
-      if (stickBaht > 0) {
-        value = costBaht_(value + stickBaht);
-        var sk = skewer[e.loc] || (skewer[e.loc] = { sticks: 0, baht: 0 });
-        sk.sticks = costQty_(sk.sticks + sticks); sk.baht = costBaht_(sk.baht + stickBaht);
-      }
       // ยกทั้งชั้นไปตั้งที่สาขา ราคาต่อหน่วยของแต่ละชั้นเท่าเดิมเป๊ะ
-      t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost + plus); });
-      if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost + plus);
+      t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost); });
+      if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost);
       // ของที่นับเป็นระดับ (กระดูกหมู น้ำดำ) นับเป็นตัวเลขไม่ได้ ต้นทุนจึงไม่มีวัน
       // ถูกตัดจากการนับ — ถือว่าใช้ไปทันทีที่ถึงสาขา ไม่งั้นค้างเป็นสต็อกตลอดไป
       if (typeof isLevelItem_ === 'function' && isLevelItem_(e.item)) {
@@ -704,7 +688,7 @@ function costReplayRaw_(all) {
       var sz = costBizOf_(e.item);
       sentBiz[e.loc][sz] = costBaht_((sentBiz[e.loc][sz] || 0) + value);
       sendLog.push({ t: e.t, loc: e.loc, biz: sz, value: value });
-      moved[e.item] = costBaht_((moved[e.item] || 0) + value - stickBaht);
+      moved[e.item] = costBaht_((moved[e.item] || 0) + value);
 
     } else if (e.type === 'ของเสีย') {
       var t3 = take(e.loc, e.item, e.qty);
@@ -750,7 +734,7 @@ function costReplayRaw_(all) {
 
   log.sort(function (a, b) { return a.t - b.t; });
   return { layers: lay, used: used, sent: sent, sentBiz: sentBiz, moved: moved, warn: warn, log: log,
-           lastCost: lastCost, skewer: skewer, buys: buys, sendLog: sendLog };
+           lastCost: lastCost, buys: buys, sendLog: sendLog };
 }
 
 /** ราคาทุนล่าสุดของทุกอย่าง จากประวัติทั้งหมด ไม่สนเส้นเริ่มนับ */
@@ -885,7 +869,8 @@ function costOutgo_(biz, from) {
         var saleDay = !COST_SHARED_SALE_DAYS_ONLY[type] || costBakeryDays_()[loc + '|' + day];
         if (started && saleDay) cut = COST_SHARED_TYPES[type];
       }
-      var share = tag ? (costBizCell_(tag) === biz ? 1 : 0)
+      var share = COST_MALA_ONLY_TYPES[type] ? (biz === 'หม่าล่า' ? 1 : 0)
+                : tag ? (costBizCell_(tag) === biz ? 1 : 0)
                       : (biz === 'เบเกอรี่' ? cut : 1 - cut);
       if (!share) continue;
       baht = costBaht_(baht * share);
@@ -1058,7 +1043,6 @@ function costSummary_() {
       var due = Math.max(0, sent - paid);
       owed[loc] = {
         ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
-        ค่าไม้เสียบ: biz === 'หม่าล่า' ? ((rep.skewer || {})[loc] || { baht: 0 }).baht : 0,   // รวมอยู่ในส่งไปแล้ว
         ใช้ไป:       u['ใช้ไป'] || 0,
         ของเสีย:     u['ของเสีย'] || 0,
         จ่ายคืนแล้ว: paid,
@@ -1121,11 +1105,10 @@ function costSummary_() {
         วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
       };
       if (loc === central) {
-        // ครัวกลาง: ค่าไม้ที่คิดกับสาขา · เงินที่สาขาโอนเข้ามา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง)
+        // ครัวกลาง: เงินที่สาขาโอนเข้ามา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง)
         var sumOf = function (o, k) {
           return costBaht_(Object.keys(o).reduce(function (a, l) { return a + (Number(o[l][k]) || 0); }, 0));
         };
-        pl[loc]['ค่าไม้จากสาขา'] = sumOf(owed, 'ค่าไม้เสียบ');
         pl[loc]['รับคืนค่าของ'] = sumOf(owed, 'จ่ายคืนแล้ว');
         pl[loc]['รับกำไรจากสาขา'] = sumOf(owed, 'ส่งกำไรแล้ว');
         var ci = (rep.used[central] || {}).items || {};
@@ -1174,7 +1157,7 @@ function costCombine_(a, b) {
   Object.keys(stock).forEach(function (loc) {
     stock[loc].rows.sort(function (x, y) { return y.value - x.value; });
   });
-  var owedKeys = ['ส่งไปแล้ว', 'ค่าไม้เสียบ', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ส่งกำไรแล้ว', 'ค้างชำระ',
+  var owedKeys = ['ส่งไปแล้ว', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ส่งกำไรแล้ว', 'ค้างชำระ',
                   'ค่าของที่ใช้ไปแล้ว', 'เงินในมือ', 'จ่ายได้เลย', 'สิ้นเดือนส่งทั้งหมด', 'กำไรที่ส่งได้',
                   'วัตถุดิบคงเหลือ'];
   var owed = {};
@@ -1183,7 +1166,7 @@ function costCombine_(a, b) {
   });
   var plKeys = ['รายได้', 'หน้าร้าน', 'เดลิเวอรี่', 'ค่าคอมแอป', 'เงินเข้าจริง', 'ค่าใช้จ่ายวัตถุดิบ',
                 'ของเสีย', 'กำไรขั้นต้น', 'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ',
-                'ค่าไม้จากสาขา', 'รับคืนค่าของ', 'รับกำไรจากสาขา'];
+                'รับคืนค่าของ', 'รับกำไรจากสาขา'];
   var pl = {};
   Object.keys(a.pl).concat(Object.keys(b.pl)).forEach(function (loc) {
     if (pl[loc]) return;
@@ -1274,35 +1257,35 @@ function buildBranchLedger() {
     var u = s.used[loc] || { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0 };
     var st = s.stock[loc] || { total: 0 };
     var o = s.owed[loc];
-    rows.push([loc, o['ส่งไปแล้ว'], o['ค่าไม้เสียบ'] || 0, o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+    rows.push([loc, o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
                o['ส่งกำไรแล้ว'] || 0, o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'],
                o['สิ้นเดือนส่งทั้งหมด'] || 0, o['กำไรที่ส่งได้'] || 0, st.total]);
   });
   var c = s.central;
   var uc = s.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
-  rows.push([c + ' (คงเหลือในครัว)', '', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '', '', '', '',
+  rows.push([c + ' (คงเหลือในครัว)', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '', '', '', '',
              (s.stock[c] || { total: 0 }).total]);
   // เบเกอรี่แยกบัญชี
   var bk = s.biz && s.biz['เบเกอรี่'];
   if (bk) {
     Object.keys(bk.owed).forEach(function (loc) {
       var o = bk.owed[loc], st = bk.stock[loc] || { total: 0 };
-      rows.push([loc + ' · เบเกอรี่', o['ส่งไปแล้ว'], 0, o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+      rows.push([loc + ' · เบเกอรี่', o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
                  o['ส่งกำไรแล้ว'] || 0, o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'],
                  o['สิ้นเดือนส่งทั้งหมด'] || 0, o['กำไรที่ส่งได้'] || 0, st.total]);
     });
     var ub = bk.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
     if ((bk.stock[c] || {}).total || ub['ใช้ไป'] || ub['ของเสีย']) {
-      rows.push([c + ' · เบเกอรี่ (คงเหลือในครัว)', '', '', ub['ใช้ไป'] || 0, ub['ของเสีย'] || 0, '', '', '', '', '', '', '',
+      rows.push([c + ' · เบเกอรี่ (คงเหลือในครัว)', '', ub['ใช้ไป'] || 0, ub['ของเสีย'] || 0, '', '', '', '', '', '', '',
                  (bk.stock[c] || { total: 0 }).total]);
     }
   }
 
   costWriteSheet_(COST_SHEET_LEDGER,
-    ['สถานที่', 'รับของไปแล้ว', 'ในนั้นค่าไม้เสียบ', 'ใช้ไปจริง', 'ของเสีย', 'คืนค่าของแล้ว', 'ส่งกำไรแล้ว',
+    ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย', 'คืนค่าของแล้ว', 'ส่งกำไรแล้ว',
      'ค้างชำระ', 'เงินในมือ', 'จ่ายได้เลย (วันอาทิตย์)', 'สิ้นเดือนส่งทั้งหมด', 'ในนั้นเป็นกำไร',
      'มูลค่าวัตถุดิบคงเหลือ'], rows,
-    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที (ของที่ขายเป็นไม้ +ค่าไม้ไม้ละ 0.09) · วันอาทิตย์จ่ายเท่าที่มี ไม่เกินที่ค้าง · ' +
+    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที · วันอาทิตย์จ่ายเท่าที่มี ไม่เกินที่ค้าง · ' +
     'สิ้นเดือนส่งเงินในมือทั้งหมด เกินหนี้ค่าของ = กำไรเข้าครัวกลาง · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สาขาจ่ายคืนกรอกในชีต "' + COST_SHEET_PAY + '"');
@@ -1520,8 +1503,7 @@ function paybackReminderText_(d, due) {
   var bko = (s.biz && s.biz['เบเกอรี่'].owed) || {};
   // สิ้นเดือน = ส่งเงินในมือทั้งหมด (เคลียร์หนี้ค่าของ + กำไร) · วันอาทิตย์ = คืนเท่าที่มี ไม่เกินที่ค้าง
   function block(o, cashLabel) {
-    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท' +
-           (o['ค่าไม้เสียบ'] > 0 ? ' (ค่าไม้เสียบ ' + o['ค่าไม้เสียบ'].toLocaleString() + ')' : ''));
+    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
     L.push('• คืนค่าของแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
     L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
     L.push('• ' + cashLabel + ' ' + o['เงินในมือ'].toLocaleString() + ' บาท');
@@ -1775,7 +1757,6 @@ var CENTRAL_STOCK_20261008 = [
   ['เต้าหู้หลอด (ดิบ)',              12,    54 / 12,     '12 หลอด (1 ถุง) 54 บาท'],
   ['ข้าวโพดฝัก (ดิบ)',               3,     25 / 3,      '3 ฝัก 25 บาท'],
   ['ถ้วย 2 ออน',                    50,    25 / 50,     '1 แพ็ค 25 บาท'],
-  ['ไม้เสียบเบอร์ 8',                1,     18,          '1 แพ็ค 18 บาท'],
   ['เห็ดออเร็นจิ (ดิบ)',             0.749, 60,          '0.749 โล โลละ 60'],
   ['แมงกะพรุน (ดิบ)',               0.378, 70,          '0.378 โล โลละ 70'],
   ['หัวไหล่หมูติดหนังสไลซ์ (ดิบ)',    1.357, 122,         '1.357 โล โลละ 122'],
@@ -1790,7 +1771,7 @@ function setCentralStock20261008() {
   // รายการสินค้าในชีตยังเป็นหน่วยเก่า (ข้าวโพดเป็นโล เต้าหู้หลอดเป็นถุง) — อัปเดตก่อน ไม่งั้นจำนวนผิดหน่วย
   // นมผงที่ซื้อมาย้ายไปชื่อ "นมผง (ดิบ)" (9/10) — กดซ้ำหลังอัปเดตโค้ดก็ต้องเปลี่ยนชื่อก่อนแก้รอบเดิม
   var corn = findStockItem_('ข้าวโพดฝัก (ดิบ)'), tube = findStockItem_('เต้าหู้หลอด (ดิบ)');
-  if (!findStockItem_('ไม้เสียบเบอร์ 8') || !corn || corn.subUnit !== 'ฝัก' || !tube || tube.subUnit !== 'หลอด' ||
+  if (!corn || corn.subUnit !== 'ฝัก' || !tube || tube.subUnit !== 'หลอด' ||
       !findStockItem_('นมผง (ดิบ)')) {
     if (typeof fixItemList === 'function') fixItemList();
     cacheClear_();

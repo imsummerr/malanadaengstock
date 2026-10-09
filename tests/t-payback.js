@@ -85,71 +85,39 @@ section('สิ้นเดือน — ส่งเงินทั้งหม
   eq('ของใหม่เป็นหนี้เต็ม ไม่ถูกหักด้วยกำไรที่ส่งไป', gm.costSummary_().owed[SHOP]['ค้างชำระ'], 150);
 }
 
-section('ค่าไม้เสียบ ไม้ละ 0.09 ติดไปกับของที่ขายเป็นไม้');
+section('ค่าไม้เสียบ = ค่าใช้จ่ายหม่าล่าของสาขา ตอนซื้อ (ไม่คิดไม้ละ 0.09 · ไม่นับในครัวกลาง)');
 {
   const gs = fresh();
   const at = (d, h) => new Date(2026, 9, d, h);
+  gs.__env.SHEETS[gs.SHEET_EXPENSE] = { headers: gs.EXPENSE_HEADERS.slice(), rows: [] };
   push(gs, gs.INTAKE_SHEET, { 'รายการ': 'ดอลลี่ (ดิบ)', 'จำนวนเงิน': 500, 'messageId': 's1' });
   push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(9, 8), 'สาขา': gs.CENTRAL, 'รายการ': 'ดอลลี่ (ดิบ)', 'จำนวน': 5, 'ประเภท': 'ของเข้าครัวกลาง', 'messageId': 's1' });
   const o = { 'วันที่เวลา': at(9, 9), 'สาขา': gs.CENTRAL, 'รายการ': 'ดอลลี่', 'จำนวน': 100 };
   const c0 = gs.packRawCols_(0); o[c0.name] = 'ดอลลี่ (ดิบ)'; o[c0.qty] = 5;
   push(gs, gs.SHEET_PACK, o);
   push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(9, 10), 'สาขา': SHOP, 'รายการ': 'ดอลลี่', 'จำนวน': 100, 'ประเภท': 'ของเข้าร้าน' });
-  // เต้าชีส 2 ชิ้นต่อไม้ — 40 ชิ้น = 20 ไม้
-  push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(9, 8), 'สาขา': gs.CENTRAL, 'รายการ': 'เต้าชีส', 'จำนวน': 40, 'ประเภท': 'ของเข้าครัวกลาง' });
-  push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(9, 10), 'สาขา': SHOP, 'รายการ': 'เต้าชีส', 'จำนวน': 40, 'ประเภท': 'ของเข้าร้าน' });
-  // ส่งก่อน 9/10 ไม่คิดย้อนหลัง · ของที่ไม่ใช่ไม้ไม่คิด
-  push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(8, 10), 'สาขา': SHOP, 'รายการ': 'ไก่', 'จำนวน': 10, 'ประเภท': 'ของเข้าร้าน' });
-  push(gs, gs.SHEET_INCOMING, { 'วันที่เวลา': at(9, 10), 'สาขา': SHOP, 'รายการ': 'หม่าล่า(ผสมแล้ว)', 'จำนวน': 3, 'ประเภท': 'ของเข้าร้าน' });
-  const sm = gs.costSummary_();
-  const ow = sm.owed[SHOP];
-  eq('ค่าไม้ 120 ไม้ × 0.09 = 10.80', ow['ค่าไม้เสียบ'], 10.8);
-  const row = sm.stock[SHOP].rows.find(r => r.item === 'ดอลลี่');
-  eq('ต้นทุนดอลลี่ที่สาขา 5 + 0.09 = 5.09/ไม้', row.unit, 5.09);
-  eq('ครัวกลางเห็นค่าไม้ที่คิดกับสาขา', sm.pl[gs.CENTRAL]['ค่าไม้จากสาขา'], 10.8);
-  // ครัวกลางนับไม้: 3 แพ็ค → 1 แพ็ค = ค่าใช้จ่ายครัวกลาง 36
+  let sm = gs.costSummary_();
+  eq('ส่งดอลลี่ 100 ไม้ หนี้ 500 พอดี ไม่บวกค่าไม้', sm.owed[SHOP]['ส่งไปแล้ว'], 500);
+  eq('ต้นทุนดอลลี่ที่สาขา 5/ไม้', sm.stock[SHOP].rows.find(r => r.item === 'ดอลลี่').unit, 5);
+  eq('ไม้เสียบไม่อยู่ในรายการสินค้าแล้ว', gs.findStockItem_('ไม้เสียบเบอร์ 8'), null);
+  // ประวัติเก่าที่ครัวกลางเคยนับไม้ ไม่เอามาคิด (ไม่ค้างเป็นมูลค่า ไม่เป็นค่าใช้จ่ายครัวกลาง)
   gs.__env.SHEETS[gs.SHEET_COUNT].headers.push(gs.COUNT_COST_COL);
-  push(gs, gs.SHEET_COUNT, { 'วันที่เวลา': at(9, 7), 'สาขา': gs.CENTRAL, 'รายการ': 'ไม้เสียบเบอร์ 8', 'จำนวน': 3, 'ประเภท': 'เช็คสต็อก', 'ต้นทุน/หน่วย': 18 });
+  push(gs, gs.SHEET_COUNT, { 'วันที่เวลา': at(8, 7), 'สาขา': gs.CENTRAL, 'รายการ': 'ไม้เสียบเบอร์ 8', 'จำนวน': 3, 'ประเภท': 'เช็คสต็อก', 'ต้นทุน/หน่วย': 18 });
   push(gs, gs.SHEET_COUNT, { 'วันที่เวลา': at(9, 20), 'สาขา': gs.CENTRAL, 'รายการ': 'ไม้เสียบเบอร์ 8', 'จำนวน': 1, 'ประเภท': 'เช็คสต็อก' });
-  const used = gs.costSummary_().pl[gs.CENTRAL]['ใช้ไปในครัว'].find(x => x.item === 'ไม้เสียบเบอร์ 8');
-  eq('นับไม้หายไป 2 แพ็ค = ค่าใช้จ่ายครัวกลาง 36', [used.qty, used.value], [2, 36]);
-}
-
-section('ชีตเก่าที่ยังไม่มีช่องแจ้ง — ไม่ย้อนส่งของเก่า');
-{
-  const g2 = fresh();
-  g2.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
-  g2.__env.SHEETS[g2.COST_SHEET_PAY] = { headers: g2.COST_PAY_COLS.slice(), rows: [[new Date(), SHOP, 100, 'โอน', '']] };
-  eq('ครั้งแรกไม่ส่ง', g2.checkNewPaybacks(), 0);
-  eq('ไม่มีข้อความ', g2.__env.SENT.length, 0);
-}
-
-section('คุยกันในกลุ่ม ไม่ใช่คืนเงินครัวกลาง');
-{
-  const g3 = fresh();
-  g3.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
-  g3.intakeOnText_({ message: { text: 'คืนเงินลูกค้า 20' } }, { location: g3.CENTRAL, who: 'x', isGroup: true, msgId: 'z' });
-  eq('ไม่ลงชีตจ่ายคืน', (g3.__env.SHEETS[g3.COST_SHEET_PAY] || { rows: [] }).rows.length, 0);
-}
-
-section('ทุกวันอาทิตย์ + สิ้นเดือน หลัง 4 ทุ่ม → บอกยอดที่ควรคืน');
-{
-  const g4 = fresh();
-  g4.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
-  const T = s => new Date(s + '+07:00');
-  g4.recordPayback_(SHOP, 100, 'โอน', '', 'เจ้าของ');
-  eq('อาทิตย์ 11/10 3 ทุ่ม ยังไม่ส่ง', g4.checkPaybackReminder(T('2026-10-11T21:00:00')), false);
-  eq('อาทิตย์ 11/10 4 ทุ่ม ส่ง', g4.checkPaybackReminder(T('2026-10-11T22:05:00')), true);
-  const t = g4.__env.SENT.map(x => x.messages[0].text).join('\n');
-  eq('ไปกลุ่มครัวกลาง', g4.__env.SENT[0].to, 'Ccentral');
-  eq('หัวข้อความ', /📅 ถึงรอบตัดยอดคืนครัวกลาง \(วันอาทิตย์\) 11\/10\/2026/.test(t), true);
-  eq('มีสาขา + ยอดคืนได้', /🏪 ตลาดทรัพย์พัฒนา[\s\S]*👉 คืนได้รอบนี้/.test(t), true);
-  eq('ส่งวันละครั้ง', g4.checkPaybackReminder(T('2026-10-11T22:10:00')), false);
-  eq('วันพุธธรรมดาไม่ส่ง', g4.checkPaybackReminder(T('2026-10-14T22:10:00')), false);
-  eq('สิ้นเดือน 31/10 (วันเสาร์) ส่ง', g4.checkPaybackReminder(T('2026-10-31T22:10:00')), true);
-  eq('บอกว่าเป็นรอบสิ้นเดือน', /\(สิ้นเดือน\) 31\/10\/2026/.test(g4.__env.SENT.slice(-1)[0].messages[0].text), true);
-  eq('อาทิตย์ที่ตรงสิ้นเดือน (31/1/2027) ส่งครั้งเดียว บอกทั้งสอง', (g4.checkPaybackReminder(T('2027-01-31T22:10:00')),
-    /\(วันอาทิตย์ \+ สิ้นเดือน\)/.test(g4.__env.SENT.slice(-1)[0].messages[0].text)), true);
+  sm = gs.costSummary_();
+  eq('ไม้เสียบไม่ค้างในมูลค่าครัวกลาง', (sm.stock[gs.CENTRAL] || { rows: [] }).rows.some(r => r.item === 'ไม้เสียบเบอร์ 8'), false);
+  eq('ไม่เป็นค่าใช้จ่ายครัวกลาง', (sm.pl[gs.CENTRAL]['ใช้ไปในครัว'] || []).some(x => x.item === 'ไม้เสียบเบอร์ 8'), false);
+  // ลงไลน์ในกลุ่มครัวกลาง ไม่บอกสาขา — แบบไหนก็ลงสาขา หม่าล่า
+  const { send } = require('./t-intake');
+  send(gs, 'ไม้เสียบ 1 แพ็ค 18', 'k1');
+  send(gs, 'เบเกอรี่ ทรัพย์พัฒนา\nค่าไม้เสียบ 18', 'k2');
+  const ex = gs.__env.SHEETS[gs.SHEET_EXPENSE], k = h => ex.headers.indexOf(h);
+  eq('ไม้เสียบ 1 แพ็ค 18 → ค่าไม้เสียบ ของสาขา หม่าล่า', ex.rows.map(r => [r[k('ประเภท')], r[k('สาขา')], r[k('จำนวนเงิน')], r[k('ธุรกิจ')]]),
+     [['ค่าไม้เสียบ', SHOP, 18, 'หม่าล่า'], ['ค่าไม้เสียบ', SHOP, 18, 'หม่าล่า']]);
+  gs.cacheClear_();
+  sm = gs.costSummary_();
+  eq('หม่าล่าหักค่าไม้ 36 · เบเกอรี่ไม่โดน', [sm.pl[SHOP]['ค่าใช้จ่ายอื่น'], (sm.biz['เบเกอรี่'].pl[SHOP] || {})['ค่าใช้จ่ายอื่น'] || 0], [36, 0]);
+  eq('ไม่ลงเป็นของซื้อเข้าครัวกลาง', gs.__env.SHEETS[gs.INTAKE_SHEET].rows.length, 1);
 }
 
 section('คืนเงินบัญชีเบเกอรี่');

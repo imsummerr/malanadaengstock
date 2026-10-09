@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09f';
+const PAGE_BUILD = '2026-10-09g';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -560,8 +560,7 @@ function viewMoney(v) {
     const debt = (!isC && o) ? `
       <div class="loctitle" style="margin-top:14px">กับครัวกลาง</div>
       <table><tbody>
-        <tr><td>รับของไปแล้ว${o['ค่าไม้เสียบ'] > 0 ? ` <small>รวมค่าไม้เสียบ ${baht(o['ค่าไม้เสียบ'])}</small>` : ''}</td>
-            <td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
+        <tr><td>รับของไปแล้ว</td><td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
         <tr><td>คืนค่าของแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
         <tr><td>ค้างชำระ</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
         <tr><td>เงินในมือ <small>ขายได้ − ค่าใช้จ่าย − ที่โอนเข้าครัวกลางแล้ว</small></td>
@@ -579,7 +578,7 @@ function viewMoney(v) {
         <tr><td>ส่งกำไรเข้าครัวกลางแล้ว</td><td class="num">${baht(o['ส่งกำไรแล้ว'])}</td></tr>` : ''}
       </tbody></table>` : '';
 
-    // ครัวกลาง: ค่าไม้ที่คิดกับสาขา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง) · เงินที่สาขาโอนมา
+    // ครัวกลาง: ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง)
     const inKitchen = (isC && p && p['ใช้ไปในครัว']) || [];
     // เงินหมุนเวียนครัวกลาง (cash cycle): ซื้อของ → ส่งสาขา → สาขาคืนเงิน → ซื้อรอบใหม่
     const cb = isC && p && p['เงินหมุนเวียน'];
@@ -602,11 +601,9 @@ function viewMoney(v) {
             ส่งของเฉลี่ยวันละ ${baht(cb['ส่งของต่อวัน'])}</small></td>
             <td class="num"><b>${days(cb['รอบเงิน'])}</b></td></tr>
       </tbody></table>` : '';
-    const centralBook = (isC && p && p['รับกำไรจากสาขา'] !== undefined) ? `
-      <div class="loctitle" style="margin-top:14px">ค่าไม้เสียบ · ของที่ใช้ในครัวกลาง</div>
+    const centralBook = inKitchen.length ? `
+      <div class="loctitle" style="margin-top:14px">ของที่ใช้ในครัวกลาง</div>
       <table><tbody>
-        ${isBk ? '' : `<tr><td>ค่าไม้เสียบที่คิดกับสาขา <small>ไม้ละ 0.09 (แพ็คละ 18 · 200 ไม้)</small></td>
-            <td class="num">${baht(p['ค่าไม้จากสาขา'])}</td></tr>`}
         <tr><td>− ของที่ใช้ไปในครัวกลาง <small>นับแล้วหายไป = ค่าใช้จ่ายครัวกลาง</small></td>
             <td class="num">${baht(inKitchen.reduce((a, x) => a + x.value, 0))}</td></tr>
         ${inKitchen.map(x => `<tr><td><small>· ${esc(x.item)}${itemOf(x.item) ? ' ' + esc(fmtPack(x.qty, itemOf(x.item))) : ''}</small></td>
@@ -657,7 +654,7 @@ function viewMoney(v) {
   v.innerHTML = `<div class="card">
       <h2>💰 บัญชี · ${isBk ? 'เบเกอรี่' : isAll ? 'รวมหม่าล่า + เบเกอรี่' : 'หม่าล่า'}</h2>
       <p class="lead">คิดสดจากของที่เคลื่อนไหวจริง แบบเข้าก่อนออกก่อน ·
-         ครัวกลางส่งต่อที่ต้นทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ' + ค่าไม้เสียบไม้ละ 0.09'} ·
+         ครัวกลางส่งต่อที่ต้นทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ' · ค่าไม้เสียบเป็นค่าใช้จ่ายหม่าล่าของสาขา'} ·
          สิ้นเดือนสาขาส่งเงินทั้งหมดเข้าครัวกลาง (คืนค่าของ + กำไร)</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${MONEY.total ? tabBtn('รวม', '📊 รวม') : ''}${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
