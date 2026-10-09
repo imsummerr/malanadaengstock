@@ -39,6 +39,24 @@ var SKEWER_ITEM = 'ไม้เสียบเบอร์ 8';
 var SKEWER_PACK_BAHT = 18, SKEWER_PER_PACK = 200;
 var SKEWER_START_DATE = '2026-10-09';        // ส่งก่อนวันนี้ไม่คิดค่าไม้ย้อนหลัง
 function skewerPerStick_() { return SKEWER_PACK_BAHT / SKEWER_PER_PACK; }
+
+/**
+ * เงินหมุนเวียนครัวกลาง (cash cycle) — ซื้อของ → แพ็คส่งสาขา → สาขาขายแล้วคืนเงิน → ซื้อรอบใหม่
+ *   เงินออก: ซื้อของเข้าครัวกลาง · ซื้อของลองสูตร · ค่าใช้จ่ายของครัวกลาง
+ *   เงินเข้า: สาขาคืนค่าของ · สาขาส่งกำไรสิ้นเดือน · เจ้าของใส่ทุน (ถอนออก = ติดลบ)
+ * เริ่มนับตั้งแต่วันตั้งยอดครัวกลาง (8/10) — เปลี่ยนได้ที่ Script Property CENTRAL_CASH_FROM
+ * เงินทุน/ถอนเงิน ลงชีต COST_SHEET_CASH เอง หรือพิมพ์ในไลน์กลุ่มครัวกลาง "ใส่ทุน 5000" / "ถอนเงิน 2000"
+ */
+var COST_SHEET_CASH = 'บัญชี_เงินครัวกลาง';
+var COST_CASH_COLS = ['วันที่', 'รายการ', 'จำนวนเงิน', 'ธุรกิจ', 'หมายเหตุ'];
+var CENTRAL_CASH_FROM = '2026-10-08';
+function centralCashFrom_() {
+  var p = '';
+  try { p = PropertiesService.getScriptProperties().getProperty('CENTRAL_CASH_FROM') || ''; } catch (e) {}
+  return costYmdTime_(p || CENTRAL_CASH_FROM);
+}
+/** ช่วงที่ใช้คิดว่าส่งของวันละเท่าไหร่ — เอาไว้บอกว่าเงินหมุนกลับมาในกี่วัน */
+var CASH_CYCLE_DAYS = 30;
 /** ส่งของนี้ qty (หน่วยเล็กสุด) ไปสาขา ใช้ไม้กี่ไม้ — ของที่ไม่ได้ขายเป็นไม้ = 0 */
 function skewerSticks_(item, qty, t) {
   if (!(qty > 0) || typeof findStockItem_ !== 'function') return 0;
@@ -539,6 +557,7 @@ function costReplayRaw_(all) {
   var central = costCentral_();
   var lay = {}, used = {}, sent = {}, sentBiz = {}, moved = {}, warn = [], log = [];
   var skewer = {};       // สาขา → { sticks, baht } ค่าไม้เสียบที่ครัวกลางคิดกับสาขา
+  var buys = [], sendLog = [];   // เงินหมุนเวียนครัวกลาง — ซื้อเข้า / ส่งสาขา ตามเวลา
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
   // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
   // ไม่งั้นนับวันแรกแล้วต้นทุนเป็น 0 กำไรวันนั้นจะดูดีเกินจริงทั้งก้อน
@@ -629,6 +648,9 @@ function costReplayRaw_(all) {
                     msg: 'ไม่รู้ราคาที่ซื้อมา — คิดต้นทุนเป็น 0' });
       }
       put(e.loc, e.item, e.qty, unit, e.unit > 0 ? e.unit : 0);
+      if (e.loc === central) {
+        buys.push({ t: e.t, item: e.item, value: e.paid > 0 ? e.paid : costBaht_(unit * e.qty) });
+      }
 
     } else if (e.type === 'แพ็คของ') {
       // ต้นทุนของที่แพ็คแล้ว = ต้นทุนของดิบที่กินไปทั้งหมด หารด้วยจำนวนที่ได้
@@ -681,6 +703,7 @@ function costReplayRaw_(all) {
       if (!sentBiz[e.loc]) sentBiz[e.loc] = {};
       var sz = costBizOf_(e.item);
       sentBiz[e.loc][sz] = costBaht_((sentBiz[e.loc][sz] || 0) + value);
+      sendLog.push({ t: e.t, loc: e.loc, biz: sz, value: value });
       moved[e.item] = costBaht_((moved[e.item] || 0) + value - stickBaht);
 
     } else if (e.type === 'ของเสีย') {
@@ -727,7 +750,7 @@ function costReplayRaw_(all) {
 
   log.sort(function (a, b) { return a.t - b.t; });
   return { layers: lay, used: used, sent: sent, sentBiz: sentBiz, moved: moved, warn: warn, log: log,
-           lastCost: lastCost, skewer: skewer };
+           lastCost: lastCost, skewer: skewer, buys: buys, sendLog: sendLog };
 }
 
 /** ราคาทุนล่าสุดของทุกอย่าง จากประวัติทั้งหมด ไม่สนเส้นเริ่มนับ */
@@ -741,7 +764,7 @@ function costPriceBook_() {
  * ยอดที่สาขาโอนเข้าครัวกลางแล้ว — กรอกเองในชีต COST_SHEET_PAY หรือพิมพ์ "คืนเงิน" ในไลน์
  * profitOnly = เอาเฉพาะส่วนที่เป็นกำไร (ช่อง "ส่งกำไร") · ไม่ส่ง = ยอดรวมทั้งคืนค่าของและกำไร
  */
-function costPaidBack_(biz, profitOnly) {
+function costPaidBack_(biz, profitOnly, from) {
   var out = {};
   var sh = sheet_(COST_SHEET_PAY);
   if (!sh || sh.getLastRow() < 2) return out;
@@ -751,6 +774,7 @@ function costPaidBack_(biz, profitOnly) {
     if (biz && costBizCell_(r[map['ธุรกิจ']]) !== biz) return;
     var loc = String(r[map['สาขา']] || '').trim();
     if (costBefore_(r[map['วันที่']], loc)) return;
+    if (from && costTime_(r[map['วันที่']]) < from) return;
     var baht = Number(r[map['จำนวนเงิน']]) || 0;
     if (profitOnly) baht = Math.min(baht, Number(r[map['ส่งกำไร']]) || 0);
     if (!loc || !baht) return;
@@ -833,7 +857,7 @@ function costIncome_() {
 }
 
 /** เงินสดที่จ่ายออกหน้าร้าน แยกตามสาขาและประเภท */
-function costOutgo_(biz) {
+function costOutgo_(biz, from) {
   var out = {};
   var sh = sheet_(SHEET_EXPENSE);
   if (!sh || sh.getLastRow() < 2) return out;
@@ -844,6 +868,7 @@ function costOutgo_(biz) {
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
     if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
+    if (from && iDate !== -1 && costTime_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime])) < from) continue;
     var loc = String(v[r][iLoc] || '').trim();
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
@@ -870,6 +895,53 @@ function costOutgo_(biz) {
     out[loc]['ตามประเภท'][type] = costBaht_((out[loc]['ตามประเภท'][type] || 0) + baht);
   }
   return out;
+}
+
+/** เงินทุนที่เจ้าของใส่/ถอน (ชีต COST_SHEET_CASH) — ถอนออกเป็นเลขติดลบ · ไม่บอกธุรกิจ = หม่าล่า */
+function costCapital_(biz) {
+  var sh = sheet_(COST_SHEET_CASH), sum = 0;
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var map = ensureCols_(sh, COST_CASH_COLS);
+  sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
+    if (biz && costBizCell_(r[map['ธุรกิจ']]) !== biz) return;
+    sum += Number(String(r[map['จำนวนเงิน']]).replace(/,/g, '')) || 0;
+  });
+  return costBaht_(sum);
+}
+
+/** ของที่ซื้อมาลองสูตร (ไม่เข้าสต็อก) ของครัวกลาง — เงินออกจากครัวกลางจริง */
+function costRndSpend_(biz, from) {
+  var name = (typeof INTAKE_SHEET === 'string') ? INTAKE_SHEET : 'ซื้อของเข้า';
+  var rnd = (typeof INTAKE_KIND_RND === 'string') ? INTAKE_KIND_RND : 'พัฒนาสูตร';
+  var sh = sheet_(name), sum = 0;
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var v = sh.getDataRange().getValues();
+  var h = v[0].map(function (x) { return String(x).trim(); });
+  var iKind = h.indexOf('ประเภทซื้อ'), iLoc = h.indexOf('สถานที่'), iBaht = h.indexOf('จำนวนเงิน');
+  var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา'), iItem = h.indexOf('รายการ');
+  if (iKind === -1 || iBaht === -1) return 0;
+  var central = costCentral_();
+  for (var r = 1; r < v.length; r++) {
+    if (String(v[r][iKind] || '').trim() !== rnd) continue;
+    if (iLoc !== -1 && String(v[r][iLoc] || '').trim() && String(v[r][iLoc]).trim() !== central) continue;
+    if (from && iDate !== -1 && costTime_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime])) < from) continue;
+    if (biz && iItem !== -1 && costBizOf_(String(v[r][iItem] || '').trim()) !== biz) continue;
+    sum += Number(v[r][iBaht]) || 0;
+  }
+  return costBaht_(sum);
+}
+
+/**
+ * รอบเงิน: ของอยู่ในครัวกลางกี่วัน + รอสาขาจ่ายกี่วัน (ส่งของเฉลี่ยวันละเท่าไหร่ใน 30 วันล่าสุด)
+ * ส่งของวันละ 500 ครัวกลางมีของ 3000 = ของอยู่ ~6 วัน · สาขาค้าง 1500 = รอ ~3 วัน → เงินกลับมาใน ~9 วัน
+ */
+function costCycleDays_(c) {
+  var rate = Number(c['ส่งของต่อวัน']) || 0;
+  var r1 = function (n) { return Math.round(n * 10) / 10; };
+  c['วันของอยู่ครัวกลาง'] = rate > 0 ? r1(c['ของในครัวกลาง'] / rate) : null;
+  c['วันรอสาขาจ่าย'] = rate > 0 ? r1(c['สาขาค้างจ่าย'] / rate) : null;
+  c['รอบเงิน'] = rate > 0 ? r1(c['วันของอยู่ครัวกลาง'] + c['วันรอสาขาจ่าย']) : null;
+  return c;
 }
 
 /* ═══════════════════ สรุปให้อ่านง่าย ═══════════════════ */
@@ -941,6 +1013,34 @@ function costSummary_() {
     Object.keys(rep.used).forEach(function (loc) {
       used[loc] = rep.used[loc].biz ? rep.used[loc].biz[biz] : rep.used[loc];
     });
+
+    // เงินหมุนเวียนครัวกลาง ตั้งแต่วันเริ่มนับเงิน
+    function cashBook() {
+      var from = centralCashFrom_(), now = Date.now();
+      var sum = function (o) { return costBaht_(Object.keys(o).reduce(function (a, k) { return a + (o[k] || 0); }, 0)); };
+      var buy = costBaht_((rep.buys || []).reduce(function (a, b) {
+        return a + (b.t >= from && costBizOf_(b.item) === biz ? b.value : 0);
+      }, 0));
+      var allIn = sum(costPaidBack_(biz, false, from)), profitIn = sum(costPaidBack_(biz, true, from));
+      var c = {
+        ตั้งแต่: from ? Utilities.formatDate(new Date(from), costTz_(), 'd/M/yyyy') : '',
+        เงินทุน: costCapital_(biz),
+        ซื้อของ: buy,
+        ลองสูตร: costRndSpend_(biz, from),
+        ค่าใช้จ่าย: ((costOutgo_(biz, from)[central] || {})['รวม']) || 0,
+        รับคืนค่าของ: costBaht_(allIn - profitIn),
+        รับกำไร: profitIn,
+        ของในครัวกลาง: (stock[central] || { total: 0 }).total,
+        สาขาค้างจ่าย: costBaht_(Object.keys(owed).reduce(function (a, l) { return a + Math.max(0, owed[l]['ค้างชำระ']); }, 0))
+      };
+      c['คงเหลือ'] = costBaht_(c['เงินทุน'] + c['รับคืนค่าของ'] + c['รับกำไร'] - c['ซื้อของ'] - c['ลองสูตร'] - c['ค่าใช้จ่าย']);
+      c['ทุนหมุนเวียน'] = costBaht_(c['คงเหลือ'] + c['ของในครัวกลาง'] + c['สาขาค้างจ่าย']);
+      var since = Math.max(from, now - CASH_CYCLE_DAYS * 86400000);
+      var days = Math.max(1, (now - since) / 86400000);
+      var sent = (rep.sendLog || []).reduce(function (a, x) { return a + (x.t >= since && x.biz === biz ? x.value : 0); }, 0);
+      c['ส่งของต่อวัน'] = costBaht_(sent / days);
+      return costCycleDays_(c);
+    }
 
     var owed = {};
     function seat(loc) {
@@ -1034,6 +1134,7 @@ function costSummary_() {
         }).map(function (n) {
           return { item: n, qty: ci[n].qty, value: costBaht_((ci[n]['ใช้ไป'] || 0) + (ci[n]['ของเสีย'] || 0)) };
         }).sort(function (a, b) { return b.value - a.value; });
+        pl[loc]['เงินหมุนเวียน'] = cashBook();
       }
       if (biz === 'เบเกอรี่') {
         pl[loc]['เงินสด'] = inc['เงินสด'] || 0;
@@ -1100,6 +1201,12 @@ function costCombine_(a, b) {
       Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
     });
     p['ตามประเภท'] = tp;
+    if (x['เงินหมุนเวียน'] || y['เงินหมุนเวียน']) {
+      var cx = x['เงินหมุนเวียน'] || {}, cy = y['เงินหมุนเวียน'] || {}, cb = { ตั้งแต่: cx['ตั้งแต่'] || cy['ตั้งแต่'] };
+      ['เงินทุน', 'ซื้อของ', 'ลองสูตร', 'ค่าใช้จ่าย', 'รับคืนค่าของ', 'รับกำไร', 'คงเหลือ', 'ของในครัวกลาง',
+       'สาขาค้างจ่าย', 'ทุนหมุนเวียน', 'ส่งของต่อวัน'].forEach(function (k) { cb[k] = costBaht_(num(cx[k]) + num(cy[k])); });
+      p['เงินหมุนเวียน'] = costCycleDays_(cb);
+    }
     if (x['ใช้ไปในครัว'] || y['ใช้ไปในครัว']) {
       p['ใช้ไปในครัว'] = (x['ใช้ไปในครัว'] || []).concat(y['ใช้ไปในครัว'] || [])
         .sort(function (m, n) { return n.value - m.value; });
@@ -1214,6 +1321,13 @@ function setupCosting() {
     Logger.log('สร้างชีต "' + COST_SHEET_PAY + '" แล้ว — เวลาสาขาโอนเงินคืนครัวกลาง มากรอกที่นี่');
   } else {
     Logger.log('มีชีต "' + COST_SHEET_PAY + '" อยู่แล้ว');
+  }
+  if (!ss.getSheetByName(COST_SHEET_CASH)) {
+    var cs = ss.insertSheet(COST_SHEET_CASH);
+    cs.getRange(1, 1, 1, COST_CASH_COLS.length).setValues([COST_CASH_COLS])
+      .setFontWeight('bold').setBackground('#f3f3f4');
+    cs.setFrozenRows(1);
+    Logger.log('สร้างชีต "' + COST_SHEET_CASH + '" แล้ว — เงินทุนที่ใส่ครัวกลาง (บวก) / ถอนออก (ลบ)');
   }
   refreshCostingSheets();
   Logger.log('\nอยากให้ชีตอัปเดตเองทุกชั่วโมง สั่ง setupCostingTriggers() อีกทีนึง');
@@ -1433,7 +1547,11 @@ function paybackReminderText_(d, due) {
     }
   });
   L.push('', 'โอนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500  ·  คืนเงิน เบเกอรี่ 300');
-  if (due.monthEnd) L.push('ส่วนที่เกินหนี้ค่าของ ระบบลงเป็นกำไรเข้าครัวกลางให้เอง');
+  if (due.monthEnd) {
+    L.push('ส่วนที่เกินหนี้ค่าของ ระบบลงเป็นกำไรเข้าครัวกลางให้เอง');
+    var cash = centralCashText_(s);
+    if (cash) L.push('', cash);
+  }
   return L.join('\n');
 }
 
@@ -1454,6 +1572,52 @@ function checkPaybackReminder(now) {
   if (!r.sent) { Logger.log('แจ้งรอบคืนเงินไม่ได้: ' + (r.message || '')); return false; }
   props.setProperty('PAYBACK_REMIND_LAST', key);
   return true;
+}
+
+/* ═══════════════════ เงินหมุนเวียนครัวกลาง ═══════════════════ */
+
+/** สรุปเงินหมุนเวียนครัวกลางเป็นข้อความ — ตอบในไลน์ / ต่อท้ายแจ้งเตือนสิ้นเดือน */
+function centralCashText_(sum) {
+  var s = sum || costSummary_();
+  var b = s.biz && s.biz['รวม'] ? s.biz['รวม'] : { pl: s.pl };
+  var c = (b.pl[s.central] || {})['เงินหมุนเวียน'];
+  if (!c) return '';
+  var f = function (n) { return costBaht_(n).toLocaleString(); };
+  var L = ['💵 เงินหมุนเวียนครัวกลาง (ตั้งแต่ ' + c['ตั้งแต่'] + ')'];
+  if (c['เงินทุน']) L.push('+ เงินทุน ' + f(c['เงินทุน']));
+  L.push('+ สาขาคืนค่าของ ' + f(c['รับคืนค่าของ']) + (c['รับกำไร'] ? ' · ส่งกำไร ' + f(c['รับกำไร']) : ''));
+  L.push('− ซื้อของ ' + f(c['ซื้อของ'] + c['ลองสูตร']) + (c['ค่าใช้จ่าย'] ? ' · ค่าใช้จ่าย ' + f(c['ค่าใช้จ่าย']) : ''));
+  L.push('= เงินคงเหลือ ' + f(c['คงเหลือ']) + ' บาท');
+  L.push('จมอยู่ในของครัวกลาง ' + f(c['ของในครัวกลาง']) + ' · สาขายังค้าง ' + f(c['สาขาค้างจ่าย']));
+  if (c['รอบเงิน'] != null) L.push('เงินกลับมาครบรอบใน ~' + c['รอบเงิน'] + ' วัน');
+  return L.join('\n');
+}
+
+/**
+ * เจ้าของใส่ทุน / ถอนเงินออกจากครัวกลาง (จากไลน์) — ถอนลงเป็นเลขติดลบ
+ * คืนข้อความไว้ตอบกลับ
+ */
+function recordCentralCash_(baht, what, biz, note, who) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(COST_SHEET_CASH);
+  if (!sh) {
+    sh = ss.insertSheet(COST_SHEET_CASH);
+    sh.getRange(1, 1, 1, COST_CASH_COLS.length).setValues([COST_CASH_COLS])
+      .setFontWeight('bold').setBackground('#f3f3f4');
+    sh.setFrozenRows(1);
+  }
+  var map = ensureCols_(sh, COST_CASH_COLS);
+  var out = what === 'ถอนเงิน';
+  var r = {};
+  r['วันที่'] = new Date(); r['รายการ'] = what;
+  r['จำนวนเงิน'] = costBaht_(out ? -Math.abs(baht) : Math.abs(baht));
+  r['ธุรกิจ'] = costBizCell_(biz);
+  r['หมายเหตุ'] = [note, who ? 'ลงทางไลน์โดย ' + who : ''].filter(String).join(' · ');
+  appendRows_(sh, map, [r]);
+  SpreadsheetApp.flush();
+  cacheClear_();
+  return (out ? '🏧 ถอนเงินออกจากครัวกลาง ' : '💰 ใส่ทุนเข้าครัวกลาง ') + costBaht_(baht).toLocaleString() + ' บาท' +
+         (r['ธุรกิจ'] !== 'หม่าล่า' ? ' · ' + r['ธุรกิจ'] : '') + '\n\n' + centralCashText_();
 }
 
 /* ═══════════════════ ตั้งยอดครัวกลางตามของที่มีจริง ═══════════════════ */

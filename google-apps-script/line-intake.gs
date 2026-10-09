@@ -241,6 +241,10 @@ function intakeOnText_(ev, ctx) {
   // ในกลุ่มที่ไม่ได้เรียกบอท มีคำอื่นปนมา (เช่น "คืนเงินลูกค้า 20") = คุยกันเฉย ๆ ไม่ใช่คืนเงินครัวกลาง
   if (pb && ctx.isGroup && !called && pb.note) pb = null;
   if (pb) { intakeReply_(ctx, intakePayback_(pb, ctx)); return; }
+
+  // เงินหมุนเวียนครัวกลาง — "ใส่ทุน 5000" / "ถอนเงิน 2000" / "เงินครัวกลาง" (ดูยอด) · เฉพาะกลุ่มครัวกลาง
+  var cc = intakeCentralCashOf_(called ? stripped : raw);
+  if (cc && !(ctx.isGroup && !called && cc.note)) { intakeReply_(ctx, intakeCentralCash_(cc, ctx)); return; }
   var mode     = String(intakeProp_('INTAKE_GROUP_MODE', 'smart')).toLowerCase();
 
   // โหมด prefix — ในกลุ่มต้องมีคำนำหน้าเสมอ ไม่มีก็ไม่สนใจ
@@ -495,6 +499,35 @@ function intakePayback_(pb, ctx) {
   return text;
 }
 
+/**
+ * เจ้าของใส่ทุน / ถอนเงิน / ดูเงินหมุนเวียนครัวกลาง
+ *   "ใส่ทุน 5000" · "เติมทุน เบเกอรี่ 3000" · "ถอนเงิน 2000" · "เงินครัวกลาง"
+ */
+var INTAKE_CASH_RE = /^(ใส่ทุน|เติมทุน|ถอนเงิน|ถอนทุน|เงินครัวกลาง|เงินหมุนเวียน)(?:\s*ครัวกลาง)?\s*([\s\S]*)$/;
+function intakeCentralCashOf_(text) {
+  var m = String(text || '').trim().match(INTAKE_CASH_RE);
+  if (!m) return null;
+  var what = /^ถอน/.test(m[1]) ? 'ถอนเงิน' : /^เงิน/.test(m[1]) ? 'ดูยอด' : 'ใส่ทุน';
+  var z = intakeBizOf_(m[2]);
+  var rest = z.text, n = rest.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:บาท|฿)?/);
+  var note = n ? (rest.slice(0, n.index) + ' ' + rest.slice(n.index + n[0].length)) : rest;
+  return { what: what, baht: n ? intakeNum_(n[1]) : 0, biz: z.biz || 'หม่าล่า',
+           note: note.replace(/\s+/g, ' ').trim() };
+}
+
+function intakeCentralCash_(cc, ctx) {
+  var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
+  if (typeof recordCentralCash_ !== 'function') return 'ยังไม่ได้ติดตั้ง stock-costing.gs ในโปรเจกต์นี้';
+  // เงินของครัวกลาง — ลงได้เฉพาะกลุ่มครัวกลาง (หรือแชทส่วนตัวกับบอท) กันพนักงานสาขาพิมพ์เล่น
+  if (ctx.isGroup && ctx.location !== central) return 'ใส่ทุน/ถอนเงิน/ดูเงินครัวกลาง พิมพ์ในกลุ่มครัวกลางครับ';
+  if (cc.what === 'ดูยอด') {
+    if (typeof cacheClear_ === 'function') cacheClear_();
+    return centralCashText_() || 'ยังไม่มีข้อมูลเงินหมุนเวียนครัวกลาง';
+  }
+  if (!(cc.baht > 0)) return (cc.what === 'ถอนเงิน' ? 'ถอนเงิน' : 'ใส่ทุน') + 'เท่าไหร่ครับ? เช่น\n  ใส่ทุน 5000\n  ถอนเงิน 2000';
+  return recordCentralCash_(cc.baht, cc.what, cc.biz, cc.note, ctx.who);
+}
+
 function intakeHelpText_() {
   return '📥 วิธีบันทึกผ่านไลน์\n\n' +
          '🛒 ซื้อของ — ชื่อของ + จำนวน + ราคา\n' +
@@ -526,6 +559,8 @@ function intakeHelpText_() {
          '   คืนเงิน 500 เงินสด\n' +
          '   คืนเงิน เบเกอรี่ 300  (บัญชีเบเกอรี่)\n' +
          '   สิ้นเดือนโอนเงินทั้งหมด — ส่วนที่เกินหนี้ค่าของ ระบบลงเป็นกำไรเข้าครัวกลางให้\n\n' +
+         '💵 เงินหมุนเวียนครัวกลาง (พิมพ์ในกลุ่มครัวกลาง)\n' +
+         '   ใส่ทุน 5000  ·  ถอนเงิน 2000  ·  เงินครัวกลาง (ดูยอด)\n\n' +
          '🧪 ของลองสูตร — เติม "ทดลอง" ข้างหน้า\n' +
          '   ทดลอง ปลากะพง 200\n' +
          '   (ไม่เข้าสต็อก ไม่นับเป็นต้นทุนขาย)\n\n' +

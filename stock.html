@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09e';
+const PAGE_BUILD = '2026-10-09f';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -581,8 +581,29 @@ function viewMoney(v) {
 
     // ครัวกลาง: ค่าไม้ที่คิดกับสาขา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง) · เงินที่สาขาโอนมา
     const inKitchen = (isC && p && p['ใช้ไปในครัว']) || [];
+    // เงินหมุนเวียนครัวกลาง (cash cycle): ซื้อของ → ส่งสาขา → สาขาคืนเงิน → ซื้อรอบใหม่
+    const cb = isC && p && p['เงินหมุนเวียน'];
+    const days = n => n == null ? '–' : '~' + n + ' วัน';
+    const cashCycle = cb ? `
+      <div class="loctitle" style="margin-top:14px">💵 เงินหมุนเวียนครัวกลาง <small>ตั้งแต่ ${esc(cb['ตั้งแต่'])}</small></div>
+      <table><tbody>
+        <tr><td>+ เงินทุนที่ใส่ <small>ถอนออกหักแล้ว · ไลน์: ใส่ทุน / ถอนเงิน</small></td><td class="num">${baht(cb['เงินทุน'])}</td></tr>
+        <tr><td>+ สาขาคืนค่าของ</td><td class="num">${baht(cb['รับคืนค่าของ'])}</td></tr>
+        <tr><td>+ สาขาส่งกำไร</td><td class="num">${baht(cb['รับกำไร'])}</td></tr>
+        <tr><td>− ซื้อของเข้าครัวกลาง${cb['ลองสูตร'] ? ` <small>รวมลองสูตร ${baht(cb['ลองสูตร'])}</small>` : ''}</td>
+            <td class="num">${baht(cb['ซื้อของ'] + cb['ลองสูตร'])}</td></tr>
+        <tr><td>− ค่าใช้จ่ายครัวกลาง</td><td class="num">${baht(cb['ค่าใช้จ่าย'])}</td></tr>
+        <tr><td><b>= เงินคงเหลือ</b>${cb['คงเหลือ'] < 0 ? ' <small>ติดลบ = ควักเงินเพิ่มไปแล้วแต่ยังไม่ได้ลงเป็นทุน</small>' : ''}</td>
+            <td class="num ${cb['คงเหลือ'] < 0 ? 'low' : ''}"><b>${baht(cb['คงเหลือ'])}</b></td></tr>
+        <tr><td>+ จมอยู่ในของที่ครัวกลาง</td><td class="num">${baht(cb['ของในครัวกลาง'])}</td></tr>
+        <tr><td>+ สาขายังค้างจ่าย</td><td class="num">${baht(cb['สาขาค้างจ่าย'])}</td></tr>
+        <tr><td><b>= ทุนหมุนเวียนทั้งหมด</b></td><td class="num"><b>${baht(cb['ทุนหมุนเวียน'])}</b></td></tr>
+        <tr><td><b>รอบเงิน</b> <small>ของอยู่ครัวกลาง ${days(cb['วันของอยู่ครัวกลาง'])} + รอสาขาจ่าย ${days(cb['วันรอสาขาจ่าย'])} ·
+            ส่งของเฉลี่ยวันละ ${baht(cb['ส่งของต่อวัน'])}</small></td>
+            <td class="num"><b>${days(cb['รอบเงิน'])}</b></td></tr>
+      </tbody></table>` : '';
     const centralBook = (isC && p && p['รับกำไรจากสาขา'] !== undefined) ? `
-      <div class="loctitle" style="margin-top:14px">ครัวกลางกับสาขา</div>
+      <div class="loctitle" style="margin-top:14px">ค่าไม้เสียบ · ของที่ใช้ในครัวกลาง</div>
       <table><tbody>
         ${isBk ? '' : `<tr><td>ค่าไม้เสียบที่คิดกับสาขา <small>ไม้ละ 0.09 (แพ็คละ 18 · 200 ไม้)</small></td>
             <td class="num">${baht(p['ค่าไม้จากสาขา'])}</td></tr>`}
@@ -590,8 +611,6 @@ function viewMoney(v) {
             <td class="num">${baht(inKitchen.reduce((a, x) => a + x.value, 0))}</td></tr>
         ${inKitchen.map(x => `<tr><td><small>· ${esc(x.item)}${itemOf(x.item) ? ' ' + esc(fmtPack(x.qty, itemOf(x.item))) : ''}</small></td>
             <td class="num"><small>${baht(x.value)}</small></td></tr>`).join('')}
-        <tr><td>สาขาคืนค่าของแล้ว</td><td class="num">${baht(p['รับคืนค่าของ'])}</td></tr>
-        <tr><td><b>สาขาส่งกำไรเข้าครัวกลางแล้ว</b></td><td class="num"><b>${baht(p['รับกำไรจากสาขา'])}</b></td></tr>
       </tbody></table>` : '';
 
     // โชว์ครบทุกรายการ — เดิมตัดไว้ 12 แถว แล้วดูเหมือนของหายไป
@@ -616,7 +635,7 @@ function viewMoney(v) {
     return `<div class="card">
       <div class="loctitle"><span class="pill">${esc(loc)}</span>
         <small>วัตถุดิบคงเหลือ ${baht(st.total)} บาท</small></div>
-      ${money}${debt}${centralBook}
+      ${money}${debt}${cashCycle}${centralBook}
       <div class="loctitle" style="margin-top:14px">ของที่มีอยู่</div>
       <table>
         <thead><tr><th>สินค้า</th><th class="num">คงเหลือ</th>
