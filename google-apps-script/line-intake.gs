@@ -698,6 +698,19 @@ function intakeBranchTags_() {
   return out.sort(function (a, b) { return b.word.length - a.word.length; });
 }
 
+/**
+ * ค่าใช้จ่ายที่ไม่บอกสาขาแล้วหมายถึงหน้าร้านเสมอ — ค่าพนักงาน (ค่าแรง) 300 หักสาขา ไม่ใช่ครัวกลาง
+ * ครัวกลางจ่ายค่าแรงของตัวเอง ให้เขียน "ครัวกลาง" กำกับ
+ */
+var INTAKE_BRANCH_EXPENSE_TYPES = ['ค่าแรง'];
+function intakeCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
+/** สาขาเดียวที่มีอยู่ — มีหลายสาขาเดาไม่ได้ คืนค่าว่าง */
+function intakeOnlyBranch_() {
+  var locs = intakeBranchTags_().map(function (t) { return t.loc; })
+    .filter(function (l, i, a) { return a.indexOf(l) === i; });
+  return locs.length === 1 ? locs[0] : '';
+}
+
 /** ตัดป้ายสาขาออกจากข้อความ — คืน loc = '' ถ้าไม่ได้บอกมา */
 function intakeBranchOf_(text) {
   var t = String(text || '');
@@ -713,7 +726,8 @@ function intakeBranchOf_(text) {
 /**
  * บรรทัดหัว "ค่าใช้จ่าย ตลาดทรัพย์พัฒนา" (หรือแค่ "ทรัพย์พัฒนา") — ไม่มีตัวเลข มีแต่ชื่อสาขา
  * ค่าใช้จ่ายบรรทัดถัด ๆ ไปเป็นของสาขานั้นหมด จนกว่าจะเจอหัวใหม่ ("ครัวกลาง" = กลับมาครัวกลาง)
- * คืน null = ไม่ใช่บรรทัดหัว · '' = หัวครัวกลาง · ชื่อสาขา = หัวสาขา
+ * คืน null = ไม่ใช่บรรทัดหัว · ชื่อครัวกลาง = หัวครัวกลาง (บอกมาเอง) · ชื่อสาขา = หัวสาขา
+ * '' = หัวที่บอกแค่ธุรกิจ ("เบเกอรี่") ที่ยังเป็นของกลุ่มนี้
  */
 function intakeBranchHeader_(line) {
   var t = String(line || '').replace(/[^\u0E00-\u0E7Fa-zA-Z0-9\s]/g, ' ').trim();
@@ -724,7 +738,7 @@ function intakeBranchHeader_(line) {
   var b = intakeBranchOf_(t);
   if (b.loc) return rest(b.text) === '' ? b.loc : null;
   var central = (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง';
-  if (rest(t) === central) return '';
+  if (rest(t) === central) return central;      // บอกมาเอง — ค่าแรงใต้หัวนี้เป็นของครัวกลางจริง
   // หัวที่มีแค่ "เบเกอรี่" / "ค่าใช้จ่ายเบเกอรี่" = ที่ของกลุ่มนี้ เปลี่ยนแค่ธุรกิจ
   return (bz.biz && rest(t) === '') ? '' : null;
 }
@@ -1833,6 +1847,13 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         expSeq++;
         var type = intakeExpenseType_(it.raw);
         var expLoc = it.branch || ctx.location;
+        // ค่าพนักงาน (ค่าแรง) ไม่ได้บอกที่ = พนักงานหน้าร้าน หักสาขา (หม่าล่า/เบเกอรี่ครึ่ง ๆ) ไม่ใช่ครัวกลาง
+        // มีสาขาเดียวลงสาขานั้นเลย · เขียน "ครัวกลาง" กำกับมาเอง = ค่าแรงของครัวกลางจริง ๆ
+        if (!it.branch && expLoc === intakeCentral_() && INTAKE_BRANCH_EXPENSE_TYPES.indexOf(type) !== -1 &&
+            !/ครัวกลาง/.test(it.raw)) {
+          var onlyBranch = intakeOnlyBranch_();
+          if (onlyBranch) expLoc = onlyBranch;
+        }
         // ไม่เขียนธุรกิจ = ปล่อยว่าง (ค่าที่/ค่าแรง แบ่งครึ่ง อย่างอื่นเป็นหม่าล่า — ดู COST_SHARED_TYPES)
         var expBiz = it.biz || '';
         expRows.push([
