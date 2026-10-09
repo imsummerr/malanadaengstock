@@ -849,6 +849,7 @@ function costOutgo_(biz, from) {
   var h = v[0].map(function (x) { return String(x).trim(); });
   var iLoc = h.indexOf('สาขา'), iBaht = h.indexOf('จำนวนเงิน'), iType = h.indexOf('ประเภท');
   var iDate = h.indexOf('วันที่'), iTime = h.indexOf('เวลา'), iBiz = h.indexOf('ธุรกิจ');
+  var iNote = h.indexOf('รายละเอียด'), iPay = h.indexOf('วิธีจ่าย');
   if (iLoc === -1 || iBaht === -1) return out;
   for (var r = 1; r < v.length; r++) {
     if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
@@ -857,6 +858,7 @@ function costOutgo_(biz, from) {
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
     var type = iType === -1 ? 'อื่น ๆ' : (String(v[r][iType] || '').trim() || 'อื่น ๆ');
+    var full = baht;
     // แยกบัญชีหม่าล่า/เบเกอรี่ — เขียนธุรกิจกำกับมา = ของธุรกิจนั้นทั้งก้อน
     // ไม่ได้เขียน: ค่าที่ / ค่าแรง(ค่าพนักงาน) แบ่งครึ่ง · อย่างอื่นเป็นหม่าล่าหมด
     if (biz) {
@@ -875,9 +877,17 @@ function costOutgo_(biz, from) {
       if (!share) continue;
       baht = costBaht_(baht * share);
     }
-    if (!out[loc]) out[loc] = { รวม: 0, ตามประเภท: {} };
+    if (!out[loc]) out[loc] = { รวม: 0, ตามประเภท: {}, รายการ: [] };
     out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
     out[loc]['ตามประเภท'][type] = costBaht_((out[loc]['ตามประเภท'][type] || 0) + baht);
+    // ทีละแถว ให้หน้าบัญชีกดดูได้ว่าจ่ายค่าอะไรไปบ้าง · แถว = เลขแถวในชีต (บัญชีรวมเอาไว้รวมครึ่งกลับเป็นแถวเดียว)
+    var when = iDate === -1 ? 0 : costTime_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]));
+    out[loc]['รายการ'].push({
+      แถว: r + 1, t: when,
+      เวลา: when ? Utilities.formatDate(new Date(when), costTz_(), 'd/M HH:mm') : '',
+      ประเภท: type, รายละเอียด: iNote === -1 ? '' : String(v[r][iNote] || '').trim(),
+      บาท: baht, เต็ม: full, วิธีจ่าย: iPay === -1 ? '' : String(v[r][iPay] || '').trim()
+    });
   }
   return out;
 }
@@ -1101,6 +1111,8 @@ function costSummary_() {
         ของเสีย: u['ของเสีย'] || 0,
         กำไรขั้นต้น: costBaht_(inc['รวม'] - fee - cogs),
         ค่าใช้จ่ายอื่น: ex['รวม'], ตามประเภท: ex['ตามประเภท'],
+        // ล่าสุดอยู่บน — หน้าบัญชีกด "ค่าใช้จ่ายอื่น" แล้วกางดูทีละรายการ
+        รายการค่าใช้จ่าย: (ex['รายการ'] || []).slice().sort(function (a, b) { return b.t - a.t; }),
         กำไรสุทธิ: costBaht_(inc['รวม'] - fee - cogs - ex['รวม']),
         วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
       };
@@ -1184,6 +1196,14 @@ function costCombine_(a, b) {
       Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
     });
     p['ตามประเภท'] = tp;
+    // ค่าที่/ค่าแรงที่แบ่งครึ่ง โผล่ทั้งสองฝั่ง — รวมกลับเป็นแถวเดียวยอดเต็มตามแถวในชีต
+    var byRow = {}, list = [];
+    (x['รายการค่าใช้จ่าย'] || []).concat(y['รายการค่าใช้จ่าย'] || []).forEach(function (e) {
+      if (byRow[e['แถว']]) { byRow[e['แถว']]['บาท'] = costBaht_(byRow[e['แถว']]['บาท'] + e['บาท']); return; }
+      var c = {}; Object.keys(e).forEach(function (k) { c[k] = e[k]; });
+      byRow[e['แถว']] = c; list.push(c);
+    });
+    p['รายการค่าใช้จ่าย'] = list.sort(function (m, n) { return n.t - m.t; });
     if (x['เงินหมุนเวียน'] || y['เงินหมุนเวียน']) {
       var cx = x['เงินหมุนเวียน'] || {}, cy = y['เงินหมุนเวียน'] || {}, cb = { ตั้งแต่: cx['ตั้งแต่'] || cy['ตั้งแต่'] };
       ['เงินทุน', 'ซื้อของ', 'ลองสูตร', 'ค่าใช้จ่าย', 'รับคืนค่าของ', 'รับกำไร', 'คงเหลือ', 'ของในครัวกลาง',

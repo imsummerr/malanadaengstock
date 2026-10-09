@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09g';
+const PAGE_BUILD = '2026-10-10a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,7 +526,7 @@ function viewMoney(v) {
   const locs = Object.keys(M.pl).sort((a, b) =>
     a === M.central ? -1 : b === M.central ? 1 : a.localeCompare(b, 'th'));
 
-  const cards = locs.map(loc => {
+  const cards = locs.map((loc, ci) => {
     const p = M.pl[loc];
     const o = M.owed[loc];
     const st = M.stock[loc] || { rows: [], total: 0 };
@@ -548,7 +548,7 @@ function viewMoney(v) {
         <tr><td>− ${isBk ? 'ต้นทุนเบเกอรี่ที่ขายไป' : 'ค่าใช้จ่ายวัตถุดิบ'}</td><td class="num">${baht(p['ค่าใช้จ่ายวัตถุดิบ'])}</td></tr>
         <tr><td>− ของเสีย</td><td class="num">${baht(p['ของเสีย'])}</td></tr>
         <tr><td><b>กำไรขั้นต้น</b></td><td class="num"><b>${baht(p['กำไรขั้นต้น'])}</b></td></tr>
-        <tr><td>− ค่าใช้จ่ายอื่น</td><td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>
+        ${expenseRows(p, 'ex' + ci)}
         <tr><td><b>กำไรสุทธิ</b></td><td class="num ${p['กำไรสุทธิ'] < 0 ? 'low' : ''}">
             <b>${baht(p['กำไรสุทธิ'])}</b></td></tr>
         ${isAll ? `<tr><td><small>· มาจากหม่าล่า</small></td><td class="num"><small>${baht(p['กำไรหม่าล่า'])}</small></td></tr>
@@ -661,6 +661,45 @@ function viewMoney(v) {
         <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
       </div>
     </div>${isBk ? '' : warn}${cards || '<div class="card"><div class="empty">ยังไม่มีข้อมูล</div></div>'}`;
+}
+
+/**
+ * แถว "ค่าใช้จ่ายอื่น" — กดแล้วกางดูทีละรายการ แยกตามประเภท (ล่าสุดอยู่บน)
+ * ค่าที่/ค่าแรงที่แบ่งครึ่งกับเบเกอรี่ บอกว่าครึ่งจากเท่าไหร่ · บัญชีรวมเป็นยอดเต็ม
+ * หลังบ้านเก่าไม่ส่งรายการมา = แถวเดียวกดไม่ได้เหมือนเดิม
+ */
+function expenseRows(p, id) {
+  const list = p['รายการค่าใช้จ่าย'] || [];
+  if (!list.length) {
+    return `<tr><td>− ค่าใช้จ่ายอื่น</td><td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>`;
+  }
+  const byType = {};
+  list.forEach(e => { (byType[e['ประเภท']] = byType[e['ประเภท']] || []).push(e); });
+  const sum = a => a.reduce((t, e) => t + (Number(e['บาท']) || 0), 0);
+  const types = Object.keys(byType).sort((a, b) => sum(byType[b]) - sum(byType[a]));
+  const rows = types.map(t => `
+        <tr class="${id} hidden"><td><small><b>${esc(t)}</b> · ${byType[t].length} รายการ</small></td>
+            <td class="num"><small><b>${baht(sum(byType[t]))}</b></small></td></tr>` +
+    byType[t].map(e => {
+      const half = Number(e['บาท']) < Number(e['เต็ม']) - 0.005 ? ` <span style="color:var(--muted)">(ครึ่งจาก ${baht(e['เต็ม'])})</span>` : '';
+      const note = e['รายละเอียด'] ? ' ' + esc(e['รายละเอียด']) : '';
+      const pay = e['วิธีจ่าย'] ? ` <span style="color:var(--muted)">${esc(e['วิธีจ่าย'])}</span>` : '';
+      return `
+        <tr class="${id} hidden"><td><small>&nbsp;&nbsp;· ${esc(e['เวลา'])}${note}${pay}${half}</small></td>
+            <td class="num"><small>${baht(e['บาท'])}</small></td></tr>`;
+    }).join('')).join('');
+  return `<tr onclick="toggleRows('${id}', this)" style="cursor:pointer">
+        <td>− ค่าใช้จ่ายอื่น <small class="caret">▸ กดดู ${list.length} รายการ</small></td>
+        <td class="num">${baht(p['ค่าใช้จ่ายอื่น'])}</td></tr>${rows}`;
+}
+
+function toggleRows(cls, el) {
+  const rows = document.querySelectorAll('.' + cls);
+  if (!rows.length) return;
+  const open = rows[0].classList.contains('hidden');
+  rows.forEach(r => r.classList.toggle('hidden', !open));
+  const c = el && el.querySelector('.caret');
+  if (c) c.textContent = (open ? '▾ ซ่อน ' : '▸ กดดู ') + c.textContent.replace(/^[▸▾]\s*(กดดู|ซ่อน)\s*/, '');
 }
 
 async function loadMoney() {
