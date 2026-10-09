@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-09d';
+const PAGE_BUILD = '2026-10-09e';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -555,18 +555,43 @@ function viewMoney(v) {
         <tr><td><small>· มาจากเบเกอรี่</small></td><td class="num"><small>${baht(p['กำไรเบเกอรี่'])}</small></td></tr>` : ''}
       </tbody></table>`;
 
+    // หลังบ้านเก่าไม่มีช่องกำไร/ค่าไม้ — ไม่โชว์แถวพวกนั้น
+    const hasSplit = o && o['สิ้นเดือนส่งทั้งหมด'] !== undefined;
     const debt = (!isC && o) ? `
       <div class="loctitle" style="margin-top:14px">กับครัวกลาง</div>
       <table><tbody>
-        <tr><td>รับของไปแล้ว</td><td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
-        <tr><td>จ่ายคืนแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
+        <tr><td>รับของไปแล้ว${o['ค่าไม้เสียบ'] > 0 ? ` <small>รวมค่าไม้เสียบ ${baht(o['ค่าไม้เสียบ'])}</small>` : ''}</td>
+            <td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
+        <tr><td>คืนค่าของแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
         <tr><td>ค้างชำระ</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
-        <tr><td>เงินในมือ <small>ขายได้ − ค่าใช้จ่าย − ที่โอนคืนแล้ว</small></td>
+        <tr><td>เงินในมือ <small>ขายได้ − ค่าใช้จ่าย − ที่โอนเข้าครัวกลางแล้ว</small></td>
             <td class="num">${baht(o['เงินในมือ'])}</td></tr>
-        <tr><td><b>จ่ายได้เลย</b> <small>มีเท่าไหร่จ่ายเท่านั้น ไม่เกินที่ค้าง</small></td>
+        <tr><td><b>จ่ายได้เลย</b> <small>วันอาทิตย์ · มีเท่าไหร่จ่ายเท่านั้น ไม่เกินที่ค้าง</small></td>
             <td class="num ${o['จ่ายได้เลย'] > 0 ? 'low' : ''}"><b>${baht(o['จ่ายได้เลย'])}</b></td></tr>
         <tr><td>ค่าของที่ใช้ไปแล้ว <small>ขั้นต่ำที่ควรจ่าย</small></td>
             <td class="num">${baht(o['ค่าของที่ใช้ไปแล้ว'])}</td></tr>
+        ${hasSplit ? `<tr><td><b>สิ้นเดือน ส่งเข้าครัวกลางทั้งหมด</b>
+            <small>${!(o['กำไรที่ส่งได้'] > 0) ? 'ยังไม่มีกำไรให้ส่ง'
+              : o['สิ้นเดือนส่งทั้งหมด'] - o['กำไรที่ส่งได้'] > 0.005
+              ? 'คืนค่าของ ' + baht(o['สิ้นเดือนส่งทั้งหมด'] - o['กำไรที่ส่งได้']) + ' + กำไร ' + baht(o['กำไรที่ส่งได้'])
+              : 'เป็นกำไรทั้งหมด (ไม่มีหนี้ค่าของค้าง)'}</small></td>
+            <td class="num"><b>${baht(o['สิ้นเดือนส่งทั้งหมด'])}</b></td></tr>
+        <tr><td>ส่งกำไรเข้าครัวกลางแล้ว</td><td class="num">${baht(o['ส่งกำไรแล้ว'])}</td></tr>` : ''}
+      </tbody></table>` : '';
+
+    // ครัวกลาง: ค่าไม้ที่คิดกับสาขา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง) · เงินที่สาขาโอนมา
+    const inKitchen = (isC && p && p['ใช้ไปในครัว']) || [];
+    const centralBook = (isC && p && p['รับกำไรจากสาขา'] !== undefined) ? `
+      <div class="loctitle" style="margin-top:14px">ครัวกลางกับสาขา</div>
+      <table><tbody>
+        ${isBk ? '' : `<tr><td>ค่าไม้เสียบที่คิดกับสาขา <small>ไม้ละ 0.09 (แพ็คละ 18 · 200 ไม้)</small></td>
+            <td class="num">${baht(p['ค่าไม้จากสาขา'])}</td></tr>`}
+        <tr><td>− ของที่ใช้ไปในครัวกลาง <small>นับแล้วหายไป = ค่าใช้จ่ายครัวกลาง</small></td>
+            <td class="num">${baht(inKitchen.reduce((a, x) => a + x.value, 0))}</td></tr>
+        ${inKitchen.map(x => `<tr><td><small>· ${esc(x.item)}${itemOf(x.item) ? ' ' + esc(fmtPack(x.qty, itemOf(x.item))) : ''}</small></td>
+            <td class="num"><small>${baht(x.value)}</small></td></tr>`).join('')}
+        <tr><td>สาขาคืนค่าของแล้ว</td><td class="num">${baht(p['รับคืนค่าของ'])}</td></tr>
+        <tr><td><b>สาขาส่งกำไรเข้าครัวกลางแล้ว</b></td><td class="num"><b>${baht(p['รับกำไรจากสาขา'])}</b></td></tr>
       </tbody></table>` : '';
 
     // โชว์ครบทุกรายการ — เดิมตัดไว้ 12 แถว แล้วดูเหมือนของหายไป
@@ -591,7 +616,7 @@ function viewMoney(v) {
     return `<div class="card">
       <div class="loctitle"><span class="pill">${esc(loc)}</span>
         <small>วัตถุดิบคงเหลือ ${baht(st.total)} บาท</small></div>
-      ${money}${debt}
+      ${money}${debt}${centralBook}
       <div class="loctitle" style="margin-top:14px">ของที่มีอยู่</div>
       <table>
         <thead><tr><th>สินค้า</th><th class="num">คงเหลือ</th>
@@ -613,7 +638,8 @@ function viewMoney(v) {
   v.innerHTML = `<div class="card">
       <h2>💰 บัญชี · ${isBk ? 'เบเกอรี่' : isAll ? 'รวมหม่าล่า + เบเกอรี่' : 'หม่าล่า'}</h2>
       <p class="lead">คิดสดจากของที่เคลื่อนไหวจริง แบบเข้าก่อนออกก่อน ·
-         ครัวกลางส่งต่อที่ต้นทุน ไม่มีกำไรไม่มีขาดทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ''}</p>
+         ครัวกลางส่งต่อที่ต้นทุน${isBk ? ' · ต้นทุนไดฟุกุ 6.5 บราวนี่ 6 ต่อชิ้น' : ' + ค่าไม้เสียบไม้ละ 0.09'} ·
+         สิ้นเดือนสาขาส่งเงินทั้งหมดเข้าครัวกลาง (คืนค่าของ + กำไร)</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${MONEY.total ? tabBtn('รวม', '📊 รวม') : ''}${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
         <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>

@@ -26,7 +26,28 @@ var COST_SHEET_STOCK  = 'บัญชี_มูลค่าสต็อก';    
 var COST_SHEET_LEDGER = 'บัญชี_ครัวกลางกับสาขา';   // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 var COST_SHEET_PL     = 'บัญชี_กำไรแต่ละที่';       // ผลลัพธ์ เขียนทับทุกครั้งที่สั่ง
 
-var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ', 'ธุรกิจ'];
+// ส่งกำไร = ส่วนของเงินที่เกินหนี้ค่าของทั้งหมด ณ ตอนที่บันทึก (สิ้นเดือนสาขาส่งเงินทั้งหมด)
+// ระบบแบ่งให้ตอนบันทึก — ว่าง (แถวเก่า/กรอกเอง) ระบบเติมให้ตอนแจ้งไลน์ · ยังว่างอยู่ = คืนค่าของทั้งก้อน
+var COST_PAY_COLS = ['วันที่', 'สาขา', 'จำนวนเงิน', 'วิธีจ่าย', 'หมายเหตุ', 'ธุรกิจ', 'ส่งกำไร'];
+
+/**
+ * ค่าไม้เสียบ (9/10) — ครัวกลางคิดกับสาขาไม้ละ 0.09 (แพ็คละ 18 บาท 200 ไม้)
+ * ติดไปกับต้นทุนของที่ขายเป็นไม้ทุกตัวตอนส่งเข้าร้าน = ต้นทุนสาขา + หนี้ที่ต้องคืนครัวกลาง
+ * ครัวกลางไม่ตัดไม้ตอนแพ็ค — นับสต็อกแล้วไม้หายไปเท่าไหร่ เป็นค่าใช้จ่ายของครัวกลางเอง
+ */
+var SKEWER_ITEM = 'ไม้เสียบเบอร์ 8';
+var SKEWER_PACK_BAHT = 18, SKEWER_PER_PACK = 200;
+var SKEWER_START_DATE = '2026-10-09';        // ส่งก่อนวันนี้ไม่คิดค่าไม้ย้อนหลัง
+function skewerPerStick_() { return SKEWER_PACK_BAHT / SKEWER_PER_PACK; }
+/** ส่งของนี้ qty (หน่วยเล็กสุด) ไปสาขา ใช้ไม้กี่ไม้ — ของที่ไม่ได้ขายเป็นไม้ = 0 */
+function skewerSticks_(item, qty, t) {
+  if (!(qty > 0) || typeof findStockItem_ !== 'function') return 0;
+  if (SKEWER_START_DATE && t && t < new Date(SKEWER_START_DATE + 'T00:00:00+07:00').getTime()) return 0;
+  var it = findStockItem_(item);
+  if (!it || it.kind !== KIND_PACKED || String(it.subUnit || '').trim() !== 'ไม้') return 0;
+  var per = typeof perStickOf_ === 'function' ? perStickOf_(it) : 1;
+  return costQty_(qty / (per > 0 ? per : 1));
+}
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
@@ -517,6 +538,7 @@ function costReplay_() {
 function costReplayRaw_(all) {
   var central = costCentral_();
   var lay = {}, used = {}, sent = {}, sentBiz = {}, moved = {}, warn = [], log = [];
+  var skewer = {};       // สาขา → { sticks, baht } ค่าไม้เสียบที่ครัวกลางคิดกับสาขา
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
   // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
   // ไม่งั้นนับวันแรกแล้วต้นทุนเป็น 0 กำไรวันนั้นจะดูดีเกินจริงทั้งก้อน
@@ -636,9 +658,18 @@ function costReplayRaw_(all) {
                     msg: 'ส่งเข้าร้านมากกว่าที่ครัวกลางมี ขาด ' + t2.short +
                          ' — คิดต้นทุนจากราคาล่าสุดแทน' });
       }
+      // ค่าไม้เสียบ ไม้ละ 0.09 บวกเข้าต้นทุนต่อหน่วยที่สาขา (เต้าชีส 2 ชิ้น/ไม้ = ชิ้นละ 0.045)
+      var sticks = all ? 0 : skewerSticks_(e.item, e.qty, e.t);
+      var stickBaht = costBaht_(sticks * skewerPerStick_());
+      var plus = sticks > 0 ? sticks * skewerPerStick_() / e.qty : 0;
+      if (stickBaht > 0) {
+        value = costBaht_(value + stickBaht);
+        var sk = skewer[e.loc] || (skewer[e.loc] = { sticks: 0, baht: 0 });
+        sk.sticks = costQty_(sk.sticks + sticks); sk.baht = costBaht_(sk.baht + stickBaht);
+      }
       // ยกทั้งชั้นไปตั้งที่สาขา ราคาต่อหน่วยของแต่ละชั้นเท่าเดิมเป๊ะ
-      t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost); });
-      if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost);
+      t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost + plus); });
+      if (t2.short > 0) put(e.loc, e.item, t2.short, unitCost + plus);
       // ของที่นับเป็นระดับ (กระดูกหมู น้ำดำ) นับเป็นตัวเลขไม่ได้ ต้นทุนจึงไม่มีวัน
       // ถูกตัดจากการนับ — ถือว่าใช้ไปทันทีที่ถึงสาขา ไม่งั้นค้างเป็นสต็อกตลอดไป
       if (typeof isLevelItem_ === 'function' && isLevelItem_(e.item)) {
@@ -650,7 +681,7 @@ function costReplayRaw_(all) {
       if (!sentBiz[e.loc]) sentBiz[e.loc] = {};
       var sz = costBizOf_(e.item);
       sentBiz[e.loc][sz] = costBaht_((sentBiz[e.loc][sz] || 0) + value);
-      moved[e.item] = costBaht_((moved[e.item] || 0) + value);
+      moved[e.item] = costBaht_((moved[e.item] || 0) + value - stickBaht);
 
     } else if (e.type === 'ของเสีย') {
       var t3 = take(e.loc, e.item, e.qty);
@@ -696,7 +727,7 @@ function costReplayRaw_(all) {
 
   log.sort(function (a, b) { return a.t - b.t; });
   return { layers: lay, used: used, sent: sent, sentBiz: sentBiz, moved: moved, warn: warn, log: log,
-           lastCost: lastCost };
+           lastCost: lastCost, skewer: skewer };
 }
 
 /** ราคาทุนล่าสุดของทุกอย่าง จากประวัติทั้งหมด ไม่สนเส้นเริ่มนับ */
@@ -706,8 +737,11 @@ function costPriceBook_() {
 
 /* ═══════════════════ เงินที่สาขาจ่ายคืนแล้ว ═══════════════════ */
 
-/** ยอดที่สาขาโอนคืนครัวกลางแล้ว — กรอกเองในชีต COST_SHEET_PAY */
-function costPaidBack_(biz) {
+/**
+ * ยอดที่สาขาโอนเข้าครัวกลางแล้ว — กรอกเองในชีต COST_SHEET_PAY หรือพิมพ์ "คืนเงิน" ในไลน์
+ * profitOnly = เอาเฉพาะส่วนที่เป็นกำไร (ช่อง "ส่งกำไร") · ไม่ส่ง = ยอดรวมทั้งคืนค่าของและกำไร
+ */
+function costPaidBack_(biz, profitOnly) {
   var out = {};
   var sh = sheet_(COST_SHEET_PAY);
   if (!sh || sh.getLastRow() < 2) return out;
@@ -718,6 +752,7 @@ function costPaidBack_(biz) {
     var loc = String(r[map['สาขา']] || '').trim();
     if (costBefore_(r[map['วันที่']], loc)) return;
     var baht = Number(r[map['จำนวนเงิน']]) || 0;
+    if (profitOnly) baht = Math.min(baht, Number(r[map['ส่งกำไร']]) || 0);
     if (!loc || !baht) return;
     out[loc] = costBaht_((out[loc] || 0) + baht);
   });
@@ -901,7 +936,7 @@ function costSummary_() {
   function part(biz) {
     var stock = stockBy[biz];
     var income = biz === 'เบเกอรี่' ? bakeryIncome() : costIncome_();
-    var outgo = costOutgo_(biz), back = costPaidBack_(biz);
+    var outgo = costOutgo_(biz), back = costPaidBack_(biz), backProfit = costPaidBack_(biz, true);
     var used = {};
     Object.keys(rep.used).forEach(function (loc) {
       used[loc] = rep.used[loc].biz ? rep.used[loc].biz[biz] : rep.used[loc];
@@ -912,17 +947,22 @@ function costSummary_() {
       if (owed[loc]) return owed[loc];
       var u = used[loc] || {};
       var sent = (rep.sentBiz[loc] || {})[biz] || 0;
-      var paid = back[loc] || 0;
+      // เงินที่โอนเข้าครัวกลาง = คืนค่าของ + ส่งกำไร (สิ้นเดือน) — กำไรไม่ได้ลดหนี้ค่าของ
+      var profitSent = backProfit[loc] || 0;
+      var paid = costBaht_((back[loc] || 0) - profitSent);
       // ของที่ตัดจากครัวกลางตอนตั้งยอด ไม่ได้ส่งผ่านระบบ จึงไม่ใช่หนี้ที่ต้องจ่ายคืน
       var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0) - (u['ตัดจากครัวกลาง'] || 0));
-      // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนคืนครัวกลางไปแล้ว
+      // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนเข้าครัวกลางไปแล้ว (ทั้งค่าของและกำไร)
       var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
-                           ((outgo[loc] || {})['รวม'] || 0) - paid);
+                           ((outgo[loc] || {})['รวม'] || 0) - paid - profitSent);
+      var due = Math.max(0, sent - paid);
       owed[loc] = {
         ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
+        ค่าไม้เสียบ: biz === 'หม่าล่า' ? ((rep.skewer || {})[loc] || { baht: 0 }).baht : 0,   // รวมอยู่ในส่งไปแล้ว
         ใช้ไป:       u['ใช้ไป'] || 0,
         ของเสีย:     u['ของเสีย'] || 0,
         จ่ายคืนแล้ว: paid,
+        ส่งกำไรแล้ว: profitSent,
         // จ่ายครบแล้วของที่เหลือไม่ใช่หนี้ เป็นวัตถุดิบคงเหลือของสาขาเฉย ๆ
         ค้างชำระ:    costBaht_(sent - paid),
         ค่าของที่ใช้ไปแล้ว: costBaht_(Math.max(0, gone - paid)),
@@ -930,7 +970,10 @@ function costSummary_() {
         // มีเงินเท่าไหร่ก็จ่ายเท่านั้น แต่ไม่เกินยอดที่ค้างอยู่
         // ใช้ของไปแค่ 180 แต่มีเงิน 600 ค้างอยู่ 300 ก็เคลียร์ 300 ไปเลย
         // ของที่ยังไม่ได้ใช้ก็ยังอยู่ในสต็อกสาขาเหมือนเดิม แค่จ่ายเงินล่วงหน้าไว้
-        จ่ายได้เลย: costBaht_(Math.max(0, Math.min(cash, sent - paid))),
+        จ่ายได้เลย: costBaht_(Math.max(0, Math.min(cash, due))),
+        // สิ้นเดือนส่งเงินในมือทั้งหมด — เคลียร์หนี้ค่าของให้หมดก่อน ที่เหลือคือกำไรเข้าครัวกลาง
+        สิ้นเดือนส่งทั้งหมด: costBaht_(Math.max(0, cash)),
+        กำไรที่ส่งได้: costBaht_(Math.max(0, cash - due)),
         วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
       };
       return owed[loc];
@@ -956,6 +999,8 @@ function costSummary_() {
       var u = used[l] || {};
       if (u['ใช้ไป'] || u['ของเสีย'] || u['นับเกิน']) locs[l] = true;
     });
+    // ครัวกลางต้องมีการ์ดเสมอเมื่อมีสาขา — เงินที่สาขาโอนมา ค่าไม้ อยู่ที่การ์ดนี้ แม้ของในครัวจะหมด
+    if (Object.keys(owed).length) locs[central] = true;
     Object.keys(locs).forEach(function (loc) {
       var inc = income[loc] || { หน้าร้าน: 0, เดลิเวอรี่: 0, รวม: 0, ค่าคอม: 0, ตามแอป: {} };
       var u = used[loc] || { ใช้ไป: 0, ของเสีย: 0 };
@@ -975,6 +1020,21 @@ function costSummary_() {
         กำไรสุทธิ: costBaht_(inc['รวม'] - fee - cogs - ex['รวม']),
         วัตถุดิบคงเหลือ: (stock[loc] || { total: 0 }).total
       };
+      if (loc === central) {
+        // ครัวกลาง: ค่าไม้ที่คิดกับสาขา · เงินที่สาขาโอนเข้ามา · ของที่นับแล้วหายไป (ค่าใช้จ่ายครัวกลาง)
+        var sumOf = function (o, k) {
+          return costBaht_(Object.keys(o).reduce(function (a, l) { return a + (Number(o[l][k]) || 0); }, 0));
+        };
+        pl[loc]['ค่าไม้จากสาขา'] = sumOf(owed, 'ค่าไม้เสียบ');
+        pl[loc]['รับคืนค่าของ'] = sumOf(owed, 'จ่ายคืนแล้ว');
+        pl[loc]['รับกำไรจากสาขา'] = sumOf(owed, 'ส่งกำไรแล้ว');
+        var ci = (rep.used[central] || {}).items || {};
+        pl[loc]['ใช้ไปในครัว'] = Object.keys(ci).filter(function (n) {
+          return costBizOf_(n) === biz && (ci[n]['ใช้ไป'] || ci[n]['ของเสีย']);
+        }).map(function (n) {
+          return { item: n, qty: ci[n].qty, value: costBaht_((ci[n]['ใช้ไป'] || 0) + (ci[n]['ของเสีย'] || 0)) };
+        }).sort(function (a, b) { return b.value - a.value; });
+      }
       if (biz === 'เบเกอรี่') {
         pl[loc]['เงินสด'] = inc['เงินสด'] || 0;
         pl[loc]['เงินโอน'] = inc['เงินโอน'] || 0;
@@ -1013,14 +1073,16 @@ function costCombine_(a, b) {
   Object.keys(stock).forEach(function (loc) {
     stock[loc].rows.sort(function (x, y) { return y.value - x.value; });
   });
-  var owedKeys = ['ส่งไปแล้ว', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ค้างชำระ', 'ค่าของที่ใช้ไปแล้ว',
-                  'เงินในมือ', 'จ่ายได้เลย', 'วัตถุดิบคงเหลือ'];
+  var owedKeys = ['ส่งไปแล้ว', 'ค่าไม้เสียบ', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ส่งกำไรแล้ว', 'ค้างชำระ',
+                  'ค่าของที่ใช้ไปแล้ว', 'เงินในมือ', 'จ่ายได้เลย', 'สิ้นเดือนส่งทั้งหมด', 'กำไรที่ส่งได้',
+                  'วัตถุดิบคงเหลือ'];
   var owed = {};
   Object.keys(a.owed).concat(Object.keys(b.owed)).forEach(function (loc) {
     if (!owed[loc]) owed[loc] = sumObj(a.owed[loc], b.owed[loc], owedKeys);
   });
   var plKeys = ['รายได้', 'หน้าร้าน', 'เดลิเวอรี่', 'ค่าคอมแอป', 'เงินเข้าจริง', 'ค่าใช้จ่ายวัตถุดิบ',
-                'ของเสีย', 'กำไรขั้นต้น', 'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'];
+                'ของเสีย', 'กำไรขั้นต้น', 'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ',
+                'ค่าไม้จากสาขา', 'รับคืนค่าของ', 'รับกำไรจากสาขา'];
   var pl = {};
   Object.keys(a.pl).concat(Object.keys(b.pl)).forEach(function (loc) {
     if (pl[loc]) return;
@@ -1038,6 +1100,10 @@ function costCombine_(a, b) {
       Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
     });
     p['ตามประเภท'] = tp;
+    if (x['ใช้ไปในครัว'] || y['ใช้ไปในครัว']) {
+      p['ใช้ไปในครัว'] = (x['ใช้ไปในครัว'] || []).concat(y['ใช้ไปในครัว'] || [])
+        .sort(function (m, n) { return n.value - m.value; });
+    }
     pl[loc] = p;
   });
   return { stock: stock, owed: owed, pl: pl };
@@ -1101,32 +1167,36 @@ function buildBranchLedger() {
     var u = s.used[loc] || { ใช้ไป: 0, ของเสีย: 0, นับเกิน: 0 };
     var st = s.stock[loc] || { total: 0 };
     var o = s.owed[loc];
-    rows.push([loc, o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
-               o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'], st.total]);
+    rows.push([loc, o['ส่งไปแล้ว'], o['ค่าไม้เสียบ'] || 0, o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+               o['ส่งกำไรแล้ว'] || 0, o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'],
+               o['สิ้นเดือนส่งทั้งหมด'] || 0, o['กำไรที่ส่งได้'] || 0, st.total]);
   });
   var c = s.central;
   var uc = s.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
-  rows.push([c + ' (คงเหลือในครัว)', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '',
+  rows.push([c + ' (คงเหลือในครัว)', '', '', uc['ใช้ไป'], uc['ของเสีย'], '', '', '', '', '', '', '',
              (s.stock[c] || { total: 0 }).total]);
   // เบเกอรี่แยกบัญชี
   var bk = s.biz && s.biz['เบเกอรี่'];
   if (bk) {
     Object.keys(bk.owed).forEach(function (loc) {
       var o = bk.owed[loc], st = bk.stock[loc] || { total: 0 };
-      rows.push([loc + ' · เบเกอรี่', o['ส่งไปแล้ว'], o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
-                 o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'], st.total]);
+      rows.push([loc + ' · เบเกอรี่', o['ส่งไปแล้ว'], 0, o['ใช้ไป'], o['ของเสีย'], o['จ่ายคืนแล้ว'],
+                 o['ส่งกำไรแล้ว'] || 0, o['ค้างชำระ'], o['เงินในมือ'], o['จ่ายได้เลย'],
+                 o['สิ้นเดือนส่งทั้งหมด'] || 0, o['กำไรที่ส่งได้'] || 0, st.total]);
     });
     var ub = bk.used[c] || { ใช้ไป: 0, ของเสีย: 0 };
     if ((bk.stock[c] || {}).total || ub['ใช้ไป'] || ub['ของเสีย']) {
-      rows.push([c + ' · เบเกอรี่ (คงเหลือในครัว)', '', ub['ใช้ไป'] || 0, ub['ของเสีย'] || 0, '', '', '', '',
+      rows.push([c + ' · เบเกอรี่ (คงเหลือในครัว)', '', '', ub['ใช้ไป'] || 0, ub['ของเสีย'] || 0, '', '', '', '', '', '', '',
                  (bk.stock[c] || { total: 0 }).total]);
     }
   }
 
   costWriteSheet_(COST_SHEET_LEDGER,
-    ['สถานที่', 'รับของไปแล้ว', 'ใช้ไปจริง', 'ของเสีย', 'จ่ายคืนแล้ว',
-     'ค้างชำระ', 'เงินในมือ', 'จ่ายได้เลย', 'มูลค่าวัตถุดิบคงเหลือ'], rows,
-    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที · มีเงินเท่าไหร่จ่ายเท่านั้น แต่ไม่เกินที่ค้าง · อัปเดตเมื่อ ' +
+    ['สถานที่', 'รับของไปแล้ว', 'ในนั้นค่าไม้เสียบ', 'ใช้ไปจริง', 'ของเสีย', 'คืนค่าของแล้ว', 'ส่งกำไรแล้ว',
+     'ค้างชำระ', 'เงินในมือ', 'จ่ายได้เลย (วันอาทิตย์)', 'สิ้นเดือนส่งทั้งหมด', 'ในนั้นเป็นกำไร',
+     'มูลค่าวัตถุดิบคงเหลือ'], rows,
+    'ของออกจากครัวกลางแล้วเป็นหนี้ทันที (ของที่ขายเป็นไม้ +ค่าไม้ไม้ละ 0.09) · วันอาทิตย์จ่ายเท่าที่มี ไม่เกินที่ค้าง · ' +
+    'สิ้นเดือนส่งเงินในมือทั้งหมด เกินหนี้ค่าของ = กำไรเข้าครัวกลาง · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm') +
     ' · สาขาจ่ายคืนกรอกในชีต "' + COST_SHEET_PAY + '"');
   Logger.log('เขียนชีต "' + COST_SHEET_LEDGER + '" แล้ว ' + rows.length + ' แถว');
@@ -1209,10 +1279,15 @@ function costPaySheet_() {
 }
 
 /** ข้อความแจ้งกลุ่ม — บอกยอดค้างที่เหลือด้วย คนในกลุ่มจะได้ไม่ต้องไปเปิดชีต */
-function costPaybackText_(loc, baht, method, note, who, biz) {
+function costPaybackText_(loc, baht, method, note, who, biz, profit) {
   biz = costBizCell_(biz);
-  var L = ['💸 สาขาคืนเงินครัวกลาง' + (biz !== 'หม่าล่า' ? ' · ' + biz : ''),
+  profit = costBaht_(Math.min(Number(profit) || 0, baht));
+  var L = ['💸 สาขาโอนเงินเข้าครัวกลาง' + (biz !== 'หม่าล่า' ? ' · ' + biz : ''),
            loc + ' — ' + costBaht_(baht).toLocaleString() + ' บาท' + (method ? ' (' + method + ')' : '')];
+  if (profit > 0) {
+    L.push('• คืนค่าของ ' + costBaht_(baht - profit).toLocaleString() + ' บาท');
+    L.push('• กำไรเข้าครัวกลาง ' + profit.toLocaleString() + ' บาท');
+  }
   if (note) L.push('หมายเหตุ: ' + note);
   if (who)  L.push('บันทึกโดย ' + who);
   try {
@@ -1222,7 +1297,8 @@ function costPaybackText_(loc, baht, method, note, who, biz) {
     if (o) {
       L.push('');
       L.push('รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
-      L.push('คืนเงินแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+      L.push('คืนค่าของแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+      if (o['ส่งกำไรแล้ว'] > 0) L.push('ส่งกำไรแล้วรวม ' + o['ส่งกำไรแล้ว'].toLocaleString() + ' บาท');
       L.push(o['ค้างชำระ'] >= 0
         ? 'ค้างชำระเหลือ ' + o['ค้างชำระ'].toLocaleString() + ' บาท'
         : 'จ่ายเกินของที่รับไป ' + (-o['ค้างชำระ']).toLocaleString() + ' บาท (เป็นเงินล่วงหน้า)');
@@ -1232,20 +1308,38 @@ function costPaybackText_(loc, baht, method, note, who, biz) {
 }
 
 /**
+ * แบ่งเงินที่สาขาโอนมา: ไม่เกินหนี้ค่าของที่ค้าง = คืนค่าของ · ส่วนที่เกิน = กำไรเข้าครัวกลาง
+ * counted = แถวนี้ถูกนับเป็นคืนค่าของในบัญชีไปแล้ว (กรอกในชีตก่อนแจ้ง) ต้องบวกกลับก่อนเทียบ
+ */
+function costPaybackProfit_(loc, baht, biz, counted) {
+  try {
+    cacheClear_();
+    var sum = costSummary_();
+    var o = (sum.biz ? sum.biz[costBizCell_(biz)].owed : sum.owed)[loc];
+    var due = o ? o['ค้างชำระ'] + (counted ? baht : 0) : 0;
+    return costBaht_(Math.max(0, baht - Math.max(0, due)));
+  } catch (e) {
+    Logger.log('costPaybackProfit_: ' + e.message);
+    return 0;
+  }
+}
+
+/**
  * บันทึกเงินที่สาขาคืนครัวกลาง (จากไลน์) — จดว่าแจ้งแล้ว เพราะคนสั่งได้ข้อความตอบกลับในกลุ่มไปแล้ว
  * คืนข้อความไว้ตอบกลับ
  */
 function recordPayback_(loc, baht, method, note, who, biz) {
   var sh = costPaySheet_();
   var map = ensureCols_(sh, COST_PAY_COLS.concat([COST_PAY_NOTIFIED_COL]));
+  var profit = costPaybackProfit_(loc, baht, biz, false);
   var now = new Date(), r = {};
   r['วันที่'] = now; r['สาขา'] = loc; r['จำนวนเงิน'] = costBaht_(baht);
-  r['ธุรกิจ'] = costBizCell_(biz);
+  r['ธุรกิจ'] = costBizCell_(biz); r['ส่งกำไร'] = profit;
   r['วิธีจ่าย'] = method || ''; r['หมายเหตุ'] = [note, who ? 'ลงทางไลน์โดย ' + who : ''].filter(String).join(' · ');
   r[COST_PAY_NOTIFIED_COL] = Utilities.formatDate(now, costTz_(), 'd/M/yyyy HH:mm');
   appendRows_(sh, map, [r]);
   SpreadsheetApp.flush();
-  return costPaybackText_(loc, baht, method, note, who, biz);
+  return costPaybackText_(loc, baht, method, note, who, biz, profit);
 }
 
 /**
@@ -1270,8 +1364,14 @@ function checkNewPaybacks() {
     var baht = Number(String(v[i][map['จำนวนเงิน']]).replace(/,/g, '')) || 0;
     if (!loc || !baht) continue;                          // ยังกรอกไม่ครบ รอรอบหน้า
     if (first) { sh.getRange(i + 2, col).setValue('มีก่อนเริ่มแจ้ง'); continue; }
+    // กรอกเองในชีต ไม่ได้บอกว่ากำไรเท่าไหร่ — แบ่งให้ตามหนี้ที่ค้าง ณ ตอนนี้
+    var profit = Number(v[i][map['ส่งกำไร']]) || 0;
+    if (String(v[i][map['ส่งกำไร']]) === '') {
+      profit = costPaybackProfit_(loc, baht, v[i][map['ธุรกิจ']], true);
+      sh.getRange(i + 2, map['ส่งกำไร'] + 1).setValue(profit);
+    }
     var text = costPaybackText_(loc, baht, String(v[i][map['วิธีจ่าย']] || '').trim(),
-                                String(v[i][map['หมายเหตุ']] || '').trim(), '', v[i][map['ธุรกิจ']]);
+                                String(v[i][map['หมายเหตุ']] || '').trim(), '', v[i][map['ธุรกิจ']], profit);
     var r = (typeof stockNotify_ === 'function') ? stockNotify_(costCentral_(), text) : { sent: false };
     if (!r.sent) { Logger.log('แจ้งคืนเงินไม่ได้: ' + (r.message || '')); continue; }   // ส่งไม่ได้ ลองรอบหน้า
     sh.getRange(i + 2, col).setValue(stamp);
@@ -1304,26 +1404,36 @@ function paybackReminderText_(d, due) {
   locs = locs.filter(function (l) { return l !== central; }).sort();
   if (!locs.length) return '';
   var bko = (s.biz && s.biz['เบเกอรี่'].owed) || {};
+  // สิ้นเดือน = ส่งเงินในมือทั้งหมด (เคลียร์หนี้ค่าของ + กำไร) · วันอาทิตย์ = คืนเท่าที่มี ไม่เกินที่ค้าง
+  function block(o, cashLabel) {
+    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท' +
+           (o['ค่าไม้เสียบ'] > 0 ? ' (ค่าไม้เสียบ ' + o['ค่าไม้เสียบ'].toLocaleString() + ')' : ''));
+    L.push('• คืนค่าของแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
+    L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
+    L.push('• ' + cashLabel + ' ' + o['เงินในมือ'].toLocaleString() + ' บาท');
+    if (!due.monthEnd) { L.push('👉 คืนได้รอบนี้ ' + o['จ่ายได้เลย'].toLocaleString() + ' บาท'); return; }
+    var all = o['สิ้นเดือนส่งทั้งหมด'] || 0, profit = o['กำไรที่ส่งได้'] || 0;
+    L.push('👉 สิ้นเดือน ส่งเข้าครัวกลางทั้งหมด ' + all.toLocaleString() + ' บาท');
+    if (profit > 0 && all - profit > 0.005) {
+      L.push('   = คืนค่าของ ' + costBaht_(all - profit).toLocaleString() + ' + กำไร ' + profit.toLocaleString());
+    } else if (profit > 0) {
+      L.push('   = กำไรทั้งหมด (ไม่มีหนี้ค่าของค้าง)');
+    } else if (all > 0) {
+      L.push('   = คืนค่าของทั้งหมด (ยังไม่มีกำไรให้ส่ง)');
+    }
+  }
   locs.forEach(function (loc) {
     var o = s.owed[loc];
     L.push('', '🏪 ' + loc + (bko[loc] ? ' · หม่าล่า' : ''));
     if (!o) { L.push('• ยังไม่มีของที่รับไปหรือยอดขายในระบบ'); return; }
-    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
-    L.push('• คืนแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
-    L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
-    L.push('• เงินในมือสาขา ' + o['เงินในมือ'].toLocaleString() + ' บาท');
-    L.push('👉 คืนได้รอบนี้ ' + o['จ่ายได้เลย'].toLocaleString() + ' บาท');
-    var b = bko[loc];
-    if (b) {
+    block(o, 'เงินในมือสาขา');
+    if (bko[loc]) {
       L.push('', '🍡 ' + loc + ' · เบเกอรี่');
-      L.push('• รับของจากครัวกลางไปแล้ว ' + b['ส่งไปแล้ว'].toLocaleString() + ' บาท');
-      L.push('• คืนแล้วรวม ' + b['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
-      L.push('• ค้างชำระ ' + Math.max(0, b['ค้างชำระ']).toLocaleString() + ' บาท');
-      L.push('• เงินในมือเบเกอรี่ ' + b['เงินในมือ'].toLocaleString() + ' บาท');
-      L.push('👉 คืนได้รอบนี้ ' + b['จ่ายได้เลย'].toLocaleString() + ' บาท');
+      block(bko[loc], 'เงินในมือเบเกอรี่');
     }
   });
-  L.push('', 'คืนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500  ·  คืนเงิน เบเกอรี่ 300');
+  L.push('', 'โอนแล้วพิมพ์ในกลุ่มนี้ เช่น  คืนเงิน 500  ·  คืนเงิน เบเกอรี่ 300');
+  if (due.monthEnd) L.push('ส่วนที่เกินหนี้ค่าของ ระบบลงเป็นกำไรเข้าครัวกลางให้เอง');
   return L.join('\n');
 }
 
