@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-09i · แพ็คของเหลือแค่ "นมผง" (ถุงละ 200 กรัม) · นมผงที่ซื้อมา = นมผง (ดิบ)';
+var BACKEND_VERSION = '2026-10-09j · หน้า POS ไม่โชว์ค่าใช้จ่ายเบเกอรี่ · แพ็คของ "นมผง" · นมผงที่ซื้อมา = นมผง (ดิบ)';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -782,6 +782,14 @@ function isCashExpense_(method) {
 }
 
 /**
+ * ค่าใช้จ่ายที่ลงไลน์ว่าเป็นของเบเกอรี่ (ช่อง "ธุรกิจ") — หน้า POS เป็นหม่าล่า ไม่โชว์ ไม่หัก
+ * เบเกอรี่มีบัญชีแยกในหน้าบัญชีอยู่แล้ว · ช่องว่าง/หม่าล่า = ของหน้าร้านตามเดิม
+ */
+function isBakeryExpense_(biz) {
+  return /เบเกอรี/.test(String(biz == null ? '' : biz));
+}
+
+/**
  * สรุปเงินที่จ่ายออกจากร้าน (ค่าที่ ค่าไม้เสียบ ฯลฯ)
  *
  * แยกเงินสดออกจากโอน/บัตร เพราะสองอย่างนี้คนละความหมายกัน
@@ -803,6 +811,7 @@ function addExpenseStats_(stats, from, to, branch) {
     var date = normDate_(r[idx['วันที่']]);
     if (!date || date < from || date > to) continue;
     if (branch && !sameBranch_(r[idx['สาขา']], branch)) continue;
+    if (idx['ธุรกิจ'] !== undefined && isBakeryExpense_(r[idx['ธุรกิจ']])) continue;
 
     var amt = num_(r[idx['จำนวนเงิน']]);
     var pay = (idx['วิธีจ่าย'] === undefined) ? '' : r[idx['วิธีจ่าย']];
@@ -990,6 +999,8 @@ function handleBills_(p) {
     for (var m = 0; m < ex.rows.length; m++) {
       var x = ex.rows[m];
       if (branch && !sameBranch_(x[xi['สาขา']], branch)) continue;
+      // ค่าใช้จ่ายเบเกอรี่ (ลงไลน์ว่า "เบเกอรี่ ทรัพย์พัฒนา") ไม่ใช่เงินของหน้าร้านหม่าล่า
+      if (xi['ธุรกิจ'] !== undefined && isBakeryExpense_(x[xi['ธุรกิจ']])) continue;
       var amt = num_(x[xi['จำนวนเงิน']]);
       var pay = (xi['วิธีจ่าย'] === undefined) ? '' : x[xi['วิธีจ่าย']];
       expenseTotal += amt;

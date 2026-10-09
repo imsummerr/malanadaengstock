@@ -198,10 +198,13 @@ function rptGather_(ym, branch) {
   // ── ค่าใช้จ่ายหน้าร้าน ──
   var ex = rptRead_(SHEET_EXPENSE);
   var kDate = ex.head.indexOf('วันที่'), kLoc = ex.head.indexOf('สาขา'),
-      kType = ex.head.indexOf('ประเภท'), kBaht = ex.head.indexOf('จำนวนเงิน');
+      kType = ex.head.indexOf('ประเภท'), kBaht = ex.head.indexOf('จำนวนเงิน'),
+      kBiz = ex.head.indexOf('ธุรกิจ');
   if (kDate !== -1 && kBaht !== -1) {
     ex.rows.forEach(function (r) {
       if (rptMonthOf_(r[kDate]) !== ym) return;
+      // รายงานนี้เป็นยอดขายหน้าร้าน (หม่าล่า) — ค่าใช้จ่ายเบเกอรี่อยู่ในบัญชีเบเกอรี่
+      if (kBiz !== -1 && /เบเกอรี/.test(String(r[kBiz] || ''))) return;
       if (typeof costBefore_ === 'function' && costBefore_(rptRowTime_(ex.head, r[kDate], r), kLoc === -1 ? '' : r[kLoc])) return;
       if (only && kLoc !== -1 && String(r[kLoc] || '').trim() !== only) return;
       var baht = Number(r[kBaht]) || 0;

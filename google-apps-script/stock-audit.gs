@@ -291,6 +291,8 @@ function auditSales_(loc, fromStamp, toStamp) {
   out.pieces = out.sticks + out.mama + out.other;
 
   scan((typeof SHEET_EXPENSE === 'string') ? SHEET_EXPENSE : 'POS_Expenses', function (r, idx) {
+    // ค่าใช้จ่ายเบเกอรี่ไม่ได้จ่ายจากลิ้นชักหม่าล่า — ไม่หักตอนปิดร้าน
+    if (idx['ธุรกิจ'] !== undefined && /เบเกอรี/.test(String(r[idx['ธุรกิจ']] || ''))) return;
     var amt = n(r[idx['จำนวนเงิน']]);
     var how = idx['วิธีจ่าย'] !== undefined ? String(r[idx['วิธีจ่าย']] || '').trim() : '';
     // แถวเก่าที่ช่องวิธีจ่ายว่าง = เงินสด (ตามที่ตั้งไว้ใน EXPENSE_HEADERS)
