@@ -708,12 +708,16 @@ function costReplayRaw_(all) {
       if (diff > 0.00001) {
         var t4 = take(e.loc, e.item, diff);
         // ตั้งยอดครัวกลางแล้วบอกว่าส่วนที่หายไปเป็นของสาขาไหน (ส่งไปแล้วไม่ได้ลง)
-        // → เป็นค่าวัตถุดิบของสาขานั้น ไม่ใช่ของครัวกลาง (ไม่ไปเป็นหนี้ที่ต้องจ่ายคืน)
+        // → เป็นค่าวัตถุดิบของสาขานั้น ไม่ใช่ของครัวกลาง
+        // และเป็นหนี้ที่สาขาต้องคืนครัวกลางเหมือนของที่ส่งผ่านระบบ (12/10 เจ้าของให้นับเป็นหนี้ด้วย)
         if (e.chargeTo && e.chargeTo !== e.loc) {
           noteItem(e.chargeTo, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
           bucket(e.chargeTo).ตัดจากครัวกลาง = costBaht_((bucket(e.chargeTo).ตัดจากครัวกลาง || 0) + t4.value);
-          var cz = bucket(e.chargeTo).biz[costBizOf_(e.item)];
+          var czn = costBizOf_(e.item), cz = bucket(e.chargeTo).biz[czn];
           cz['ตัดจากครัวกลาง'] = costBaht_(cz['ตัดจากครัวกลาง'] + t4.value);
+          sent[e.chargeTo] = costBaht_((sent[e.chargeTo] || 0) + t4.value);
+          if (!sentBiz[e.chargeTo]) sentBiz[e.chargeTo] = {};
+          sentBiz[e.chargeTo][czn] = costBaht_((sentBiz[e.chargeTo][czn] || 0) + t4.value);
         } else {
           noteItem(e.loc, e.item, 'ใช้ไป', t4.qty, t4.value, e.t);
         }
@@ -1045,14 +1049,15 @@ function costSummary_() {
       // เงินที่โอนเข้าครัวกลาง = คืนค่าของ + ส่งกำไร (สิ้นเดือน) — กำไรไม่ได้ลดหนี้ค่าของ
       var profitSent = backProfit[loc] || 0;
       var paid = costBaht_((back[loc] || 0) - profitSent);
-      // ของที่ตัดจากครัวกลางตอนตั้งยอด ไม่ได้ส่งผ่านระบบ จึงไม่ใช่หนี้ที่ต้องจ่ายคืน
-      var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0) - (u['ตัดจากครัวกลาง'] || 0));
+      // ของที่ตัดจากครัวกลางตอนตั้งยอด (8/10) นับเป็นของที่ใช้ไปและเป็นหนี้แล้ว — อยู่ในส่งไปแล้วด้วย
+      var gone = costBaht_((u['ใช้ไป'] || 0) + (u['ของเสีย'] || 0));
       // เงินที่สาขาถืออยู่ = ขายได้ − จ่ายค่าใช้จ่ายหน้าร้าน − โอนเข้าครัวกลางไปแล้ว (ทั้งค่าของและกำไร)
       var cash = costBaht_(((income[loc] || {})['รวม'] || 0) -
                            ((outgo[loc] || {})['รวม'] || 0) - paid - profitSent);
       var due = Math.max(0, sent - paid);
       owed[loc] = {
         ส่งไปแล้ว:   sent,                              // ของออกจากครัวกลาง = หนี้ทันที
+        ตั้งยอดครัวกลาง: u['ตัดจากครัวกลาง'] || 0,      // รวมอยู่ในส่งไปแล้ว — ของที่ส่งไปแต่ไม่ได้ลง (ตั้งยอด 8/10)
         ใช้ไป:       u['ใช้ไป'] || 0,
         ของเสีย:     u['ของเสีย'] || 0,
         จ่ายคืนแล้ว: paid,
@@ -1169,7 +1174,7 @@ function costCombine_(a, b) {
   Object.keys(stock).forEach(function (loc) {
     stock[loc].rows.sort(function (x, y) { return y.value - x.value; });
   });
-  var owedKeys = ['ส่งไปแล้ว', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ส่งกำไรแล้ว', 'ค้างชำระ',
+  var owedKeys = ['ส่งไปแล้ว', 'ตั้งยอดครัวกลาง', 'ใช้ไป', 'ของเสีย', 'จ่ายคืนแล้ว', 'ส่งกำไรแล้ว', 'ค้างชำระ',
                   'ค่าของที่ใช้ไปแล้ว', 'เงินในมือ', 'จ่ายได้เลย', 'สิ้นเดือนส่งทั้งหมด', 'กำไรที่ส่งได้',
                   'วัตถุดิบคงเหลือ'];
   var owed = {};
@@ -1523,7 +1528,8 @@ function paybackReminderText_(d, due) {
   var bko = (s.biz && s.biz['เบเกอรี่'].owed) || {};
   // สิ้นเดือน = ส่งเงินในมือทั้งหมด (เคลียร์หนี้ค่าของ + กำไร) · วันอาทิตย์ = คืนเท่าที่มี ไม่เกินที่ค้าง
   function block(o, cashLabel) {
-    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท');
+    L.push('• รับของจากครัวกลางไปแล้ว ' + o['ส่งไปแล้ว'].toLocaleString() + ' บาท' +
+           (o['ตั้งยอดครัวกลาง'] > 0 ? ' (รวมตั้งยอดครัวกลาง ' + o['ตั้งยอดครัวกลาง'].toLocaleString() + ')' : ''));
     L.push('• คืนค่าของแล้วรวม ' + o['จ่ายคืนแล้ว'].toLocaleString() + ' บาท');
     L.push('• ค้างชำระ ' + Math.max(0, o['ค้างชำระ']).toLocaleString() + ' บาท');
     L.push('• ' + cashLabel + ' ' + o['เงินในมือ'].toLocaleString() + ' บาท');

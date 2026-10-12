@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-12d';
+const PAGE_BUILD = '2026-10-12e';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -599,7 +599,8 @@ function viewMoney(v) {
     const debt = (!isC && o) ? `
       <div class="loctitle" style="margin-top:14px">กับครัวกลาง</div>
       <table><tbody>
-        <tr><td>รับของไปแล้ว</td><td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
+        <tr><td>รับของไปแล้ว${o['ตั้งยอดครัวกลาง'] > 0 ? ` <small>รวมของที่ส่งไปแต่ไม่ได้ลง (ตั้งยอดครัวกลาง) ${baht(o['ตั้งยอดครัวกลาง'])}</small>` : ''}</td>
+            <td class="num">${baht(o['ส่งไปแล้ว'])}</td></tr>
         <tr><td>คืนค่าของแล้ว</td><td class="num">${baht(o['จ่ายคืนแล้ว'])}</td></tr>
         <tr><td>ค้างชำระ</td><td class="num">${baht(o['ค้างชำระ'])}</td></tr>
         <tr><td>เงินในมือ <small>ขายได้ − ค่าใช้จ่าย − ที่โอนเข้าครัวกลางแล้ว</small></td>
