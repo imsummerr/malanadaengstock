@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-12b · เตือนลืมนับ/ลืมกรอกของวันก่อน ทั้งหม่าล่าและเบเกอรี่';
+var BACKEND_VERSION = '2026-10-12c · กันลงซ้ำตอนกดบันทึกซ้ำ (ของเข้า/ส่งร้าน/ของเสีย/แพ็คของ)';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1394,6 +1394,39 @@ function appendByCols_(sheet, map, values) {
 }
 
 /**
+ * รหัสบันทึก — หน้าเว็บสร้างให้ตามของที่กรอก กดบันทึกซ้ำด้วยข้อมูลเดิม (เน็ตหลุดตอนรอคำตอบ
+ * ทั้งที่จริงลงไปแล้ว แล้วกดใหม่) ได้รหัสเดิม → เห็นรหัสนี้ในชีตแล้วไม่ลงซ้ำ
+ * 12/10 หมูพันสาหร่าย 6 ไม้ ลงซ้ำ 2 แถวเพราะแบบนี้
+ * ไม่มีรหัส (หน้าเว็บรุ่นเก่า) = ลงตามเดิม · คืน false = เคยลงแล้ว
+ */
+var REQ_COL = 'รหัสบันทึก';
+function stockAppendOnce_(sh, cols, row, reqId) {
+  var id = String(reqId || '').trim();
+  var map = ensureCols_(sh, id ? cols.concat([REQ_COL]) : cols);
+  if (!id) { appendByCols_(sh, map, row); return true; }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var last = sh.getLastRow();
+    if (last > 1) {
+      var n = Math.min(500, last - 1);
+      var v = sh.getRange(last - n + 1, map[REQ_COL] + 1, n, 1).getValues();
+      for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() === id) return false;
+    }
+    row[REQ_COL] = id;
+    appendByCols_(sh, map, row);
+    SpreadsheetApp.flush();
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+function stockDupRes_(text) {
+  return { success: true, duplicated: true, text: text, lineSent: false,
+           lineMsg: 'รายการนี้บันทึกไปแล้วตั้งแต่รอบก่อน ไม่ได้ลงซ้ำ' };
+}
+
+/**
  * เขียนหลายแถวรวดเดียว — คุยกับชีตครั้งเดียว ไม่ใช่แถวละครั้ง
  * เช็คสต็อก 70 รายการเคยเป็น 70 รอบ ตอนนี้เหลือรอบเดียว
  */
@@ -2063,8 +2096,6 @@ function handleStockPack_(body) {
 
   var sh = sheet_(SHEET_PACK);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_PACK + '" — รัน setupStock ก่อน' };
-  var map = ensureCols_(sh, PACK_COLS);
-
   var now = new Date();
   var row = {
     'วันที่เวลา': now, 'สาขา': CENTRAL, 'ผู้ตรวจ': session.name,
@@ -2081,7 +2112,7 @@ function handleStockPack_(body) {
     row[c.unit] = u.item.subUnit;
     if (u.net) row[c.net] = u.net;
   });
-  appendByCols_(sh, map, row);
+  if (!stockAppendOnce_(sh, PACK_COLS, row, body.reqId)) return stockDupRes_(fmtPack_(made, out));
 
 
   var msg = '📦 แพ็คของ — ' + CENTRAL + '\n\n' +
@@ -2142,7 +2173,7 @@ function handleStockIn_(body) {
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
-  var map = ensureCols_(sh, p.item.bakery ? MOVE_COLS.concat([BAKERY_START_COL]) : MOVE_COLS);
+  var cols = p.item.bakery ? MOVE_COLS.concat([BAKERY_START_COL]) : MOVE_COLS;
 
   var now = new Date();
   var row = {
@@ -2154,7 +2185,7 @@ function handleStockIn_(body) {
     'หมายเหตุ': String(body.note || '')
   };
   if (start && p.item.bakery) row[BAKERY_START_COL] = start;
-  appendByCols_(sh, map, row);
+  if (!stockAppendOnce_(sh, cols, row, body.reqId)) return stockDupRes_(fmtPack_(p.total, p.item));
 
   // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs เห็นแถวใหม่
   // ในชีตนี้ทุก 5 นาที แล้วแจ้งให้เอง พร้อมจำนวนแพ็คและวันหมดอายุ
@@ -2180,17 +2211,17 @@ function handleStockToShop_(body) {
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INCOMING);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_INCOMING + '"' };
-  var map = ensureCols_(sh, MOVE_COLS);
 
   var now = new Date();
-  appendByCols_(sh, map, {
+  var fresh = stockAppendOnce_(sh, MOVE_COLS, {
     'วันที่เวลา': now, 'สาขา': branch, 'ผู้ตรวจ': p.session.name,
     'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าร้าน',
     'หมายเหตุ': String(body.note || '')
-  });
+  }, body.reqId);
+  if (!fresh) return stockDupRes_(fmtPack_(p.total, p.item));
 
   // ไม่แจ้ง LINE ตรงนี้ — checkNewIncoming ใน line-expiry-alert.gs แจ้งให้เอง
   // พร้อมจำนวนแพ็ค วงเล็บบอกว่า 1 แพ็คมีกี่ไม้ และวันหมดอายุ
@@ -2216,18 +2247,18 @@ function handleStockWaste_(body) {
 
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WASTE);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_WASTE + '"' };
-  var map = ensureCols_(sh, MOVE_COLS);
 
   var reason = String(body.reason || 'ของเสีย').trim();
   var now = new Date();
-  appendByCols_(sh, map, {
+  var fresh = stockAppendOnce_(sh, MOVE_COLS, {
     'วันที่เวลา': now, 'สาขา': loc, 'ผู้ตรวจ': p.session.name,
     'รายการ': p.item.name, 'จำนวน': p.total, 'หน่วย': baseUnitOf_(p.item),
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': reason,
     'หมายเหตุ': String(body.note || '')
-  });
+  }, body.reqId);
+  if (!fresh) return stockDupRes_(fmtPack_(p.total, p.item));
 
   var text = fmtPack_(p.total, p.item);
   var line = stockNotify_(loc,

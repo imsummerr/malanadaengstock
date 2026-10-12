@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-12b';
+const PAGE_BUILD = '2026-10-12c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -293,6 +293,21 @@ async function apiPost(body) {
   });
   return handle(await res.json());
 }
+/**
+ * รหัสบันทึก — ข้อมูลชุดเดิมได้รหัสเดิม (เน็ตหลุดตอนรอคำตอบแล้วกดบันทึกซ้ำ หลังบ้านไม่ลงซ้ำ)
+ * แก้ช่องไหนก็ตาม = รหัสใหม่ · บันทึกสำเร็จแล้วล้างทิ้ง ส่งของชุดเดิมอีกรอบตั้งใจ = แถวใหม่
+ */
+const REQ = {};
+function reqIdFor(kind, payload) {
+  const key = JSON.stringify(payload);
+  if (!REQ[kind] || REQ[kind].key !== key) {
+    REQ[kind] = { key, id: 'W' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
+  }
+  return REQ[kind].id;
+}
+function reqDone(kind) { delete REQ[kind]; }
+const dupNote = r => r.duplicated ? '<br><b>รายการนี้บันทึกไปแล้วตั้งแต่รอบก่อน ไม่ได้ลงซ้ำ</b>' : '';
+
 async function apiGet(params) {
   const q = new URLSearchParams(Object.assign({ token: auth.token, _: Date.now() }, params));
   const res = await fetch(apiUrl() + '?' + q, { cache: 'no-store' });
@@ -984,14 +999,16 @@ async function submitMove(kind) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
   try {
-    const r = await apiPost({
+    const payload = {
       action: c.action, item: it.name, location: locEl ? locEl.value : D.central,
       packs: packs, rem: rem, pieces: pieces,
       reason: c.reason ? document.getElementById('f-reason').value : '',
       note: document.getElementById('f-note').value, start: start
-    });
+    };
+    const r = await apiPost(Object.assign({ reqId: reqIdFor('move', payload) }, payload));
+    reqDone('move');
     toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
-          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
+          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>' + dupNote(r), r.duplicated ? 7000 : 4500);
     document.getElementById('f-packs').value = '';
     document.getElementById('f-rem').value = '';
     if (pcEl2) pcEl2.value = '';
@@ -1299,10 +1316,12 @@ async function submitPack() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
   try {
-    const r = await apiPost({ action: 'stockPack', item: it.name, packs, rem, pieces, raws,
-                              note: document.getElementById('k-note').value });
+    const payload = { action: 'stockPack', item: it.name, packs, rem, pieces, raws,
+                      note: document.getElementById('k-note').value };
+    const r = await apiPost(Object.assign({ reqId: reqIdFor('pack', payload) }, payload));
+    reqDone('pack');
     toast('บันทึกแล้ว ✅ ' + esc(r.text) + '<br><span style="opacity:.8;font-size:12.5px">' +
-          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>', 4500);
+          esc(r.lineSent ? 'แจ้งกลุ่มไลน์แล้ว' : (r.lineMsg || '')) + '</span>' + dupNote(r), r.duplicated ? 7000 : 4500);
     document.getElementById('k-packs').value = '';
     document.getElementById('k-rem').value = '';
     document.getElementById('k-pieces').value = '';
