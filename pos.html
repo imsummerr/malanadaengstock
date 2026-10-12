@@ -299,6 +299,9 @@
   <!-- ═══ หน้า 1: เครื่องคิดเลข ═══ -->
   <div id="screen-cart" class="screen active">
     <div class="wrap">
+      <!-- ลืมนับปิดร้าน/ลืมกรอกเงินเมื่อวาน — ขึ้นจนกว่าจะลงครบ หรือขายบิลแรกของวันนี้ -->
+      <div id="late-bar" class="hidden" style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;
+           border-radius:14px;padding:12px 14px;margin-bottom:14px;font-size:14px;line-height:1.55;"></div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
         <button onclick="openDelivery()" class="key btn-ghost" id="btn-delivery"
@@ -567,6 +570,8 @@
       <button onclick="saveClose()" id="btn-save-close" class="key btn-red"
         style="width:100%;padding:16px;font-size:16.5px;margin-top:16px;" disabled>✓ บันทึกเงินปิดร้าน</button>
       <div id="close-status" class="note" style="text-align:center;margin-top:12px;"></div>
+      <div id="close-late" class="hidden" style="background:#fef3c7;border:1px solid #f59e0b;color:#78350f;
+           border-radius:12px;padding:10px 12px;margin-top:12px;font-size:13.5px;line-height:1.5;"></div>
     </div>
   </div>
 
@@ -2130,6 +2135,38 @@ function openClose() {
   document.getElementById('close-status').textContent = '';
   refreshClose();
   showScreen('close');
+  showLate();
+  loadLate();
+}
+
+/* ── ลืมนับ/ลืมกรอกของวันขายก่อน ──
+   หลังบ้านบอกว่าวันขายล่าสุด (ก่อนวันนี้) ยังไม่ได้นับปิดร้าน/กรอกเงิน หรือเบเกอรี่ยังไม่ได้นับหลังขาย
+   หม่าล่าลงย้อนหลังได้จนถึงบิลแรกของวันนี้ — นับ/กรอกตอนนี้ระบบลงเป็นของวันนั้นเอง */
+let LATE = null;
+async function loadLate() {
+  if (isDemo() || !auth.token) return;
+  try {
+    const json = await postApi({ action: 'lateStatus', token: auth.token, branch: auth.branch || '' });
+    if (json && json.success) { LATE = json.data || null; showLate(); }
+  } catch (e) { /* ออฟไลน์ — ไม่ต้องเตือน */ }
+}
+function showLate() {
+  const m = LATE && LATE.mala, b = LATE && LATE.bakery;
+  const rows = [];
+  if (m && m.cash) rows.push('💵 <b>ยังไม่ได้กรอกเงินปิดร้านของ ' + m.dm + '</b> — นับเงินในลิ้นชักตอนนี้ แล้วกดปุ่ม 💵 ปิดร้าน นับเงิน');
+  if (m && m.count) rows.push('📋 <b>ยังไม่ได้นับสต็อกปิดร้านของ ' + m.dm + '</b> — นับในระบบสต็อก แท็บเช็คสต็อก');
+  if (m) rows.push('<span style="font-size:12.5px">ทำก่อนขายบิลแรกของวันนี้ ระบบจะลงเป็นของ ' + m.dm + ' ให้เอง</span>');
+  if (b) rows.push('🍡 <b>เบเกอรี่ยังไม่ได้นับหลังขายของ ' + b.dm + '</b> — ระบบสต็อก แท็บเบเกอรี่ → หลังขาย → ' + b.dm + ' (ลืมนับ)');
+  const bar = document.getElementById('late-bar');
+  bar.innerHTML = rows.length ? '⏰ <b>ลืมลงของวันก่อน</b><br>' + rows.join('<br>') : '';
+  bar.classList.toggle('hidden', !rows.length);
+  // หน้าปิดร้าน: บอกว่าเงินที่กรอกตอนนี้เป็นของวันไหน
+  const cl = document.getElementById('close-late');
+  if (cl) {
+    cl.innerHTML = m && m.cash ? '⏰ ยังไม่ได้ขายวันนี้ — เงินที่กรอกตอนนี้จะลงเป็น <b>เงินปิดร้านของ ' + m.dm + '</b>' +
+      (m.count ? '<br>อย่าลืมนับสต็อกปิดร้านในระบบสต็อกด้วย (ก่อนขายบิลแรก)' : '') : '';
+    cl.classList.toggle('hidden', !(m && m.cash));
+  }
 }
 
 function refreshClose() {
@@ -2172,6 +2209,7 @@ async function saveClose() {
       }
       st.innerText = msg;
       toast('บันทึกเงินปิดร้าน ' + cash.toLocaleString('th-TH') + ' ฿ แล้ว');
+      if (LATE && LATE.mala) { LATE.mala.cash = false; if (!LATE.mala.count) LATE.mala = null; showLate(); }
       document.getElementById('close-cash').value = '';
       return;
     }
@@ -2537,6 +2575,8 @@ async function saveOrders(records) {
     sync.className = 'sync ok';
     flushPending();
     prefetchBills();
+    // ขายบิลแรกของวันแล้ว — ลงย้อนหลังของหม่าล่าไม่ได้แล้ว เอาเตือนหม่าล่าออก (เบเกอรี่ยังลงได้)
+    if (LATE && LATE.mala) { LATE.mala = null; showLate(); }
   }
 }
 
@@ -2771,6 +2811,7 @@ function showApp() {
   flushPending();
   newOrder();
   prefetchBills();
+  loadLate();
 }
 
 /* ════════════════════════════════════════════════════════════

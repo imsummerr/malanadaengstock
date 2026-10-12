@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-12a';
+const PAGE_BUILD = '2026-10-12b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -493,14 +493,38 @@ function render() {
     </div></div>`;
     return;
   }
-  if (tab === 'stock')  return viewStock(v);
-  if (tab === 'in')     return viewMove(v, 'in');
-  if (tab === 'pack')   return viewPack(v);
-  if (tab === 'toshop') return viewMove(v, 'toshop');
-  if (tab === 'waste')  return viewMove(v, 'waste');
-  if (tab === 'count')  return viewCount(v);
-  if (tab === 'bakery') return viewBakery(v);
   if (tab === 'money')  return viewMoney(v);
+  if (tab === 'stock')  viewStock(v);
+  if (tab === 'in')     viewMove(v, 'in');
+  if (tab === 'pack')   viewPack(v);
+  if (tab === 'toshop') viewMove(v, 'toshop');
+  if (tab === 'waste')  viewMove(v, 'waste');
+  if (tab === 'count')  viewCount(v);
+  if (tab === 'bakery') viewBakery(v);
+  v.insertAdjacentHTML('afterbegin', lateBanner());
+}
+
+/**
+ * ลืมนับ/ลืมกรอกของวันขายก่อน (หลังบ้านส่ง D.late มา) — ขึ้นบนสุดทุกแท็บ จนกว่าจะลงย้อนหลังครบ
+ *   หม่าล่า: นับปิดร้าน / กรอกเงินปิดร้าน ตอนนี้ก่อนขายบิลแรก = ของวันนั้น (ขายบิลแรกแล้วหายไปเอง)
+ *   เบเกอรี่: นับหลังขายย้อนหลัง
+ */
+function lateBanner() {
+  const L = D.late || {}, out = [];
+  Object.keys(L).forEach(loc => {
+    const s = L[loc] || {}, rows = [];
+    const btn = (label, js) => ` <button class="key" style="display:inline-block;width:auto;padding:4px 10px;margin:4px 0 0;font-size:13px"
+        onclick="${js}">${label}</button>`;
+    if (s.mala && s.mala.count) rows.push(`📋 <b>นับสต็อกปิดร้าน หม่าล่า</b> ของ ${s.mala.dm} — นับตอนนี้ก่อนขายบิลแรก
+        ระบบใช้เป็นยอดปิดร้านของ ${s.mala.dm}` + btn('ไปนับ', "go('count')"));
+    if (s.mala && s.mala.cash) rows.push(`💵 <b>กรอกเงินปิดร้าน หม่าล่า</b> ของ ${s.mala.dm} — นับเงินในลิ้นชักตอนนี้
+        แล้วกรอกในหน้า POS ปุ่ม 💵 ปิดร้าน ก่อนขายบิลแรก`);
+    if (s.bakery) rows.push(`🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${s.bakery.dm}` +
+        (s.bakery.counted ? ' — เช้านี้นับเบเกอรี่แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
+        btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}')`));
+    if (rows.length) out.push(`<b>⏰ ${esc(loc)} — ลืมลงของวันก่อน</b><br>` + rows.join('<br>'));
+  });
+  return out.length ? `<div class="card"><div class="warnbox" style="margin:0">${out.join('<hr>')}</div></div>` : '';
 }
 
 /* ── บัญชี — เจ้าของร้านคนเดียว ── */
@@ -1312,6 +1336,14 @@ const bakeryItems = () => D.items.filter(i => i.bakery);
 let BK_ROUND = 'ก่อนขาย';
 let BK_ID = 'BK' + Date.now();       // กันกดซ้ำ/เน็ตหลุดแล้วส่งใหม่ ลงเงินซ้ำ
 let BK_LATE = false;                  // หลังขายของเมื่อวาน (ลืมนับ) — ลงย้อนหลัง
+let BK_LATE_DAY = '';                 // วันที่ลืม (จากหลังบ้าน) — ว่าง = เมื่อวาน
+let BK_LOC = '';                      // สาขาที่เลือกในแท็บเบเกอรี่
+let BK_AUTO = false;                  // เปิดแท็บครั้งแรกแล้วเจอวันที่ลืม → เลือกโหมดลงย้อนหลังให้ครั้งเดียว
+function bkLateGo(loc) {
+  const p = ((D.late || {})[loc] || {}).bakery;
+  BK_LOC = loc; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = p ? p.day : ''; BK_AUTO = true;
+  go('bakery');
+}
 /** วันทำการ (ตี 4 ยังเป็นเมื่อวาน เหมือนหลังบ้าน) → 'yyyy-MM-dd' */
 function bkBizDay(ms) {
   const d = new Date(ms - 4 * 3600000);
@@ -1330,8 +1362,12 @@ function viewBakery(v) {
                       : 'นับเบเกอรี่ได้เฉพาะที่สาขา'}</div></div>`;
     return;
   }
+  const selLoc = locs.includes(BK_LOC) ? BK_LOC : (locs.includes(auth.branch) ? auth.branch : locs[0]);
+  const pend = ((D.late || {})[selLoc] || {}).bakery;
+  if (pend && !BK_AUTO) { BK_AUTO = true; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = pend.day; }
   const after = BK_ROUND === 'หลังขาย';
-  const late = after && BK_LATE, yd = bkDM(bkYesterday());
+  const late = after && BK_LATE, yd = bkDM(BK_LATE_DAY || bkYesterday());
+  const counted = late && pend && pend.day === (BK_LATE_DAY || bkYesterday()) && pend.counted;
   const rbtn = r => `<button class="key" style="flex:1;${BK_ROUND === r ? '' : 'opacity:.45'}"
       onclick="BK_ROUND='${r}';render()">${r === 'ก่อนขาย' ? '🌅 ก่อนขาย' : '🌙 หลังขาย'}</button>`;
   const dbtn = (on, label) => `<button class="key" style="flex:1;${BK_LATE === on ? '' : 'opacity:.45'}"
@@ -1345,21 +1381,23 @@ function viewBakery(v) {
     <h2>🍡 เบเกอรี่</h2>
     <p class="lead">นับวันละ 2 รอบ — ก่อนขาย และหลังขาย · หลังขายกรอกเงินที่ได้ด้วย</p>
     <label class="fld">สาขา</label>
-    <select id="bk-loc">${locs.map(l => `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <select id="bk-loc" onchange="BK_LOC=this.value;BK_AUTO=false;BK_LATE_DAY='';render()">${locs.map(l => `<option${l === selLoc ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
     <label class="fld">รอบ</label>
     <div style="display:flex;gap:8px">${rbtn('ก่อนขาย')}${rbtn('หลังขาย')}</div>
     ${after ? `<label class="fld">ยอดขายของ</label>
-    <div style="display:flex;gap:8px">${dbtn(false, 'วันนี้')}${dbtn(true, 'เมื่อวาน ' + yd + ' (ลืมนับ)')}</div>`
+    <div style="display:flex;gap:8px">${dbtn(false, 'วันนี้')}${dbtn(true, (BK_LATE_DAY && BK_LATE_DAY !== bkYesterday() ? 'วันที่ ' : 'เมื่อวาน ') + yd + ' (ลืมนับ)')}</div>`
             : `<p class="note">ลืมนับหลังขายเมื่อวาน? กด 🌙 หลังขาย แล้วเลือก "เมื่อวาน"</p>`}
   </div>
   <div class="card">
-    <h2 style="font-size:16px">${late ? 'หลังขายของเมื่อวาน ' + yd : 'นับ' + BK_ROUND}</h2>
-    ${late ? `<div class="warnbox" style="margin:0 0 10px">นับของที่เหลือ <b>ตอนนี้ ก่อนเริ่มขายวันนี้</b> = ของที่เหลือเมื่อวาน
+    <h2 style="font-size:16px">${late ? 'หลังขายของวันที่ ' + yd : 'นับ' + BK_ROUND}</h2>
+    ${counted ? `<div class="warnbox" style="margin:0 0 10px">วันถัดไปนับเบเกอรี่ไปแล้ว ระบบใช้ยอดนั้นเป็นหลังขายของ ${yd}<br>
+      <b>ไม่ต้องนับ</b> ปล่อยช่องว่างไว้ กรอกแค่เงินของ ${yd}</div>`
+      : late ? `<div class="warnbox" style="margin:0 0 10px">นับของที่เหลือ <b>ตอนนี้ ก่อนเริ่มขายวันนี้</b> = ของที่เหลือของ ${yd}
       ระบบใช้เป็นก่อนขายของวันนี้ด้วย ไม่ต้องนับก่อนขายซ้ำ<br>
       ถ้าวันนี้ <b>นับก่อนขายไปแล้ว</b> ไม่ต้องนับ ปล่อยช่องว่างไว้ กรอกแค่เงิน</div>` : ''}
     <p class="note" style="margin-top:0">ไดฟุกุนับเป็นลูก (1 ชุด = 40 ลูก) · บราวนี่นับเป็นชิ้น</p>
     ${items.map((it, k) => row('bk-i-' + k, it.name, /^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น')).join('')}
-    ${after ? `<h2 style="font-size:16px;margin-top:16px">เงินที่ได้${late ? 'เมื่อวาน ' + yd : 'วันนี้'}</h2>` +
+    ${after ? `<h2 style="font-size:16px;margin-top:16px">เงินที่ได้${late ? 'ของวันที่ ' + yd : 'วันนี้'}</h2>` +
               BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') : ''}
     <button class="key btn-red submit" id="bk-btn" onclick="submitBakery()">บันทึก${BK_ROUND}</button>
     <p class="note">ไม่มีของ / ไม่มีเงินช่องไหน ใส่ 0</p>
@@ -1385,9 +1423,11 @@ async function submitBakery() {
                               round: BK_ROUND,
                               rows: rows.filter(x => x.qty !== '').map(x => ({ item: x.item, qty: Number(x.qty) })),
                               money: after ? money : null, id: after ? BK_ID : '',
-                              forDay: late ? bkYesterday() : '' });
+                              forDay: late ? (BK_LATE_DAY || bkYesterday()) : '' });
     toast('บันทึกแล้ว ✅ ' + esc(r.message || BK_ROUND) + (r.duplicated ? ' (ส่งไปแล้ว)' : ''), 6000);
-    BK_LATE = false;
+    const bl = document.getElementById('bk-loc').value;
+    if (late && D.late && D.late[bl]) D.late[bl].bakery = null;      // ลงย้อนหลังแล้ว เอาเตือนออก
+    BK_LATE = false; BK_LATE_DAY = '';
     if (r.tossText) alert(r.tossText);          // ของหมดอายุ — ต้องกดรับทราบ
     BK_ID = 'BK' + Date.now();
     render();                       // ล้างช่อง
@@ -1612,7 +1652,11 @@ async function submitCount() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
   try {
-    const r = await apiPost({ action: 'stockCount', location: document.getElementById('c-loc').value, rows });
+    const cl = document.getElementById('c-loc').value;
+    const r = await apiPost({ action: 'stockCount', location: cl, rows });
+    // นับปิดร้านย้อนหลังแล้ว (ก่อนบิลแรก) — เอาเตือนนับออก เหลือเตือนเงินถ้ายังไม่กรอก
+    const lm = D.late && D.late[cl] && D.late[cl].mala;
+    if (lm) { lm.count = false; if (!lm.cash) D.late[cl].mala = null; }
     toast('บันทึกแล้ว ✅ นับครบ ' + r.counted + ' รายการ<br>' +
           '<span style="opacity:.8;font-size:12.5px">' +
           (r.diffs ? 'ไม่ตรงกับระบบ ' + r.diffs + ' รายการ' : 'ตรงกับระบบทุกรายการ 🎉') +

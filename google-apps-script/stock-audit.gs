@@ -1139,6 +1139,65 @@ function handleCashClose_(body) {
   return out;
 }
 
+/**
+ * ลืมนับ/ลืมกรอกของวันขายก่อนหน้า — หน้าเว็บ/POS เอาไปขึ้นเตือนให้ลงย้อนหลัง
+ *   mala:   วันขายล่าสุดก่อนวันนี้ ยังไม่ได้นับปิดร้าน (count) และ/หรือ ยังไม่ได้กรอกเงิน (cash)
+ *           ขึ้นเฉพาะตอนที่วันนี้ยังไม่มีบิล — นับ/กรอกตอนนี้ระบบลงเป็นของวันนั้น (ขายบิลแรกแล้วสายไป)
+ *   bakery: วันที่นับก่อนขายไว้แต่ไม่ได้ลงหลังขาย (ย้อน 7 วัน) · counted = วันหลัง ๆ นับเบเกอรี่ไปแล้ว
+ * ไม่มีตัวเลขเงิน/ยอดขาย — พนักงานเห็นได้
+ */
+function lateStatus_(loc, nowMs) {
+  var now = nowMs || Date.now(), today = cashBizDay_(now);
+  var dmOf = function (d) { var p = d.split('-'); return Number(p[2]) + '/' + Number(p[1]); };
+  var out = { mala: null, bakery: null };
+  try {
+    var start = cashDayStart_(today);
+    var openToday = auditSales_(loc, auditStamp_(new Date(start - 1000)), auditStamp_(new Date(now))).orders > 0;
+    var prev = openToday ? '' : cashPrevSalesDay_(loc, today);
+    if (prev && !(typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(prev)), loc))) {
+      var count = !cashCloseCount_(loc, prev).countMs, cash = !cashRowsForDay_(loc, prev).length;
+      if (count || cash) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash };
+    }
+  } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
+  try {
+    var before = {}, later = {};
+    readMoves_(SHEET_COUNT).forEach(function (m) {
+      if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT) return;
+      var t = timeOf_(m.when);
+      if (!t || t > now) return;
+      var d = cashBizDay_(t);
+      if (d < today && String(m.note || '').indexOf('ก่อนขาย') === 0) before[d] = Math.max(before[d] || 0, t);
+    });
+    var paid = {};
+    bakeryMoneyRows_().forEach(function (r) { if (r.loc === loc) paid[r.day] = true; });
+    var days = Object.keys(before).filter(function (d) {
+      return !paid[d] && d >= cashBizDay_(now - BAKERY_LATE_DAYS * 86400000);
+    }).sort();
+    if (days.length) {
+      var day = days[days.length - 1], counted = false;
+      readMoves_(SHEET_COUNT).forEach(function (m) {
+        if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT) return;
+        var t = timeOf_(m.when);
+        if (t && t > before[day] && t <= now && cashBizDay_(t) > day) counted = true;
+      });
+      out.bakery = { day: day, dm: dmOf(day), counted: counted };
+    }
+  } catch (e) { Logger.log('lateStatus bakery: ' + e.message); }
+  return out;
+}
+
+/** GET action=lateStatus — POS ถามก่อนเปิดหน้าปิดร้าน ว่าเมื่อวานลืมอะไรไหม */
+function handleLateStatus_(p) {
+  var session = checkToken_(p.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  var loc = String(p.branch || session.branch || '').trim();
+  if (!loc || loc === CENTRAL) return { success: true, data: { mala: null, bakery: null } };
+  if (typeof stockCanUseLoc_ === 'function' && !stockCanUseLoc_(session, loc)) {
+    return { success: false, code: 403, message: 'ดูได้เฉพาะสาขาของตัวเอง' };
+  }
+  return { success: true, data: lateStatus_(loc) };
+}
+
 /** เรียกจาก handleStockCount_ — ถ้าวันนี้กรอกเงินไว้ก่อนแล้ว เทียบเลย */
 function cashCheckAfterCount_(loc, now) {
   var ms = (now || new Date()).getTime(), day = cashBizDay_(ms);

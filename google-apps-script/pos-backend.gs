@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-12a · เบเกอรี่ลืมนับหลังขาย ลงย้อนหลังของเมื่อวานได้';
+var BACKEND_VERSION = '2026-10-12b · เตือนลืมนับ/ลืมกรอกของวันก่อน ทั้งหม่าล่าและเบเกอรี่';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -216,6 +216,9 @@ function doPost(e) {
       case 'posDelivery': return json_(handleDelivery_(body));
       case 'posBills':    return json_(handleBills_(body));
       case 'posExpense':  return json_(handleExpense_(body));
+      case 'lateStatus':
+        if (typeof handleLateStatus_ !== 'function') return json_({ success: true, data: { mala: null, bakery: null } });
+        return json_(handleLateStatus_(body));
       case 'posCashClose':
         if (typeof handleCashClose_ !== 'function') {
           return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
@@ -250,6 +253,7 @@ function doGet(e) {
     if (p.action === 'history')  return json_(handleHistory_(p));
     if (p.action === 'stockBootstrap') return json_(handleStockBootstrap_(p));
     if (p.action === 'costBoard')      return json_(handleCostBoard_(p));
+    if (p.action === 'lateStatus')     return json_(handleLateStatus_(p));
     return json_({ success: false, message: 'ไม่รู้จัก action: ' + p.action });
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
@@ -271,7 +275,7 @@ function handleVersion_() {
     version: BACKEND_VERSION,
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockPack', 'stockBootstrap', 'bakeryCount'],
+              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -2570,6 +2574,16 @@ function handleStockBootstrap_(p) {
     name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock,
     levels: LEVELS,
+    // ลืมนับปิดร้าน/ลืมกรอกเงิน/ลืมนับหลังขายเบเกอรี่ ของวันขายก่อน — หน้าเว็บขึ้นเตือนให้ลงย้อนหลัง
+    late: (function () {
+      var o = {};
+      if (typeof lateStatus_ !== 'function') return o;
+      locations.forEach(function (loc) {
+        if (loc === CENTRAL || !stockCanUseLoc_(session, loc)) return;
+        try { o[loc] = lateStatus_(loc); } catch (e) { Logger.log('late ' + loc + ': ' + e.message); }
+      });
+      return o;
+    })(),
     // กลุ่มวัตถุดิบ — หน้าเว็บเอาไปทำช่องเลือกว่าจะใช้หมูอะไรพัน
     rawGroups: (function () {
       var g = {};
