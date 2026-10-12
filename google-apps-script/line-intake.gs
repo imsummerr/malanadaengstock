@@ -682,6 +682,21 @@ function intakePayOf_(text) {
  * รับทั้งชื่อเต็ม ชื่อที่ไม่มี "ตลาด" นำหน้า และ "สาขา..." นำหน้า
  * ใช้กับค่าใช้จ่ายเท่านั้น ของที่ซื้อเข้าสต็อกยังเข้าครัวกลางเสมอ (ส่งสาขาผ่านแพ็คของ)
  */
+/**
+ * ชื่อเล่นของสาขาที่พิมพ์กันจริงในไลน์ — "หม่าล่า ทรัพย์" (12/10) เดิมจับไม่ได้ ไปลงครัวกลางเงียบ ๆ
+ * ใส่เพิ่มได้ หรือตั้ง Script Property BRANCH_NICKNAMES = {"ตลาดทรัพย์พัฒนา":["ทรัพย์"]}
+ */
+var INTAKE_BRANCH_NICK = { 'ตลาดทรัพย์พัฒนา': ['ทรัพย์'] };
+function intakeBranchNicks_() {
+  var out = {};
+  Object.keys(INTAKE_BRANCH_NICK).forEach(function (k) { out[k] = INTAKE_BRANCH_NICK[k].slice(); });
+  try {
+    var extra = JSON.parse(intakeProp_('BRANCH_NICKNAMES', '{}') || '{}') || {};
+    Object.keys(extra).forEach(function (k) { out[k] = (out[k] || []).concat(extra[k] || []); });
+  } catch (e) {}
+  return out;
+}
+
 function intakeBranchTags_() {
   var groups = {};
   try { if (typeof stockLineGroups_ === 'function') groups = stockLineGroups_() || {}; } catch (e) {}
@@ -691,7 +706,8 @@ function intakeBranchTags_() {
     loc = String(loc).trim();
     if (!loc || loc === central) return;
     var short = loc.replace(/^ตลาด\s*/, '');
-    [loc, short, 'สาขา' + loc, 'สาขา' + short, 'สาขา ' + short].forEach(function (w) {
+    var nick = intakeBranchNicks_()[loc] || [];
+    [loc, short, 'สาขา' + loc, 'สาขา' + short, 'สาขา ' + short].concat(nick).forEach(function (w) {
       if (w.length >= 3) out.push({ word: w, loc: loc });
     });
   });
@@ -743,6 +759,20 @@ function intakeBranchHeader_(line) {
   if (rest(t) === central) return central;      // บอกมาเอง — ค่าแรงใต้หัวนี้เป็นของครัวกลางจริง
   // หัวที่มีแค่ "เบเกอรี่" / "ค่าใช้จ่ายเบเกอรี่" = ที่ของกลุ่มนี้ เปลี่ยนแค่ธุรกิจ
   return (bz.biz && rest(t) === '') ? '' : null;
+}
+
+/**
+ * บรรทัดไม่มีตัวเลข มีคำว่า หม่าล่า/เบเกอรี่/สาขา แต่ไม่ใช่หัวที่รู้จัก = ตั้งใจบอกสาขาแต่ชื่อไม่ตรง
+ * ("หม่าล่า ทรัพย์" ก่อนมีชื่อเล่น) — คืนรายการบรรทัดพวกนี้ไว้เตือน
+ */
+function intakeBadHeads_(text) {
+  return String(text || '').split(/[\n\r]+/).map(function (l) {
+    var x = intakeStripPrefix_(l);
+    return String(x !== null ? x : l).trim();
+  }).filter(function (l) {
+    if (!l || /\d/.test(l) || intakeBranchHeader_(l) !== null) return false;
+    return !!intakeBizOf_(l).biz || /สาขา/.test(l);
+  });
 }
 
 /**
@@ -2003,8 +2033,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   });
   expLocs.forEach(function (k) {
     var loc = keyLoc(k), biz = keyBiz(k);
-    blocks.push('🧾 ค่าใช้จ่าย' + (loc !== ctx.location ? ' ' + loc : '') +
-                (biz !== 'หม่าล่า' ? ' · ' + biz : '') + '\n' + expByLoc[k].join('\n'));
+    // บอกที่เสมอ (รวมครัวกลาง) — 12/10 ลงครัวกลางเงียบ ๆ เพราะหัวไม่บอกที่ คนอ่านไม่รู้ว่าผิด
+    blocks.push('🧾 ค่าใช้จ่าย ' + loc + (biz !== 'หม่าล่า' ? ' · ' + biz : '') + '\n' + expByLoc[k].join('\n'));
   });
   if (rndLines.length)   blocks.push('🧪 ลองสูตร (ไม่เข้าสต็อก)\n' + rndLines.join('\n'));
   if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));
@@ -2021,6 +2051,12 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   if (cardTotal) msg += '\n💳 รูดบัตร ' + intakeMoney_(cardTotal) + ' บาท (ไปรวมในรอบบัตร)';
   if (stockLines.length) msg += '\n\nยอดสต็อกขยับแล้ว · เดี๋ยวบอทของเข้าจะแจ้งวันหมดอายุให้';
   if (unmatched) msg += intakeUnknownBlock_(unknown, names);
+  // บรรทัดที่ดูเหมือนหัวสาขา แต่ชื่อสาขาไม่ตรง → ค่าใช้จ่ายด้านล่างลงที่กลุ่มนี้แทน ต้องบอก
+  var bad = expLines.length ? intakeBadHeads_(rawText) : [];
+  if (bad.length) {
+    msg += '\n\n⚠️ ไม่รู้จักชื่อสาขาในบรรทัด "' + bad.join('", "') + '" — ค่าใช้จ่ายลงเป็นของ ' + ctx.location +
+           '\nถ้าผิด พิมพ์ "ลบ" แล้วส่งใหม่ เขียนชื่อสาขาให้ตรง เช่น ทรัพย์พัฒนา';
+  }
   // หน่วยไม่ตรง = แปลงให้ไม่ได้ เลยไม่ลงสต็อก ต้องบอก ไม่งั้นยอดขาดเงียบ ๆ
   if (unitWarns.length) {
     msg += '\n\n⚠️ ยังไม่ได้ลงสต็อก ' + unitWarns.length + ' รายการ — หน่วยแปลงให้ไม่ได้\n' +
