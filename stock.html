@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-14a';
+const PAGE_BUILD = '2026-10-14b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -535,28 +535,53 @@ function lateBanner() {
         — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${s.mala.dm}` + btn('ไปนับ', "go('count')"));
     // ค่าใช้จ่าย + เงินสดคงเหลือ เจ้าของร้านแจ้งในไลน์ — พนักงานไม่ต้องเห็น
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
-        — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้<br>
-        <small>ลงครบแล้วทางอื่น (ไม่ได้ลงในไลน์) กดปุ่มนี้แทนได้</small>` +
-        btn('✅ ค่าใช้จ่ายลงครบแล้ว', `expDoneGo('${esc(loc)}','${esc(s.exp.day)}','${esc(s.exp.dm)}')`));
+        — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้` + expDoneUi(loc, s.exp, btn));
     if (s.bakery) rows.push(`🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${s.bakery.dm}` +
         (s.bakery.counted ? ' — เช้านี้นับเบเกอรี่แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
         btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}')`));
     if (rows.length) out.push(`<b>⏰ ${esc(loc)} — ลืมลงของวันก่อน</b><br>` + rows.join('<br>'));
   });
-  return out.length ? `<div class="card"><div class="warnbox" style="margin:0">${out.join('<hr>')}</div></div>` : '';
+  return out.length ? `<div class="card" id="late-banner"><div class="warnbox" style="margin:0">${out.join('<hr>')}</div></div>` : '';
+}
+/** วาดกล่องเตือนใหม่อย่างเดียว — ไม่ render ทั้งหน้า (ฟอร์มที่กรอกค้างไว้ไม่หาย) */
+function lateRefresh() {
+  const el = document.getElementById('late-banner'), html = lateBanner();
+  if (el) { if (html) el.outerHTML = html; else el.remove(); }
 }
 
-/** เจ้าของกด "ค่าใช้จ่ายลงครบแล้ว" — จดว่าแจ้งแล้ว แล้วหลังบ้านสรุปยอดของวันนั้นให้ (ถ้าเช็คสต็อกครบ) */
+/**
+ * เจ้าของกด "ค่าใช้จ่ายลงครบแล้ว" — จดว่าแจ้งแล้ว แล้วหลังบ้านสรุปยอดของวันนั้นให้ (ถ้าเช็คสต็อกครบ)
+ * ยืนยันในกล่องเตือนเอง ไม่ใช้ confirm() — เบราว์เซอร์ในแอป (เช่นเปิดลิงก์จากไลน์) บางตัวไม่ขึ้นกล่อง
+ * แล้วถือว่ากดยกเลิก กดไปก็เงียบ (14/10)
+ */
+const EXP_DONE_BE = '2026-10-14a';          // หลังบ้านรุ่นนี้ขึ้นไปถึงรู้จัก action expDone
+let EXP_ARM = '', EXP_BUSY = '';
+function expDoneUi(loc, e, btn) {
+  const k = loc + '|' + e.day, ver = D.version ? String(D.version).split('·')[0].trim() : '';
+  const go = `expDoneGo('${esc(loc)}','${esc(e.day)}','${esc(e.dm)}')`;
+  if (ver < EXP_DONE_BE) return `<br><small>ลงครบแล้วทางอื่น (ไม่ได้ลงในไลน์): ต้อง Deploy หลังบ้านรุ่น ${EXP_DONE_BE}
+      ก่อน ถึงจะมีปุ่มให้กด (ตอนนี้หลังบ้าน ${esc(ver || 'เก่า')})</small>`;
+  if (EXP_BUSY === k) return `<br><b>⏳ กำลังจดและสรุปยอดวันที่ ${e.dm}… รอสักครู่</b>`;
+  if (EXP_ARM === k) return `<br><b>ค่าใช้จ่ายของวันที่ ${e.dm} ลงครบแล้วจริงไหม?</b> ระบบจะสรุปยอดของวันนั้นให้<br>` +
+      btn('✅ ยืนยัน ลงครบแล้ว', go) + btn('ยกเลิก', "expDoneArm('')");
+  return `<br><small>ลงครบแล้วทางอื่น (ไม่ได้ลงในไลน์) กดปุ่มนี้แทนได้</small>` +
+      btn('✅ ค่าใช้จ่ายลงครบแล้ว', `expDoneArm('${esc(k)}')`);
+}
+function expDoneArm(k) { EXP_ARM = k; lateRefresh(); }
 async function expDoneGo(loc, day, dm) {
-  if (!confirm('ค่าใช้จ่ายของวันที่ ' + dm + ' (' + loc + ') ลงครบแล้ว?\nระบบจะสรุปยอดของวันนั้นให้')) return;
+  const k = loc + '|' + day;
+  if (EXP_BUSY) return;
+  EXP_ARM = ''; EXP_BUSY = k; lateRefresh();
+  toast('⏳ กำลังจดและสรุปยอดวันที่ ' + esc(dm) + '…', 60000);
   try {
     const r = await apiPost({ action: 'expDone', location: loc, day });
     if (D.late && D.late[loc]) D.late[loc].exp = null;
-    toast('✅ ' + esc(r.message || 'จดแล้ว'), 6000);
-    render();
+    toast('✅ ' + esc(r.message || 'จดแล้ว'), 8000);
   } catch (e) {
     if (/เวอร์ชันเก่า|ไม่รู้จัก action/.test(e.message)) toastApiError(e.message);
-    else toast('❌ ' + esc(e.message), 6000);
+    else toast('❌ ' + esc(e.message), 10000);
+  } finally {
+    EXP_BUSY = ''; lateRefresh();
   }
 }
 

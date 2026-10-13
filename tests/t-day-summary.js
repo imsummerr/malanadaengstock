@@ -194,6 +194,24 @@ out = line(g, [HEAD, 'หม่าล่า ทรัพย์', 'ค่าใ�
 eq('จดว่าแจ้งแล้ว · ไม่ลงค่าใช้จ่าย · ส่งสรุป', [g.expDoneHas_(SHOP, D), g.__env.SHEETS[g.SHEET_EXPENSE].rows.length, /ไม่มีค่าใช้จ่ายเพิ่ม/.test(out), /📊 สรุปยอด/.test(texts(g))],
    [true, 0, true, true]);
 
+section('ไลน์: พิมพ์ตามปุ่ม "ค่าใช้จ่ายลงครบแล้ว" ก็ได้ · ข้อความมีวันที่แต่อ่านไม่ออก = ตอบ ไม่เงียบ');
+{
+  const gq = setup(200);
+  gq.handleStockCount_({ token: 't', location: SHOP, rows: rows(gq, { 'ดอลลี่': 10 }) });
+  eq('"ค่าใช้จ่ายลงครบแล้ว" = แจ้งแล้ว', gq.intakeParseText_([HEAD, 'หม่าล่า ทรัพย์', 'ค่าใช้จ่ายลงครบแล้ว'].join('\n')).map(x => [!!x.noExp, x.day]), [[true, D]]);
+  eq('"ค่าใช้จ่าย ครบ" ก็ได้', gq.intakeParseText_(HEAD + '\nค่าใช้จ่าย ครบ').map(x => !!x.noExp), [true]);
+  const ev = (text, id) => ({ events: [{ type: 'message', replyToken: 'r' + id, source: { type: 'group', groupId: 'Gcentral' },
+                                         message: { type: 'text', id, text } }] });
+  gq.__env.SENT.length = 0;
+  gq.handleLineIntake_(ev('วันนี้ลูกค้าเยอะ', 'q1'));
+  eq('คุยกันในกลุ่มธรรมดา = เงียบ', gq.__env.SENT.length, 0);
+  gq.handleLineIntake_(ev(HEAD + '\nหม่าล่า ทรัพย์\nเรียบร้อย', 'q2'));
+  eq('มีบรรทัดวันที่แต่อ่านไม่ออก = ตอบวิธีพิมพ์', /อ่านไม่ออกว่าวันนั้นแจ้งอะไร[\s\S]*ค่าใช้จ่ายครบ/.test(texts(gq)), true);
+  gq.__env.SENT.length = 0;
+  gq.handleLineIntake_(ev(HEAD + '\nหม่าล่า ทรัพย์\nค่าใช้จ่ายลงครบแล้ว', 'q3'));
+  eq('ส่งจริงผ่านไลน์ → จดแล้ว + ตอบ + สรุป', [gq.expDoneHas_(SHOP, D), /ไม่มีค่าใช้จ่ายเพิ่ม/.test(texts(gq)), /📊 สรุปยอด/.test(texts(gq))], [true, true, true]);
+}
+
 section('พนักงานนับ — ไม่ได้ตัวเลขเงินกลับไป');
 g = setup(150);
 g.checkToken_ = () => staff;
