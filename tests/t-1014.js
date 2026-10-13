@@ -30,4 +30,26 @@ section('ถุงที่สาขาซื้อเป็นค่าใช�
   eq('ถุงไม่เตือน · ของอื่นยังเตือน', w, ['ดอลลี่']);
 }
 
+section('แพ็คของ: ใส่ 0 = ใช้ของเหลือจากรอบก่อน (สาหร่ายแช่ไว้ตั้งแต่ 12/10)');
+{
+  const g = fresh();
+  const { buy } = require('./t-cost');
+  buy(g, 12, 'สะโพกหมูสไลซ์ (ดิบ)', 1, 120, 'b1', 9); buy(g, 12, 'สาหร่าย (ดิบ)', 1, 285, 'b2', 9);
+  const pk = (raws, id) => g.handleStockPack_({ token: 't', item: 'หมูพันสาหร่าย', packs: 0, rem: 6, raws, reqId: id });
+  const bal = n => Math.round((g.stockBalances_()[g.CENTRAL][n] || 0) * 1000) / 1000;
+  let r = pk([{ name: 'สะโพกหมูสไลซ์ (ดิบ)', qty: 0.125 }, { name: 'สาหร่าย (ดิบ)', qty: 0.05 }], 'p1');
+  eq('12/10 แช่สาหร่าย 0.05', [r.success, bal('สาหร่าย (ดิบ)')], [true, 0.95]);
+  r = pk([{ name: 'สะโพกหมูสไลซ์ (ดิบ)', qty: 0.09 }, { name: 'สาหร่าย (ดิบ)', qty: '0' }], 'p2');
+  const P = g.__env.SHEETS[g.SHEET_PACK], last = P.rows.slice(-1)[0];
+  eq('13/10 สาหร่ายใส่ 0 ได้ · ไม่ตัดซ้ำ · หมูตัด', [r.success, bal('สาหร่าย (ดิบ)'), bal('สะโพกหมูสไลซ์ (ดิบ)')], [true, 0.95, 0.785]);
+  eq('จดหมายเหตุว่าใช้ของเหลือ', last[P.headers.indexOf('หมายเหตุ')], 'ใช้ของเหลือจากรอบก่อน: สาหร่าย (ดิบ)');
+  eq('แจ้งไลน์บอกด้วย', /ใช้ของเหลือจากรอบก่อน สาหร่าย \(ดิบ\) \(ไม่ตัดซ้ำ\)/.test(g.__env.SENT.map(x => x.messages[0].text).join('\n')), true);
+  r = pk([{ name: 'สะโพกหมูสไลซ์ (ดิบ)', qty: 0.09 }, { name: 'สาหร่าย (ดิบ)', qty: '' }], 'p3');
+  eq('ช่องว่าง = ลืมกรอก ยังไม่รับ', [r.success, /สาหร่าย/.test(r.message)], [false, true]);
+  r = pk([{ name: 'สะโพกหมูสไลซ์ (ดิบ)', qty: 0 }, { name: 'สาหร่าย (ดิบ)', qty: 0 }], 'p4');
+  eq('0 ทุกช่องไม่รับ', [r.success, /อย่างน้อย 1/.test(r.message)], [false, true]);
+  r = g.handleStockPack_({ token: 't', item: 'ดอลลี่', packs: 0, rem: 10, raws: [{ name: 'ดอลลี่ (ดิบ)', qty: 0 }], reqId: 'p5' });
+  eq('ของดิบอย่างเดียวใส่ 0 ไม่รับ', r.success, false);
+}
+
 process.exit(done().fail ? 1 : 0);

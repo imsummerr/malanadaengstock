@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-14b · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-14c · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2073,7 +2073,7 @@ function handleStockPack_(body) {
     if (!already) want.push({ name: nm, qty: round_(made * auto[nm]) });
   });
 
-  var used = [], seen = {};
+  var used = [], seen = {}, leftover = [];
   for (var i = 0; i < want.length; i++) {
     var nm = String(want[i] && want[i].name || '').trim();
     if (!nm) continue;
@@ -2087,6 +2087,10 @@ function handleStockPack_(body) {
       return { success: false, message: '"' + out.name + '" ใช้ "' + nm + '" ไม่ได้' };
     }
     var q = Number(want[i].qty) || 0;
+    // ใส่ 0 มาเอง (ไม่ใช่ช่องว่าง) = ใช้ของที่เหลือจากรอบก่อน ตัดไปแล้วรอบนั้น ไม่ตัดซ้ำ
+    // (14/10 สาหร่ายแช่ไว้ตั้งแต่ 12/10 เหลือมาใช้ 13/10 — เดิมใส่ 0 ไม่ได้ เลยต้องกรอก 0.001)
+    var typed = String(want[i].qty == null ? '' : want[i].qty).trim();
+    if (q === 0 && typed !== '' && Number(typed) === 0 && want.length > 1) { leftover.push(it.name); continue; }
     if (!(q > 0)) return { success: false, message: 'กรอกว่าใช้ "' + nm + '" ไปเท่าไหร่' };
     // q = เอาออกมาจากสต็อกกี่โล → ตัดเท่านี้ ยอดลงศูนย์พอดี ไม่มีน้ำแข็งค้าง
     // net = ละลายแล้วชั่งได้เนื้อเท่าไหร่ → เก็บไว้ดู yield เฉย ๆ ไม่ตัดซ้ำ
@@ -2097,6 +2101,9 @@ function handleStockPack_(body) {
                         ' — เนื้อต้องไม่เกินที่เอามา' };
     }
     used.push({ item: it, qty: q, net: net, loss: net ? round_(q - net) : 0 });
+  }
+  if (leftover.length && !used.length) {
+    return { success: false, message: 'ต้องมีของดิบอย่างน้อย 1 อย่างที่มากกว่า 0' };
   }
   if (used.length > PACK_RAW_SLOTS) {
     return { success: false, message: 'ใส่วัตถุดิบได้ไม่เกิน ' + PACK_RAW_SLOTS + ' อย่างต่อครั้ง' };
@@ -2111,7 +2118,8 @@ function handleStockPack_(body) {
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(out),
     'ไม้ต่อแพ็ค': out.perPack, 'ประเภท': 'แพ็คของ',
-    'หมายเหตุ': String(body.note || '')
+    'หมายเหตุ': [String(body.note || '').trim(),
+                 leftover.length ? 'ใช้ของเหลือจากรอบก่อน: ' + leftover.join(', ') : ''].filter(String).join(' · ')
   };
   used.forEach(function (u, k) {
     var c = packRawCols_(k);
@@ -2130,6 +2138,7 @@ function handleStockPack_(body) {
                          (u.loss > 0 ? '  (ได้เนื้อ ' + u.net + ' · น้ำแข็ง ' + u.loss + ')' : '');
                 }).join('\n    ') + '\n'
               : '') +
+            (leftover.length ? 'ใช้ของเหลือจากรอบก่อน ' + leftover.join(', ') + ' (ไม่ตัดซ้ำ)\n' : '') +
             'ได้ ' + out.name + ' ' + fmtPack_(made, out) + '\n' +
             'โดย ' + session.name + ' · ' + Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm');
   var line = stockNotify_(CENTRAL, msg);
@@ -2191,7 +2200,8 @@ function handleStockIn_(body) {
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าครัวกลาง',
-    'หมายเหตุ': String(body.note || '')
+    'หมายเหตุ': [String(body.note || '').trim(),
+                 leftover.length ? 'ใช้ของเหลือจากรอบก่อน: ' + leftover.join(', ') : ''].filter(String).join(' · ')
   };
   if (start && p.item.bakery) row[BAKERY_START_COL] = start;
   if (!stockAppendOnce_(sh, cols, row, body.reqId)) return stockDupRes_(fmtPack_(p.total, p.item));

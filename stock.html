@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-14b';
+const PAGE_BUILD = '2026-10-14c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -1232,7 +1232,9 @@ function syncPack() {
 
   const raws = rawsOf(it);
   document.getElementById('k-raws').innerHTML = (raws.length
-    ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` + raws.map((r, i) => (r.group
+    ? `<label class="fld">ใช้ของดิบไปเท่าไหร่</label>` +
+      (raws.length > 1 ? `<p class="note">ใช้ของที่เหลือจากรอบก่อน (แช่/ตัดไว้แล้ว) ช่องนั้นใส่ 0</p>` : '') +
+      raws.map((r, i) => (r.group
         ? `<div class="note" style="margin-top:6px">ใช้${esc(r.name)}อะไร</div>
            <select id="k-rs-${i}" onchange="syncPackRaw(${i}); calcPack()">${
              r.choices.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')
@@ -1241,7 +1243,7 @@ function syncPack() {
         <div class="row2" style="align-items:end">
           <div><div class="sub" id="k-ru-${i}">เอามากี่${esc(r.subUnit)}</div>
             <input id="k-rq-${i}" type="number" inputmode="decimal" min="0" step="any"
-                   placeholder="0" oninput="calcPack()"></div>
+                   placeholder="${raws.length > 1 ? 'เหลือจากรอบก่อน ใส่ 0' : ''}" oninput="calcPack()"></div>
           <div><div class="sub">ได้เนื้อเท่าไหร่ — ของแช่แข็ง</div>
             <input id="k-rt-${i}" type="number" inputmode="decimal" min="0" step="any"
                    placeholder="ไม่ใส่ก็ได้" oninput="calcPack()"></div>
@@ -1354,13 +1356,17 @@ async function submitPack() {
     const tEl = document.getElementById('k-rt-' + i);
     const q = el ? el.value : '';
     const net = tEl ? tEl.value : '';
-    // ตัดของดิบไม่ครบ ยอดจะเพี้ยนแบบเงียบ ๆ เลยบังคับกรอกให้ครบทุกช่อง
-    if (!(Number(q) > 0)) return toast('กรอกว่าเอา ' + esc(r.name) + ' มาเท่าไหร่');
+    // ตัดของดิบไม่ครบ ยอดจะเพี้ยนแบบเงียบ ๆ เลยบังคับกรอกให้ครบทุกช่อง (ช่องว่าง = ลืม)
+    // ใส่ 0 เอง = ใช้ของที่เหลือจากรอบก่อน ตัดไปแล้วรอบนั้น (14/10 สาหร่ายแช่ไว้ตั้งแต่ 12/10)
+    // ของดิบอย่างเดียวต้องมากกว่า 0 — ใส่ 0 แล้วไม่มีอะไรถูกตัดเลย
+    if (String(q).trim() === '' || !(Number(q) >= 0)) return toast('กรอกว่าเอา ' + esc(r.name) + ' มาเท่าไหร่');
+    if (!(Number(q) > 0) && list.length < 2) return toast('กรอกว่าเอา ' + esc(r.name) + ' มาเท่าไหร่');
     if (Number(net) > Number(q)) {
       return toast(esc(r.name) + ' ได้เนื้อมากกว่าที่เอามา');
     }
     raws.push({ name: r.name, qty: q, net: net });
   }
+  if (raws.length && !raws.some(x => Number(x.qty) > 0)) return toast('ต้องมีของดิบอย่างน้อย 1 อย่างที่มากกว่า 0');
 
   const btn = document.getElementById('k-btn');
   btn.disabled = true;
