@@ -60,7 +60,12 @@ section('ชีตเดิมที่มี "ฟองเต้าหู้ม
     'หน่วย': 'อัน', 'ประเภท': 'เช็คสต็อก' });
   push(g, g.SHEET_COUNT, { 'วันที่เวลา': D(9, 20, 9), 'สาขา': SHOP, 'รายการ': F, 'จำนวน': 6,
     'หน่วย': 'อัน', 'ประเภท': 'เช็คสต็อก' });
-  eq('ก่อนรัน: ครัวกลางมีแต่ของดิบ', [g.stockBalances_()[g.CENTRAL][RAW], g.stockBalances_()[g.CENTRAL][F] || 0], [216, 0]);
+  // 13/10 แบบของจริง: ก่อนรัน fixItemList กดแพ็คของดิบ 12 → ฟองเต้าหู้ม้วน 12 แล้วส่งสาขา 12
+  push(g, g.SHEET_PACK, { 'วันที่เวลา': D(13, 16, 9), 'สาขา': g.CENTRAL, 'วัตถุดิบ': RAW, 'จำนวนวัตถุดิบ': 12,
+    'หน่วยวัตถุดิบ': 'อัน', 'รายการ': F, 'จำนวน': 12 });
+  push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(13, 17, 9), 'สาขา': SHOP, 'รายการ': F, 'จำนวน': 12,
+    'หน่วย': 'อัน', 'ประเภท': 'ของเข้าร้าน' });
+  eq('ก่อนรัน: ครัวกลางมีแต่ของดิบ 204 (แพ็คไป 12 ส่งไป 12)', [g.stockBalances_()[g.CENTRAL][RAW], g.stockBalances_()[g.CENTRAL][F] || 0], [204, 0]);
 
   g.fixItemList(); g.cacheClear_();
   eq('แถวของดิบหายไป', itemNames(g).indexOf(RAW), -1);
@@ -68,9 +73,13 @@ section('ชีตเดิมที่มี "ฟองเต้าหู้ม
   eq('ประวัติเปลี่ยนชื่อ', [col(g, g.SHEET_INCOMING, 'รายการ')[0], col(g, g.SHEET_COUNT, 'รายการ')[0]], [F, F]);
   eq('ชีตซื้อของเข้าเปลี่ยนตาม (ราคาจับคู่ด้วยชื่อ)', col(g, g.INTAKE_SHEET, 'รายการ'), [F]);
   const b = g.stockBalances_();
-  eq('ครัวกลาง 216 อัน (18 กล่อง) · สาขา 6 ตามเดิม', [b[g.CENTRAL][F], b[g.CENTRAL][RAW] || 0, b[SHOP][F]], [216, 0, 6]);
+  eq('แพ็คของ: ช่องวัตถุดิบเปลี่ยนชื่อด้วย', col(g, g.SHEET_PACK, 'วัตถุดิบ'), [F]);
+  eq('ครัวกลาง 204 ไม่เบิ้ล (ไม่มีของดิบติดลบลอย) · สาขา 6 + 12', [b[g.CENTRAL][F], b[g.CENTRAL][RAW] || 0, b[SHOP][F]], [204, 0, 18]);
   g.fixItemList(); g.cacheClear_();
-  eq('รันซ้ำไม่เปลี่ยนอะไร', [g.stockBalances_()[g.CENTRAL][F], itemNames(g).indexOf(RAW)], [216, -1]);
+  eq('รันซ้ำไม่เปลี่ยนอะไร', [g.stockBalances_()[g.CENTRAL][F], itemNames(g).indexOf(RAW)], [204, -1]);
+  const rep = g.costReplay_();
+  eq('ต้นทุนครัวกลางไม่ติดลบ ไม่มีชั้นของดิบค้าง', [!(rep.layers[g.CENTRAL] || {})[RAW] || !(rep.layers[g.CENTRAL][RAW] || []).length,
+     (rep.layers[g.CENTRAL][F] || []).reduce((a, x) => a + x.qty, 0)], [true, 204]);
 }
 
 process.exit(done().fail ? 1 : 0);

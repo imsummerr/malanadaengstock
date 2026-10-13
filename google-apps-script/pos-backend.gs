@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-13d · ปิดร้านสรุปสั้น ควรได้/ได้จริง/หาย · นับเบเกอรี่ไม่ใช่รอบเทียบหม่าล่า';
+var BACKEND_VERSION = '2026-10-13e · fixItemList เปลี่ยนชื่อช่องวัตถุดิบในแพ็คของด้วย · ปิดร้านสรุปสั้น';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -3619,16 +3619,26 @@ function mergeItemNames() {
     var h = ss.getSheetByName(name);
     if (!h || h.getLastRow() < 2) return;
     var hmap = ensureCols_(h, MOVE_COLS);
-    var col = hmap['รายการ'];
-    var rng = h.getRange(2, col + 1, h.getLastRow() - 1, 1);
-    var v = rng.getValues();
     var hit = 0;
-    for (var i = 0; i < v.length; i++) {
-      var n = String(v[i][0] || '').trim();
-      if (ITEM_RENAME[n]) { v[i][0] = ITEM_RENAME[n]; hit++; }
+    var renameCol = function (col) {
+      if (col === undefined || col === -1) return;
+      var rng = h.getRange(2, col + 1, h.getLastRow() - 1, 1);
+      var v = rng.getValues(), n0 = 0;
+      for (var i = 0; i < v.length; i++) {
+        var n = String(v[i][0] || '').trim();
+        if (ITEM_RENAME[n]) { v[i][0] = ITEM_RENAME[n]; n0++; }
+      }
+      if (n0) { rng.setValues(v); hit += n0; }
+    };
+    renameCol(hmap['รายการ']);
+    // ชีตแพ็คของ: ช่องวัตถุดิบก็ต้องเปลี่ยนด้วย — 13/10 แพ็ค "ฟองเต้าหู้ม้วน (ดิบ)" 12 → ฟองเต้าหู้ม้วน 12
+    // ถ้าเปลี่ยนแค่ช่องรายการ ของดิบชื่อเก่าจะติดลบลอย ๆ แล้วฟองเต้าหู้ม้วนที่ครัวกลางเกิน 12
+    if (name === SHEET_PACK) {
+      var pmap = ensureCols_(h, PACK_COLS);
+      for (var k = 0; k < PACK_RAW_SLOTS; k++) renameCol(pmap[packRawCols_(k).name]);
     }
-    if (hit) { rng.setValues(v); histCount += hit; }
-    Logger.log('  "' + name + '" เปลี่ยนชื่อ ' + hit + ' แถว');
+    histCount += hit;
+    Logger.log('  "' + name + '" เปลี่ยนชื่อ ' + hit + ' ช่อง');
   });
   // ชีตซื้อของเข้า — บัญชีจับราคาที่ซื้อกับของเข้าด้วย messageId + ชื่อ ต้องเปลี่ยนตามกัน
   // ไม่ใช้ ensureCols_ เพราะชีตนี้ไม่ได้ใช้คอลัมน์ชุด MOVE_COLS
