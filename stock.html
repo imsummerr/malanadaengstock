@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-13b';
+const PAGE_BUILD = '2026-10-13c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -576,7 +576,8 @@ function viewMoney(v) {
     const sales = isBk ? `
         <tr><td>เงินสด</td><td class="num">${baht(p['เงินสด'])}</td></tr>
         <tr><td>เงินโอน</td><td class="num">${baht(p['เงินโอน'])}</td></tr>
-        <tr><td>ไทยช่วยไทย</td><td class="num">${baht(p['ไทยช่วยไทย'])}</td></tr>` : isAll ? `
+        <tr><td>ไทยช่วยไทย</td><td class="num">${baht(p['ไทยช่วยไทย'])}</td></tr>${p['จ่ายจากเงินขาย'] ? `
+        <tr><td>จ่ายค่าใช้จ่ายจากเงินขาย <small>เงินสด · หักอยู่ในค่าใช้จ่ายอื่นด้วย</small></td><td class="num">${baht(p['จ่ายจากเงินขาย'])}</td></tr>` : ''}` : isAll ? `
         <tr><td>หม่าล่า หน้าร้าน</td><td class="num">${baht(p['หน้าร้าน'])}</td></tr>
         <tr><td>หม่าล่า เดลิเวอรี่</td><td class="num">${baht(p['เดลิเวอรี่'])}</td></tr>
         <tr><td>เบเกอรี่</td><td class="num">${baht(p['ขายเบเกอรี่'])}</td></tr>` : `
@@ -1380,6 +1381,21 @@ function bkBizDay(ms) {
 const bkYesterday = () => bkBizDay(Date.now() - 86400000);
 const bkDM = ymd => { const p = ymd.split('-'); return Number(p[2]) + '/' + Number(p[1]); };
 const BK_MONEY = [['cash', 'เงินสด'], ['transfer', 'เงินโอน'], ['thai', 'ไทยช่วยไทย']];
+const BK_EX_MAX = 8;                  // ค่าใช้จ่ายที่จ่ายจากเงินขายได้ต่อรอบ (เท่าหลังบ้าน)
+/** แถวค่าใช้จ่าย (จ่ายค่าอะไร + บาท) — เพิ่มทีละแถวโดยไม่ render ใหม่ ช่องที่กรอกไว้จะได้ไม่หาย */
+function bkExRow(k) {
+  return `<div class="bk-ex" style="display:flex;align-items:center;gap:8px;margin:8px 0">
+      <input id="bk-x-t-${k}" type="text" placeholder="จ่ายค่าอะไร เช่น ค่าที่" style="flex:1;min-width:0">
+      <input id="bk-x-b-${k}" type="number" inputmode="decimal" min="0" placeholder="0" style="width:90px;text-align:right">
+      <span class="note" style="width:28px;margin:0">บาท</span></div>`;
+}
+function bkExAdd() {
+  const box = document.getElementById('bk-ex');
+  const n = box ? box.querySelectorAll('.bk-ex').length : 0;
+  if (!box || n >= BK_EX_MAX) return;
+  box.insertAdjacentHTML('beforeend', bkExRow(n));
+  document.getElementById('bk-x-t-' + n).focus();
+}
 
 function viewBakery(v) {
   const locs = allowedLocs().filter(l => l !== D.central);
@@ -1393,6 +1409,10 @@ function viewBakery(v) {
   const selLoc = locs.includes(BK_LOC) ? BK_LOC : (locs.includes(auth.branch) ? auth.branch : locs[0]);
   const pend = ((D.late || {})[selLoc] || {}).bakery;
   if (pend && !BK_AUTO) { BK_AUTO = true; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = pend.day; }
+  // 13/10 เจ้าของ: ปุ่ม "ลืมนับ" ขึ้นเฉพาะวันที่ลืมจริง (หลังบ้านบอกมา) — เมื่อวานนับแล้วไม่ต้องขึ้น
+  // หลังบ้านรุ่นเก่าไม่ส่ง D.late มา = ไม่รู้ ให้เลือกเองได้เหมือนเดิม
+  const canLate = !!pend || D.late === undefined;
+  if (!canLate) { BK_LATE = false; BK_LATE_DAY = ''; }
   const after = BK_ROUND === 'หลังขาย';
   const late = after && BK_LATE, yd = bkDM(BK_LATE_DAY || bkYesterday());
   const counted = late && pend && pend.day === (BK_LATE_DAY || bkYesterday()) && pend.counted;
@@ -1412,9 +1432,9 @@ function viewBakery(v) {
     <select id="bk-loc" onchange="BK_LOC=this.value;BK_AUTO=false;BK_LATE_DAY='';render()">${locs.map(l => `<option${l === selLoc ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
     <label class="fld">รอบ</label>
     <div style="display:flex;gap:8px">${rbtn('ก่อนขาย')}${rbtn('หลังขาย')}</div>
-    ${after ? `<label class="fld">ยอดขายของ</label>
+    ${!canLate ? '' : after ? `<label class="fld">ยอดขายของ</label>
     <div style="display:flex;gap:8px">${dbtn(false, 'วันนี้')}${dbtn(true, (BK_LATE_DAY && BK_LATE_DAY !== bkYesterday() ? 'วันที่ ' : 'เมื่อวาน ') + yd + ' (ลืมนับ)')}</div>`
-            : `<p class="note">ลืมนับหลังขายเมื่อวาน? กด 🌙 หลังขาย แล้วเลือก "เมื่อวาน"</p>`}
+            : `<p class="note">ลืมนับหลังขาย${pend ? 'ของ ' + yd : 'เมื่อวาน'}? กด 🌙 หลังขาย แล้วเลือก "${pend && pend.day !== bkYesterday() ? 'วันที่ ' + yd : 'เมื่อวาน'}"</p>`}
   </div>
   <div class="card">
     <h2 style="font-size:16px">${late ? 'หลังขายของวันที่ ' + yd : 'นับ' + BK_ROUND}</h2>
@@ -1426,7 +1446,12 @@ function viewBakery(v) {
     <p class="note" style="margin-top:0">ไดฟุกุนับเป็นลูก (1 ชุด = 40 ลูก) · บราวนี่นับเป็นชิ้น</p>
     ${items.map((it, k) => row('bk-i-' + k, it.name, /^ไดฟุกุ/.test(it.name) ? 'ลูก' : 'ชิ้น')).join('')}
     ${after ? `<h2 style="font-size:16px;margin-top:16px">เงินที่ได้${late ? 'ของวันที่ ' + yd : 'วันนี้'}</h2>` +
-              BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') : ''}
+              BK_MONEY.map(m => row('bk-m-' + m[0], m[1], 'บาท')).join('') +
+              `<h2 style="font-size:16px;margin-top:16px">ค่าใช้จ่ายที่จ่ายจากเงินขาย (เงินสด)</h2>
+    <p class="note" style="margin-top:0">หยิบเงินสดจากเงินขายไปจ่ายค่าอะไร ใส่ตรงนี้ · ไม่มีปล่อยว่าง<br>
+      เงินสดข้างบนใส่เงินที่เหลืออยู่จริง (หลังจ่ายแล้ว)</p>
+    <div id="bk-ex">${bkExRow(0)}</div>
+    <button class="key" style="width:auto;padding:6px 12px;font-size:14px" onclick="bkExAdd()">＋ เพิ่มค่าใช้จ่าย</button>` : ''}
     <button class="key btn-red submit" id="bk-btn" onclick="submitBakery()">บันทึก${BK_ROUND}</button>
     <p class="note">ไม่มีของ / ไม่มีเงินช่องไหน ใส่ 0</p>
   </div>`;
@@ -1443,6 +1468,17 @@ async function submitBakery() {
   BK_MONEY.forEach(m => { money[m[0]] = val('bk-m-' + m[0]); });
   if (after) BK_MONEY.forEach(m => { if (money[m[0]] === '' || Number(money[m[0]]) < 0) miss.push(m[1]); });
   if (miss.length) { toast('ยังไม่ได้กรอก: ' + esc(miss.join(', ')) + '<br><span style="opacity:.8;font-size:12.5px">ไม่มีใส่ 0</span>', 5000); return; }
+  // ค่าใช้จ่ายที่จ่ายจากเงินขาย — กรอกแถวไหนต้องมีทั้งชื่อและเงิน
+  const expenses = [];
+  if (after) {
+    for (let k = 0; k < BK_EX_MAX; k++) {
+      if (!document.getElementById('bk-x-t-' + k)) break;
+      const text = val('bk-x-t-' + k), b = val('bk-x-b-' + k);
+      if (!text && !b) continue;
+      if (!text || !(Number(b) > 0)) { toast(!text ? 'ค่าใช้จ่าย ' + esc(b) + ' บาท — จ่ายค่าอะไร?' : esc(text) + ' — ใส่จำนวนเงินด้วย', 5000); return; }
+      expenses.push({ text, baht: Number(b) });
+    }
+  }
   const btn = document.getElementById('bk-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
@@ -1450,7 +1486,7 @@ async function submitBakery() {
     const r = await apiPost({ action: 'bakeryCount', location: document.getElementById('bk-loc').value,
                               round: BK_ROUND,
                               rows: rows.filter(x => x.qty !== '').map(x => ({ item: x.item, qty: Number(x.qty) })),
-                              money: after ? money : null, id: after ? BK_ID : '',
+                              money: after ? money : null, id: after ? BK_ID : '', expenses,
                               forDay: late ? (BK_LATE_DAY || bkYesterday()) : '' });
     toast('บันทึกแล้ว ✅ ' + esc(r.message || BK_ROUND) + (r.duplicated ? ' (ส่งไปแล้ว)' : ''), 6000);
     const bl = document.getElementById('bk-loc').value;

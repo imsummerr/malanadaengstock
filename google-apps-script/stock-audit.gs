@@ -1245,8 +1245,13 @@ function previewCashClose() {
  * พนักงานไม่เห็นยอดที่ควรได้และต้นทุน เห็นแค่ว่าบันทึกแล้ว
  */
 var SHEET_BAKERY = 'เบเกอรี่_ยอดขาย';
+// 'จ่ายค่าใช้จ่าย' (13/10) = เงินสดที่หยิบจากเงินขายไปจ่ายค่าใช้จ่ายตอนขาย — ต่อท้าย ไม่แทรกกลาง
+// รวมเงิน = เงินสด + เงินโอน + ไทยช่วยไทย + จ่ายค่าใช้จ่าย (ยอดขายเต็ม) · ค่าใช้จ่ายลง POS_Expenses แยก
 var BAKERY_HEADERS = ['วันที่', 'เวลา', 'สาขา', 'พนักงาน', 'เงินสด', 'เงินโอน', 'ไทยช่วยไทย',
-                      'รวมเงิน', 'ขาย(ชิ้น)', 'ควรได้', 'ต่าง', 'ผลเทียบ', 'รายละเอียด', 'bakery_id'];
+                      'รวมเงิน', 'ขาย(ชิ้น)', 'ควรได้', 'ต่าง', 'ผลเทียบ', 'รายละเอียด', 'bakery_id',
+                      'จ่ายค่าใช้จ่าย'];
+/** ค่าใช้จ่ายที่จ่ายจากเงินขายเบเกอรี่ได้ต่อรอบ */
+var BAKERY_EXPENSE_MAX = 8;
 var BAKERY_ROUNDS = ['ก่อนขาย', 'หลังขาย'];
 
 function bakerySheet_() {
@@ -1259,7 +1264,41 @@ function bakerySheet_() {
       .setFontWeight('bold').setBackground('#fce7f3').setFontColor('#9d174d');
     sh.setFrozenRows(1);
   }
+  if (typeof ensureHeaders_ === 'function') ensureHeaders_(sh, BAKERY_HEADERS);
   return sh;
+}
+
+/**
+ * ค่าใช้จ่ายที่จ่ายจากเงินขายเบเกอรี่ (เงินสด) — [{text, baht}] จากหน้าเว็บ
+ * คืน { rows: [{type, note, baht}], total, error }
+ * ประเภทเดาจากคำที่พิมพ์แบบเดียวกับไลน์ ("ค่าที่" → ค่าที่ · "ค่าพนักงาน" → ค่าแรง · อื่น ๆ เก็บคำที่พิมพ์)
+ */
+function bakeryExpenses_(list) {
+  var rows = [], total = 0;
+  var typeOf = (typeof intakeExpenseType_ === 'function') ? intakeExpenseType_ : function () { return 'อื่น ๆ'; };
+  for (var i = 0; i < (list || []).length; i++) {
+    var text = String(list[i].text || '').trim(), baht = num_(list[i].baht);
+    if (!text && !(baht > 0)) continue;
+    if (!(baht > 0)) return { error: 'ค่าใช้จ่าย "' + text + '" ยังไม่ได้ใส่จำนวนเงิน' };
+    if (!text) return { error: 'ค่าใช้จ่าย ' + baht + ' บาท ยังไม่ได้บอกว่าจ่ายค่าอะไร' };
+    var type = typeOf(text);
+    rows.push({ type: type, note: type === text ? '' : text, text: text, baht: auditRound_(baht) });
+    total += baht;
+  }
+  if (rows.length > BAKERY_EXPENSE_MAX) return { error: 'ค่าใช้จ่ายได้ไม่เกิน ' + BAKERY_EXPENSE_MAX + ' รายการต่อรอบ' };
+  return { rows: rows, total: auditRound_(total) };
+}
+
+/** ลงค่าใช้จ่ายเบเกอรี่ (จ่ายเงินสดจากเงินขาย) ใน POS_Expenses — วันเดียวกับแถวเงินเบเกอรี่ */
+function bakeryWriteExpenses_(rows, loc, who, dateStr, timeStr, id) {
+  if (!rows.length) return;
+  var sheet = getOrCreateSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_EXPENSE);
+  if (sheet.getLastRow() === 0) sheet.appendRow(EXPENSE_HEADERS);
+  ensureHeaders_(sheet, EXPENSE_HEADERS);
+  rows.forEach(function (x, k) {
+    sheet.appendRow([dateStr, timeStr, nextOrderNo_(sheet, dateStr, 'E'), loc, who, x.type, x.note, x.baht,
+                     (id || 'BKX' + Date.now()) + '-x' + k, 'เงินสด', 'เบเกอรี่']);
+  });
 }
 
 /** แถวเงินเบเกอรี่ทั้งหมด [{row, ms, day, loc, money, id}] */
@@ -1277,6 +1316,7 @@ function bakeryMoneyRows_() {
     out.push({ row: i + 1, ms: ms, day: cashBizDay_(ms), loc: String(v[i][idx['สาขา']] || '').trim(),
                cash: num_(v[i][idx['เงินสด']]), transfer: num_(v[i][idx['เงินโอน']]),
                thai: num_(v[i][idx['ไทยช่วยไทย']]), money: num_(v[i][idx['รวมเงิน']]),
+               spent: idx['จ่ายค่าใช้จ่าย'] === undefined ? 0 : num_(v[i][idx['จ่ายค่าใช้จ่าย']]),
                sold: num_(v[i][idx['ขาย(ชิ้น)']]), id: v[i][idx['bakery_id']] });
   }
   return out;
@@ -1296,11 +1336,12 @@ function bakeryIncome_() {
   });
   var out = {};
   Object.keys(last).forEach(function (k) {
-    var r = last[k], o = out[r.loc] || (out[r.loc] = { รวม: 0, เงินสด: 0, เงินโอน: 0, ไทยช่วยไทย: 0 });
+    var r = last[k], o = out[r.loc] || (out[r.loc] = { รวม: 0, เงินสด: 0, เงินโอน: 0, ไทยช่วยไทย: 0, จ่ายค่าใช้จ่าย: 0 });
     o['รวม'] = auditRound_(o['รวม'] + r.money);
     o['เงินสด'] = auditRound_(o['เงินสด'] + r.cash);
     o['เงินโอน'] = auditRound_(o['เงินโอน'] + r.transfer);
     o['ไทยช่วยไทย'] = auditRound_(o['ไทยช่วยไทย'] + r.thai);
+    o['จ่ายค่าใช้จ่าย'] = auditRound_(o['จ่ายค่าใช้จ่าย'] + (r.spent || 0));
   });
   return out;
 }
@@ -1413,6 +1454,9 @@ function handleBakeryCount_(body) {
   if (after && (blank(m.cash) || blank(m.transfer) || blank(m.thai))) {
     return { success: false, message: 'กรอกเงินสด เงินโอน ไทยช่วยไทย ให้ครบ (ไม่มีใส่ 0)' };
   }
+  // ค่าใช้จ่ายที่หยิบเงินสดจากเงินขายไปจ่าย (ค่าที่ ค่าน้ำแข็ง ...) — ไม่มีก็ไม่ต้องกรอก
+  var ex = after ? bakeryExpenses_(body.expenses) : { rows: [], total: 0 };
+  if (ex.error) return { success: false, message: ex.error };
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1480,18 +1524,22 @@ function handleBakeryCount_(body) {
       stockNotify_(loc, L.join('\n'));
       res = { success: true, message: 'บันทึกก่อนขายแล้ว', tossText: tossText };
     } else {
-      var cash = num_(m.cash), tr = num_(m.transfer), thai = num_(m.thai);
-      var money = auditRound_(cash + tr + thai), expected = auditRound_(soldN * BAKERY_PRICE);
+      var cash = num_(m.cash), tr = num_(m.transfer), thai = num_(m.thai), spent = ex.total;
+      // ยอดขายเต็ม = เงินที่อยู่ในมือ + เงินสดที่หยิบไปจ่ายค่าใช้จ่ายแล้ว
+      var money = auditRound_(cash + tr + thai + spent), expected = auditRound_(soldN * BAKERY_PRICE);
       var diff = auditRound_(money - expected), ok = diff === 0;
       var detail = sold.map(function (x) { return x.name + ' ' + x.qty; }).join(', ');
       // ลงย้อนหลัง: เงินเป็นของวันนั้น (23:59:59) ไม่ไปทับหลังขายของวันนี้
+      var bDate = late ? forDay : Utilities.formatDate(now, auditTz_(), 'yyyy-MM-dd');
+      var bTime = late ? '23:59:59' : Utilities.formatDate(now, auditTz_(), 'HH:mm:ss');
       bakerySheet_().appendRow([
-        late ? forDay : Utilities.formatDate(now, auditTz_(), 'yyyy-MM-dd'),
-        late ? '23:59:59' : Utilities.formatDate(now, auditTz_(), 'HH:mm:ss'),
+        bDate, bTime,
         loc, session.name, cash, tr, thai, money, soldN, expected, diff,
         ok ? 'ตรง' : (diff < 0 ? 'ขาด' : 'เกิน'),
-        detail + (late ? ' · ลงย้อนหลัง ' + Utilities.formatDate(now, auditTz_(), 'd/M HH:mm') : ''), body.id || ''
+        detail + (late ? ' · ลงย้อนหลัง ' + Utilities.formatDate(now, auditTz_(), 'd/M HH:mm') : ''), body.id || '',
+        spent || ''
       ]);
+      bakeryWriteExpenses_(ex.rows, loc, session.name, bDate, bTime, body.id);
       L.push((ok ? '✅ ' : '⚠️ ') + 'เบเกอรี่ปิดร้าน' + (late ? ' (ลงย้อนหลัง ของวันที่ ' + late.dm + ')' : '') +
              ' — ' + loc + ' — ' + (ok ? 'เงินตรง' : 'เงินไม่ตรง'));
       L.push(Utilities.formatDate(now, auditTz_(), 'd/M/yyyy HH:mm') + ' โดย ' + session.name, '');
@@ -1500,6 +1548,10 @@ function handleBakeryCount_(body) {
       sold.forEach(function (x) { L.push('• ' + x.name + ' ' + x.qty); });
       L.push('', 'ได้จริง ' + auditBaht_(money) + ' บาท');
       L.push('  เงินสด ' + auditBaht_(cash) + ' · เงินโอน ' + auditBaht_(tr) + ' · ไทยช่วยไทย ' + auditBaht_(thai));
+      if (spent) {
+        L.push('  + จ่ายค่าใช้จ่ายจากเงินขาย (เงินสด) ' + auditBaht_(spent));
+        ex.rows.forEach(function (x) { L.push('     · ' + x.text + ' ' + auditBaht_(x.baht)); });
+      }
       if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
       if (overs.length) {
         L.push('', 'นับได้เกินที่ควรเหลือ (ลืมลงของเข้าร้าน?)');
