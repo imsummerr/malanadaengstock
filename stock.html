@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-12f';
+const PAGE_BUILD = '2026-10-13a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -405,7 +405,8 @@ const packedItems = loc => itemsFor(loc).filter(i => !isRaw(i));
  * ของที่แพ็คแล้วไม่โผล่ เพราะมันเกิดจากแท็บแพ็คของ ไม่ได้ซื้อเข้ามาตรง ๆ
  * ถ้าโชว์ทั้งคู่ พนักงานจะเจอ "ดอลลี่" กับ "ดอลลี่ (ดิบ)" แล้วเลือกผิด
  */
-const buyItems = loc => itemsFor(loc).filter(i => !isPacked(i));
+// ยกเว้นของพร้อมส่ง (ready — ฟองเต้าหู้ม้วน) ไม่มีของดิบ ซื้อเข้ามาเป็นตัวมันเองเลย
+const buyItems = loc => itemsFor(loc).filter(i => !isPacked(i) || i.ready);
 // ของเสียตัดวัตถุดิบได้ด้วย — ของแช่แข็งละลายแล้วเหลือน้อยกว่าที่ซื้อ
 // ส่วนที่หายไปคือน้ำแข็ง ต้องตัดออก ไม่งั้นยอดครัวกลางบวมค้างไว้ตลอด
 const wasteItems  = loc => itemsFor(loc);
@@ -1035,7 +1036,8 @@ async function submitMove(kind) {
 /* ── แพ็คของ — ตัดของดิบ เพิ่มของที่แพ็คแล้ว ── */
 
 /** ของแพ็คที่ครัวกลางทำได้ */
-const packOutputs = () => packedItems(D.central).filter(i => !i.bakery);   // เบเกอรี่ไม่ต้องแพ็ค
+// เบเกอรี่กับของพร้อมส่ง (ฟองเต้าหู้ม้วน) ไม่ต้องแพ็ค
+const packOutputs = () => packedItems(D.central).filter(i => !i.bakery && !i.ready);
 
 /**
  * กรอกเศษเกินหนึ่งแพ็ค ให้ทดขึ้นไปเป็นแพ็คให้เลย

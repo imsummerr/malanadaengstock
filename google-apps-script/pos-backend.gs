@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-12f · ควรจ่าย = ของที่ขาย/เสียไปแล้ว · ค้างชำระ = ของที่ยังอยู่ในร้าน';
+var BACKEND_VERSION = '2026-10-13a · ฟองเต้าหู้ม้วนไม่มีของดิบ ซื้อแล้วส่งสาขาได้เลย';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -1629,7 +1629,9 @@ function getStockItemsRaw_() {
       scope:    String(v[i][map['ใช้ที่']] || '').trim(),
       level:    isLevelItem_(name),
       free:     isFreeItem_(name),
-      bakery:   isBakeryItem_(name)
+      bakery:   isBakeryItem_(name),
+      // ซื้อมาพร้อมส่ง ไม่ต้องแพ็ค — หน้าเว็บให้ลงของเข้าครัวกลางได้ และไม่ขึ้นในแพ็คของ
+      ready:    isReadyItem_(name)
     });
   }
   return out;
@@ -2160,7 +2162,8 @@ function handleStockIn_(body) {
   // ของแพ็คเกิดจากแท็บแพ็คของ ไม่ได้ซื้อเข้ามาตรง ๆ
   // ถ้ารับตรงนี้ วัตถุดิบจะไม่ถูกตัด ยอดครัวกลางบวมค้าง แล้วต้นทุนต่อไม้ก็ผิด
   // หน้าเว็บซ่อนให้อยู่แล้ว แต่กันไว้ที่เซิร์ฟเวอร์ด้วย เผื่อยิงเข้ามาทางอื่น
-  if (p.item.kind === KIND_PACKED) {
+  // ยกเว้นของพร้อมส่ง (ฟองเต้าหู้ม้วน) ไม่มีของดิบ ซื้อมาเป็นตัวมันเองเลย
+  if (p.item.kind === KIND_PACKED && !p.item.ready) {
     return { success: false, message: '"' + p.item.name + '" เป็นของที่แพ็คเอง ' +
              'ให้ลงในแท็บ "แพ็คของ" — ของเข้าครัวกลางรับเฉพาะของที่ซื้อมา' };
   }
@@ -2868,6 +2871,15 @@ var PIECES_PER_STICK = {
 /** ราคาขายต่อไม้/ต่อถุง ถ้าไม่ได้ระบุไว้ในตาราง */
 var PRICE_DEFAULT = 10;
 
+/**
+ * ของที่ซื้อมาพร้อมส่งสาขาเลย — ไม่มีของดิบ ไม่ต้องแพ็ค
+ * ซื้อเข้าครัวกลางเป็นชื่อนี้ตรง ๆ แล้วส่งร้านได้ทันที (แบบเดียวกับเบเกอรี่)
+ * 13/10 เจ้าของ: "ฟองเต้าหู้ ไม่มีดิบ" — ซื้อเป็นกล่อง ส่งสาขาก็ทั้งกล่อง
+ * ของดิบเดิม ("ฟองเต้าหู้ม้วน (ดิบ)") รวมเข้าชื่อนี้ผ่าน ITEM_RENAME ตอนรัน fixItemList
+ */
+var READY_ITEMS = { 'ฟองเต้าหู้ม้วน': true };
+function isReadyItem_(name) { return READY_ITEMS.hasOwnProperty(String(name || '').trim()); }
+
 /** ของดิบใช้ชื่อเดียวกับของแพ็ค เลยต่อท้ายให้ต่างกัน */
 var RAW_SUFFIX = ' (ดิบ)';
 function rawName_(base) { return String(base || '').trim() + RAW_SUFFIX; }
@@ -3102,12 +3114,16 @@ function itemCatalogue_() {
   function addPacked(row, subUnit) {
     var name = row[0], spec = row[1], note = row[2];
     var per = PACK_SIZE_EXCEPTION[name] || PACK_SIZE;
+    var packUnit = (RAW_PACK[name] && !RAW_PACK[name].rawOnly && RAW_PACK[name].packUnit) || 'แพ็ค';
+    var ready = isReadyItem_(name);
+    if (!note && ready) note = 'ซื้อมาพร้อมส่ง ไม่มีของดิบ ไม่ต้องแพ็ค · ' + packUnit + 'ละ ' + per + ' ' + subUnit;
     // ตัวที่แพ็คไม่เท่าชาวบ้าน เขียนบอกไว้ในชีตเลย จะได้ไม่ต้องจำ
     if (!note && per !== PACK_SIZE) note = 'แพ็คละ ' + per + ' ' + subUnit;
 
     // ไม่ได้ระบุวัตถุดิบ = ของที่ซื้อมาแล้วเอามาเสียบ/จัดใส่ถุงเอง
     // ตัดจากของดิบชื่อเดียวกัน ฟอร์มแพ็คไม่ต้องถามว่าใช้อะไร
-    var bases = (spec && spec.length) ? spec : [name];
+    // ของพร้อมส่ง (READY_ITEMS) ไม่มีของดิบเลย ซื้อเข้ามาเป็นตัวมันเอง
+    var bases = ready ? [] : (spec && spec.length) ? spec : [name];
     // ชื่อที่ขึ้นต้นด้วย @ คือกลุ่ม ต้องงอกของดิบทุกตัวในกลุ่ม
     bases.forEach(function (b) {
       if (String(b).charAt(0) === RAW_GROUP_MARK) {
@@ -3120,7 +3136,7 @@ function itemCatalogue_() {
     out.push({
       name: name, kind: KIND_PACKED,
       // ของที่ส่งไปทั้งถุงจากโรงงาน (มาม่าเปล่า) ชั้นบนเรียกว่าถุงตามของจริง
-      subUnit: subUnit, packUnit: (RAW_PACK[name] && !RAW_PACK[name].rawOnly && RAW_PACK[name].packUnit) || 'แพ็ค', perPack: per,
+      subUnit: subUnit, packUnit: packUnit, perPack: per,
       perStick: PIECES_PER_STICK[name] || 1,
       // ใส่ 0 ไว้ใน PRICE_EXCEPTION = ของแถม ไม่ใช่ "ไม่ได้ตั้งราคา"
       price: (name in PRICE_EXCEPTION) ? PRICE_EXCEPTION[name] : PRICE_DEFAULT,
@@ -3397,6 +3413,8 @@ var ITEM_RENAME = {
   'สาหร่ายกระปุก':        'สาหร่าย (ดิบ)',
   'ไส้กรอกพันเบคอน':     'เบคอนพันไส้กรอก',
   'ฟองเต้าหู้':           'ฟองเต้าหู้ม้วน',
+  // 13/10 ฟองเต้าหู้ม้วนไม่มีของดิบ (READY_ITEMS) — ที่ซื้อมาแล้วเป็นของพร้อมส่ง
+  'ฟองเต้าหู้ม้วน (ดิบ)':   'ฟองเต้าหู้ม้วน',
   'สามชั้นพันเห็ดเข็ม':    'หมูพันเห็ดเข็มทอง',
   'สามชั้นพันเห็ดเข็มทอง': 'หมูพันเห็ดเข็มทอง',
   'สามชั้นพันสาหร่าย':    'หมูพันสาหร่าย',
@@ -3598,6 +3616,23 @@ function mergeItemNames() {
     if (hit) { rng.setValues(v); histCount += hit; }
     Logger.log('  "' + name + '" เปลี่ยนชื่อ ' + hit + ' แถว');
   });
+  // ชีตซื้อของเข้า — บัญชีจับราคาที่ซื้อกับของเข้าด้วย messageId + ชื่อ ต้องเปลี่ยนตามกัน
+  // ไม่ใช้ ensureCols_ เพราะชีตนี้ไม่ได้ใช้คอลัมน์ชุด MOVE_COLS
+  var buy = ss.getSheetByName(typeof INTAKE_SHEET === 'string' ? INTAKE_SHEET : 'ซื้อของเข้า');
+  if (buy && buy.getLastRow() > 1) {
+    var bcol = buy.getRange(1, 1, 1, buy.getLastColumn()).getValues()[0]
+      .map(function (x) { return String(x).trim(); }).indexOf('รายการ');
+    if (bcol !== -1) {
+      var brng = buy.getRange(2, bcol + 1, buy.getLastRow() - 1, 1);
+      var bv = brng.getValues(), bhit = 0;
+      for (var b = 0; b < bv.length; b++) {
+        var bn = String(bv[b][0] || '').trim();
+        if (ITEM_RENAME[bn]) { bv[b][0] = ITEM_RENAME[bn]; bhit++; }
+      }
+      if (bhit) { brng.setValues(bv); histCount += bhit; }
+      Logger.log('  "' + buy.getName() + '" เปลี่ยนชื่อ ' + bhit + ' แถว');
+    }
+  }
 
   Logger.log('─────────────────────────────');
   Logger.log('เปลี่ยนชื่อ ' + renamed.length + ' รายการ' + (renamed.length ? ':\n  ' + renamed.join('\n  ') : ''));
