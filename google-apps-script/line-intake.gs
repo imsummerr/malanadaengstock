@@ -634,6 +634,15 @@ function intakeDayHead_(line) {
   return { day: intakeDateKeyOf_(m[1], m[2], m[3]), rest: String(m[4] || '').trim() };
 }
 
+/** วันทำการ 'yyyy-MM-dd' → เวลาที่จะลงค่าใช้จ่าย: เที่ยงของวันนั้น (ตี 4 + 8 ชม.) แต่ไม่เลยตอนนี้ */
+function intakeDayStamp_(day, now) {
+  var ms = (typeof cashDayStart_ === 'function') ? cashDayStart_(day) + 8 * 3600000
+                                                  : new Date(day + 'T12:00:00+07:00').getTime();
+  ms = Math.min(ms, now.getTime());
+  return { date: Utilities.formatDate(new Date(ms), intakeTz_(), 'yyyy-MM-dd'),
+           time: Utilities.formatDate(new Date(ms), intakeTz_(), 'HH:mm:ss') };
+}
+
 /** วันที่ในบรรทัด — คำนำหน้าวันเข้า/ผลิตใส่หรือไม่ใส่ก็ได้ · ตามด้วยหน่วย (1/2 โล) ไม่นับเป็นวันที่ */
 var INTAKE_DATE_RE = /(?:^|\s)(?:วันเข้า|เข้าวันที่|วันที่เข้า|วันผลิต|ผลิต|เข้า)?\s*(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?(?!\s*(?:กก|กิโล|โล|กรัม|ขีด|ลิตร|มล|ถุง|แพ็ค|แพ้ค|แพค|ชิ้น|อัน|ไม้|ลูก|ชุด|บาท|฿|ห่อ|กล่อง|ลัง|ขวด|ใบ|\d))(?=\s|$)/;
 /** วัน/เดือน(/ปี) → 'yyyy-MM-dd' · ไม่บอกปี = ปีนี้ ถ้าเลยวันนี้ไปแล้วแปลว่าปีที่แล้ว (พิมพ์ 28/12 ตอนมกราคม) */
@@ -2019,9 +2028,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
 
       if (it.expense || intakeLooksLikeExpense_(it, names)) {
         if (!expSheet) expSheet = intakeExpenseSheet_();
-        // บรรทัดวันที่บนหัว = ค่าใช้จ่ายของวันนั้น (เวลา 12:00 อยู่ในช่วงขายของวันนั้นเสมอ)
-        var eDay = it.day || date;
-        var eTime = eDay === date ? time : '12:00:00';
+        // บรรทัดวันที่บนหัว = ค่าใช้จ่ายของวันนั้น — เวลาเที่ยงของวันทำการนั้น แต่ไม่เลยตอนนี้
+        // (แจ้งหลังเที่ยงคืนของวันเดียวกัน = เวลาตอนนี้ ยังเป็นวันทำการเดิม)
+        var eSt = it.day ? intakeDayStamp_(it.day, now) : { date: date, time: time };
+        var eDay = eSt.date, eTime = eSt.time;
         if (expSeqBy[eDay] === undefined) expSeqBy[eDay] = intakeSeqOf_(expSheet, eDay);
         expSeq = ++expSeqBy[eDay];
         var type = intakeExpenseType_(it.raw);

@@ -311,7 +311,8 @@
         <!-- 13/10 เจ้าของ: ค่าใช้จ่าย (ทั้งเงินสด/โอน/บัตร) แจ้งในไลน์ ไม่ต้องกรอกหน้า POS — กันลงซ้ำสองที่ -->
         <button onclick="openExpense()" class="key btn-ghost hidden" id="btn-expense"
           style="padding:13px 8px;font-size:14.5px;">💸 บันทึกค่าใช้จ่าย</button>
-        <button onclick="openClose()" class="key btn-ghost" id="btn-close"
+        <!-- 13/10 เจ้าของ: เงินสดคงเหลือแจ้งในไลน์ ("เงินสดคงเหลือ 450") ไม่ต้องกรอกหน้า POS -->
+        <button onclick="openClose()" class="key btn-ghost hidden" id="btn-close"
           style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">💵 ปิดร้าน นับเงิน</button>
         <button onclick="openHeld()" class="key btn-ghost hidden" id="btn-held"
           style="grid-column:1/-1;padding:13px 8px;font-size:14.5px;">⏸️ บิลที่พักไว้</button>
@@ -2154,9 +2155,9 @@ async function loadLate() {
 function showLate() {
   const m = LATE && LATE.mala, b = LATE && LATE.bakery;
   const rows = [];
-  if (m && m.cash) rows.push('💵 <b>ยังไม่ได้กรอกเงินปิดร้านของ ' + m.dm + '</b> — นับเงินในลิ้นชักตอนนี้ แล้วกดปุ่ม 💵 ปิดร้าน นับเงิน');
+  // เงินสดคงเหลือ เจ้าของแจ้งในไลน์แล้ว (13/10) — ไม่เตือนพนักงานให้กรอกในหน้า POS
   if (m && m.count) rows.push('📋 <b>เช็คสต็อกของวันที่ ' + m.dm + ' ก่อนขายวันที่ ' + (m.today || 'วันนี้') + '</b> — นับในระบบสต็อก แท็บเช็คสต็อก');
-  if (m) rows.push('<span style="font-size:12.5px">ทำก่อนขายบิลแรกของวันนี้ ระบบจะลงเป็นของ ' + m.dm + ' ให้เอง</span>');
+  if (m && m.count) rows.push('<span style="font-size:12.5px">ทำก่อนขายบิลแรกของวันนี้ ระบบจะลงเป็นของ ' + m.dm + ' ให้เอง</span>');
   if (b) rows.push('🍡 <b>เบเกอรี่ยังไม่ได้นับหลังขายของ ' + b.dm + '</b> — ระบบสต็อก แท็บเบเกอรี่ → หลังขาย → ' + b.dm + ' (ลืมนับ)');
   const bar = document.getElementById('late-bar');
   bar.innerHTML = rows.length ? '⏰ <b>ลืมลงของวันก่อน</b><br>' + rows.join('<br>') : '';

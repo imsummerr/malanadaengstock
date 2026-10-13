@@ -1213,7 +1213,8 @@ function lateStatus_(loc, nowMs) {
     var prev = openToday ? '' : cashPrevSalesDay_(loc, today);
     if (prev && !(typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(prev)), loc))) {
       var count = !cashCloseCount_(loc, prev).countMs, cash = !cashRowsForDay_(loc, prev).length;
-      if (count || cash) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash, today: dmOf(today) };
+      // เงินสดคงเหลือแจ้งในไลน์ (13/10) ไม่ใช่งานพนักงานแล้ว — เตือนเฉพาะลืมเช็คสต็อก (cash บอกไว้เฉย ๆ)
+      if (count) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash, today: dmOf(today) };
     }
   } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
   // 13/10: วันขายล่าสุดก่อนวันนี้ ยังไม่แจ้งค่าใช้จ่ายในไลน์ — สรุปยอดของวันนั้นรอข้อนี้ (เตือนเจ้าของ ไม่มีตัวเลข)
