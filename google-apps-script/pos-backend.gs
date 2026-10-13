@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-13f · มันเทศ ดิบเป็นถุง แพ็คแล้วเป็นอัน · ปิดร้านสรุปสั้น';
+var BACKEND_VERSION = '2026-10-13g · สรุปยอดรายวันรอเช็คสต็อก+ค่าใช้จ่ายในไลน์ · เงินสดคงเหลือทางไลน์';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2473,23 +2473,24 @@ function handleStockCount_(body) {
   // เทียบมูลค่าของที่หายกับเงินที่ได้มา แล้วแจ้งกลุ่มถ้าไม่ตรง (stock-audit.gs)
   // ส่งไม่สำเร็จหรือไม่มีไฟล์นั้น ก็ไม่ทำให้การนับล้มเหลว — ของลงชีตแล้ว
   var shrink = null, cash = null;
-  // สาขา: สรุปข้อความเดียว — ควรได้ (ตามของที่ออก) / ได้จริง (POS) / หายเท่าไหร่ / เงินสดควรมี
-  // (ถ้ากรอกเงินปิดร้านไว้แล้วก็เทียบเงินในข้อความเดียวกัน) · ไม่ใช่รอบปิดร้าน (นับกลางวัน) = แบบเดิม
-  if (!isBase && loc !== CENTRAL && typeof cashCheckAfterCount_ === 'function') {
-    try { cash = cashCheckAfterCount_(loc, now, { always: true }); }
-    catch (e) { Logger.log('cashCheckAfterCount_: ' + e.message); }
+  // สาขา (13/10): รอบนี้ปิดยอดของวันไหน → สรุปยอดของวันนั้นเมื่อครบ (เช็คสต็อก + นับเบเกอรี่ + ค่าใช้จ่ายในไลน์)
+  // ยังไม่ครบ = บอกว่ารออะไรต่อท้ายข้อความนับ ไม่สรุปตัวเลข · นับกลางวัน (ไม่ใช่รอบปิดร้าน) = ไม่สรุป
+  if (!isBase && loc !== CENTRAL && typeof daySummaryAfter_ === 'function') {
+    try {
+      var cday = closeDayOfCount_(loc, now.getTime());
+      if (cday) {
+        cash = daySummaryAfter_(loc, cday, { source: 'count' });
+        if (cash && !cash.sent && !cash.none) stockNotify_(loc, '⏳ ยังไม่สรุปยอดวันที่ ' + cash.st.dm + ' — รอ ' + cash.need.join(' · '));
+      }
+    } catch (e) { Logger.log('daySummaryAfter_: ' + e.message); }
   }
-  // รอบฐานไม่มีอะไรให้เทียบ ข้อความตั้งยอดตั้งต้นบอกไปแล้ว ไม่ต้องส่งซ้ำ
-  if (!isBase && !cash && typeof auditAfterCount_ === 'function') {
+  // ครัวกลาง: ของหายแบบเดิม (ครัวกลางไม่ได้ขาย) · รอบฐานไม่มีอะไรให้เทียบ
+  if (!isBase && loc === CENTRAL && typeof auditAfterCount_ === 'function') {
     try { shrink = auditAfterCount_(loc, counts, now); }
     catch (e) { Logger.log('auditAfterCount_: ' + e.message); }
   }
 
-  // ปิดร้าน — ถ้าวันนี้กรอกเงินสดใน POS ไว้แล้ว เทียบเงินที่ควรมีกับที่นับได้เลย
-  if (!cash && (isBase || loc === CENTRAL) && typeof cashCheckAfterCount_ === 'function') {
-    try { cash = cashCheckAfterCount_(loc, now); }
-    catch (e) { Logger.log('cashCheckAfterCount_: ' + e.message); }
-  }
+
 
   // ของที่ยังเหลือแล้ววันนี้เป็นวันสุดท้ายที่ขายได้ — บอกให้ทิ้งก่อนขายรอบหน้า (line-expiry-alert.gs)
   var toss = [], tossText = '';
@@ -2512,7 +2513,7 @@ function handleStockCount_(body) {
            base: isBase, refill: refill.length,
            lineSent: line.sent, lineMsg: line.message,
            // ตัวเลขเงิน/ของหายให้เจ้าของร้านเท่านั้น — พนักงานเห็นแค่ว่าแจ้งไลน์แล้ว
-           shrink: session.role === 'owner' ? shrink : null, cashChecked: !!(cash && cash.expected != null),
+           shrink: session.role === 'owner' ? shrink : null, cashChecked: !!(cash && cash.sent),
            toss: toss.length, tossText: tossText };
 }
 

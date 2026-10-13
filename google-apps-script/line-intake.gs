@@ -82,12 +82,11 @@ var INTAKE_EXPENSE_ALIAS = {
 };
 
 /**
- * วิธีจ่าย — ที่เขียนในไลน์มีแค่ 2 อย่าง ไม่เขียนว่าบัตร = โอน
+ * วิธีจ่าย — เงินสด / โอน / กีบ / บัตร · ไม่เขียน = โอน
  *
- * เงินสดไม่มีทางนี้เลย เงินสดคือเงินหน้าร้านที่พนักงานสาขาหยิบจากลิ้นชักไปจ่าย
- * ซึ่งลงในหน้า POS อยู่แล้ว ถ้ารับ "เงินสด" ทางไลน์ด้วย ยอดจะถูกหักสองรอบ
- * แต่ยังต้องจับคำไว้ เพื่อตัดออกจากชื่อรายการ ไม่ให้กลายเป็น "ปลาดอลลี่ เงินสด"
- * แล้วเตือนคนพิมพ์ว่าให้ไปลงหน้า POS แทน
+ * 13/10 เจ้าของ: ค่าใช้จ่ายทุกอย่างแจ้งในไลน์ (หน้า POS ไม่มีปุ่มค่าใช้จ่ายแล้ว)
+ * เดิมไลน์ไม่รับ "เงินสด" เพราะเงินสดหน้าร้านลงในหน้า POS — ตอนนี้รับแล้ว
+ * เงินสด = หยิบจากเงินขาย ระบบหักออกจากเงินสดที่ควรมีตอนสรุปยอด (หม่าล่าหักลิ้นชัก · เบเกอรี่บวกกลับ)
  *
  * เรียงตามลำดับที่ตรวจ เจอตัวไหนก่อนใช้ตัวนั้น
  * ไม่ใส่คำว่า "สด" เดี่ยว ๆ เพราะไปชนกับ "ค่าของสด"
@@ -95,7 +94,8 @@ var INTAKE_EXPENSE_ALIAS = {
 var INTAKE_PAY_PATTERNS = [
   { re: /บัตรเครดิต|เครดิต|บัตร|credit\s*card|credit/gi, name: 'บัตรเครดิต' },
   { re: /โอนจ่าย|จ่ายโอน|โอน|พร้อมเพย์|promptpay|transfer/gi, name: 'โอน' },
-  { re: /เงินสด|cash/gi, name: 'เงินสด', reject: true }
+  { re: /เงินกีบ|กีบ|\bkip\b/gi, name: 'กีบ' },
+  { re: /เงินสด|cash/gi, name: 'เงินสด' }
 ];
 
 /** ไม่ได้เขียนว่าบัตร = โอน — ทั้งซื้อของและค่าใช้จ่าย */
@@ -263,7 +263,7 @@ function intakeOnText_(ev, ctx) {
   if (quiet && mode !== 'all') {
     var names = intakeItemNames_();
     items = items.filter(function (it) {
-      if (intakeConfident_(it, names)) return true;
+      if (it.noExp || it.cashLeft != null || intakeConfident_(it, names)) return true;
       skipped.push(it.raw);       // ข้ามไป แต่ต้องบอกให้รู้ ไม่ใช่หายเงียบ
       return false;
     });
@@ -549,11 +549,20 @@ function intakeHelpText_() {
          '🍡 ค่าใช้จ่ายเบเกอรี่ — เติมคำว่า "เบเกอรี่" (ไม่เขียน = หม่าล่า)\n' +
          '   สาขาทรัพย์พัฒนาเบเกอรี่ ค่ารถ 50\n' +
          '   (หรือหัวบรรทัดแรก: ค่าใช้จ่าย ทรัพย์พัฒนา เบเกอรี่)\n\n' +
-         '💳 รูดบัตร — เติมคำว่า "บัตร" ท้ายบรรทัดนั้น\n' +
+         '💳 วิธีจ่าย — เติมท้ายบรรทัด: เงินสด · โอน · กีบ · บัตร\n' +
+         '   ค่าน้ำแข็ง 10 เงินสด\n' +
          '   ค่าแก๊ส 450 บัตร\n' +
-         '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่ลามบรรทัดอื่น)\n' +
-         '   ไม่พิมพ์อะไร = โอน · ทางไลน์มีแค่ 2 อย่างนี้\n' +
-         '   จ่ายเงินสดหน้าร้าน ลงในหน้า POS ไม่ใช่ทางนี้\n\n' +
+         '   (มีผลเฉพาะบรรทัดที่พิมพ์ ไม่พิมพ์ = โอน)\n' +
+         '   เงินสด = หยิบจากเงินขาย ระบบหักจากเงินสดที่ควรมีให้\n\n' +
+         '📅 ค่าใช้จ่ายรายวัน + เงินสดคงเหลือ — เขียนวันที่ไว้บรรทัดแรก ครั้งเดียว\n' +
+         '   10/10/2026\n' +
+         '   หม่าล่า ทรัพย์\n' +
+         '   ค่าที่ 180 โอน\n' +
+         '   ค่าน้ำแข็ง 10 เงินสด\n' +
+         '   เงินสดคงเหลือ 450\n' +
+         '   เบเกอรี่ ทรัพย์\n' +
+         '   ค่าที่ 60 เงินสด\n' +
+         '   (ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · เช็คสต็อกปิดร้านแล้วด้วย = สรุปยอดตรง/ขาดให้เลย)\n\n' +
          '💸 สาขาคืนเงินครัวกลาง — ขึ้นต้นด้วย "คืนเงิน"\n' +
          '   คืนเงิน ทรัพย์พัฒนา 500\n' +
          '   คืนเงิน 500 เงินสด\n' +
@@ -608,13 +617,32 @@ var INTAKE_PERKG_RE =
 var INTAKE_PERBAG_RE =
   /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(อัน|ห่อ|ก้อน|ชิ้น|ซอง)?(?!\s*(?:\d|บาท|฿|บ\.))/;
 
+/**
+ * บรรทัดวันที่บนหัวข้อความค่าใช้จ่าย (13/10) — "10/10/2026" · "วันที่ 10/10" · "10/10/69" · "10/10 หม่าล่า ทรัพย์"
+ * ค่าใช้จ่ายข้างล่างลงเป็นของวันนั้น และถือว่าแจ้งค่าใช้จ่ายของวันนั้นครบแล้ว (สรุปยอดได้)
+ * คืน { day: 'yyyy-MM-dd', rest } หรือ null · ที่เหลือมีตัวเลข = ไม่ใช่หัว (เป็นรายการ)
+ */
+var INTAKE_DAY_HEAD_RE = /^\s*(?:ค่าใช้จ่าย|รายจ่าย)?\s*(?:ของ|ประจำ)?\s*(?:วันที่|วัน)?\s*(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{2,4}))?(?!\d)\s*(.*)$/;
+var INTAKE_NO_EXP_RE = /ไม่มีค่าใช้จ่าย|ไม่มีรายจ่าย/;
+/** "เงินสดคงเหลือ 450" — เงินสดที่นับได้ตอนปิดร้านหม่าล่า (แทนกรอกในหน้า POS) · 13/10 */
+var INTAKE_CASH_LEFT_RE = /(?:เงินสด\s*คงเหลือ|เงิน\s*คงเหลือ|คงเหลือ\s*เงินสด|เงินสด\s*เหลือ|เงินสด\s*ในลิ้นชัก|เงิน\s*ในลิ้นชัก|เงินสด\s*นับได้|เงินสด\s*ปิดร้าน)\D{0,20}?(\d+(?:\.\d+)?)/;
+function intakeDayHead_(line) {
+  var m = String(line || '').trim().match(INTAKE_DAY_HEAD_RE);
+  if (!m || /\d/.test(m[4])) return null;
+  if (/บาท|฿|โล|กก|กิโล|กรัม|ถุง|แพ็ค|ไม้|อัน/.test(m[4])) return null;          // "10.5 บาท" ไม่ใช่วันที่
+  var d = Number(m[1]), mo = Number(m[2]);
+  if (d < 1 || d > 31 || mo < 1 || mo > 12) return null;
+  return { day: intakeDateKeyOf_(m[1], m[2], m[3]), rest: String(m[4] || '').trim() };
+}
+
 /** วันที่ในบรรทัด — คำนำหน้าวันเข้า/ผลิตใส่หรือไม่ใส่ก็ได้ · ตามด้วยหน่วย (1/2 โล) ไม่นับเป็นวันที่ */
 var INTAKE_DATE_RE = /(?:^|\s)(?:วันเข้า|เข้าวันที่|วันที่เข้า|วันผลิต|ผลิต|เข้า)?\s*(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?(?!\s*(?:กก|กิโล|โล|กรัม|ขีด|ลิตร|มล|ถุง|แพ็ค|แพ้ค|แพค|ชิ้น|อัน|ไม้|ลูก|ชุด|บาท|฿|ห่อ|กล่อง|ลัง|ขวด|ใบ|\d))(?=\s|$)/;
 /** วัน/เดือน(/ปี) → 'yyyy-MM-dd' · ไม่บอกปี = ปีนี้ ถ้าเลยวันนี้ไปแล้วแปลว่าปีที่แล้ว (พิมพ์ 28/12 ตอนมกราคม) */
 function intakeDateKeyOf_(d, m, y) {
   var now = new Date();
   var yy = y ? Number(y) : Number(Utilities.formatDate(now, intakeTz_(), 'yyyy'));
-  if (yy < 100) yy += 2000;
+  // ปีสองหลัก: 26 = 2026 (ค.ศ.) · 69 = 2569 (พ.ศ.) = 2026 — คนไทยพิมพ์ พ.ศ. ย่อบ่อย
+  if (yy < 100) yy = yy >= 50 ? 2500 + yy : 2000 + yy;
   if (yy > 2400) yy -= 543;                                   // พ.ศ.
   var key = yy + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
   if (!y && key > Utilities.formatDate(new Date(now.getTime() + 86400000), intakeTz_(), 'yyyy-MM-dd')) {
@@ -835,14 +863,34 @@ function intakeParseText_(text) {
   var rows = clean.split(/[\n\r]+/);
   var headBranch = '';     // บรรทัดหัว "ค่าใช้จ่าย ทรัพย์พัฒนา" — ใช้กับบรรทัดถัดไปทั้งหมด
   var headBiz = '';        // หัวบอกธุรกิจด้วย ("ทรัพย์พัฒนา เบเกอรี่") — หัวใหม่ไม่บอก = หม่าล่า
+  var headDay = '';        // บรรทัดวันที่ "10/10/2026" — ค่าใช้จ่ายข้างล่างเป็นของวันนั้น (13/10)
   for (var r = 0; r < rows.length && out.length < INTAKE_MAX_ITEMS; r++) {
     var hl = intakeStripPrefix_(rows[r]) !== null ? intakeStripPrefix_(rows[r]) : rows[r];
+    var dh = intakeDayHead_(hl);
+    if (dh) {
+      headDay = dh.day;
+      if (dh.rest) { var dhb = intakeBranchHeader_(dh.rest); if (dhb !== null) { headBranch = dhb; headBiz = intakeBizOf_(dh.rest).biz; } }
+      continue;
+    }
     var head = intakeBranchHeader_(hl);
     if (head !== null) { headBranch = head; headBiz = intakeBizOf_(hl).biz; continue; }
+    // "เงินสดคงเหลือ 450" — ลงเป็นเงินปิดร้านหม่าล่าของวันนั้น ไม่ใช่ค่าใช้จ่าย
+    var cl = hl.match(INTAKE_CASH_LEFT_RE);
+    if (cl) {
+      out.push({ cashLeft: Number(cl[1]), raw: 'เงินสดคงเหลือ', line: r, headBranch: headBranch, headBiz: headBiz,
+                 branch: intakeBranchOf_(hl).loc || '', biz: intakeBizOf_(hl).biz || '', day: headDay });
+      continue;
+    }
+    // "ไม่มีค่าใช้จ่าย" — วันนั้นไม่มีอะไรจ่าย แต่แจ้งแล้ว (สรุปยอดของวันนั้นได้)
+    if (INTAKE_NO_EXP_RE.test(hl) && !/\d/.test(hl.replace(INTAKE_NO_EXP_RE, ''))) {
+      out.push({ noExp: true, raw: 'ไม่มีค่าใช้จ่าย', line: r, headBranch: headBranch, headBiz: headBiz,
+                 branch: intakeBranchOf_(hl.replace(INTAKE_NO_EXP_RE, ' ')).loc || '', day: headDay });
+      continue;
+    }
     var cols = rows[r].split(/[,;]+/);
     for (var c = 0; c < cols.length && out.length < INTAKE_MAX_ITEMS; c++) {
       var one = intakeParseLine_(cols[c]);
-      if (one) { one.line = r; one.headBranch = headBranch; one.headBiz = headBiz; out.push(one); }
+      if (one) { one.line = r; one.headBranch = headBranch; one.headBiz = headBiz; one.day = headDay; out.push(one); }
     }
   }
 
@@ -1888,6 +1936,8 @@ function intakeSeqOf_(sh, date) {
 function intakePayTag_(pay) {
   if (pay === 'บัตรเครดิต') return ' 💳';
   if (pay === 'โอน')        return ' 🏦';
+  if (pay === 'เงินสด')     return ' 💵';
+  if (pay === 'กีบ')        return ' (กีบ)';
   return '';
 }
 
@@ -1915,7 +1965,17 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
   var buyTotal = 0, expTotal = 0, cardTotal = 0, rndTotal = 0;
   var unmatched = false, saidCash = false;
   var unknown = [];   // ชื่อที่ไม่มีในรายการสินค้า — ต้องบอกให้ชัด ไม่งั้นนึกว่าเข้าสต็อกแล้ว
-  var saved = { p: [], e: [], s: [], msgId: ctx.msgId };
+  var saved = { p: [], e: [], s: [], d: [], c: [], msgId: ctx.msgId };
+  // แจ้งค่าใช้จ่ายของวันไหนแล้ว (มีบรรทัดวันที่บนหัว / "ไม่มีค่าใช้จ่าย") — สาขา|วัน → { n, total }
+  var dayMarks = {}, dayMarkKeys = [], futureDays = [];
+  var cashLines = [], cashWarns = [], sumKeys = [];   // เงินสดคงเหลือ · วันที่ต้องลองสรุปยอด
+  var wantSum = function (loc, day) { var k = loc + '|' + day; if (sumKeys.indexOf(k) === -1) sumKeys.push(k); };
+  var markDay = function (loc, day, baht) {
+    if (!loc || loc === intakeCentral_() || !day) return;
+    var k = loc + '|' + day;
+    if (!dayMarks[k]) { dayMarks[k] = { loc: loc, day: day, n: 0, total: 0 }; dayMarkKeys.push(k); wantSum(loc, day); }
+    if (baht != null) { dayMarks[k].n++; dayMarks[k].total += Number(baht) || 0; }
+  };
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1927,15 +1987,45 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
 
     var buySheet = null, expSheet = null, buySeq = 0, expSeq = 0;
     var buyRows = [], expRows = [], i, it;
+    var expSeqBy = {};                 // เลขที่ค่าใช้จ่ายนับแยกวัน (ลงย้อนหลังได้)
 
     for (i = 0; i < items.length; i++) {
       it = items[i];
+      // วันที่บนหัวเลยวันนี้ไป = พิมพ์ผิด (เดือน/วันสลับ?) ลงเป็นวันนี้แล้วบอก
+      if (it.day && it.day > date) { if (futureDays.indexOf(it.day) === -1) futureDays.push(it.day); it.day = ''; }
+      if (it.cashLeft != null) {
+        var cLoc = it.branch || it.headBranch || ctx.location;
+        if (cLoc === intakeCentral_()) cLoc = intakeOnlyBranch_() || cLoc;
+        if (cLoc === intakeCentral_()) { cashWarns.push('ไม่รู้ว่าเป็นเงินของสาขาไหน — เขียนชื่อสาขาไว้บรรทัดบน เช่น หม่าล่า ทรัพย์'); continue; }
+        if (/เบเกอรี/.test(it.biz || it.headBiz || '')) {
+          cashWarns.push('เงินเบเกอรี่กรอกในแท็บเบเกอรี่ตอนนับหลังขาย (เงินสด/โอน/ไทยช่วยไทย) — ไม่ได้ลงจากไลน์');
+          continue;
+        }
+        var cDay = it.day || (typeof cashBizDay_ === 'function' ? cashBizDay_(now.getTime()) : date);
+        var cRow = (typeof cashFromLine_ === 'function') ? cashFromLine_(cLoc, cDay, it.cashLeft, ctx.who, ctx.msgId) : 0;
+        if (cRow) {
+          saved.c.push(cRow);
+          cashLines.push('💵 เงินสดคงเหลือ ' + cLoc + ' วันที่ ' + intakeDM_(cDay) + ' — ' + intakeMoney_(it.cashLeft) + ' บาท');
+          wantSum(cLoc, cDay);
+        }
+        continue;
+      }
+      if (it.noExp) {
+        var nl = it.branch || it.headBranch || ctx.location;
+        if (nl === intakeCentral_()) nl = intakeOnlyBranch_() || nl;
+        markDay(nl, it.day || date, null);
+        continue;
+      }
       if (it.baht > 0 && it.pay === 'บัตรเครดิต') cardTotal += it.baht;
       if (it.cash) saidCash = true;
 
       if (it.expense || intakeLooksLikeExpense_(it, names)) {
-        if (!expSheet) { expSheet = intakeExpenseSheet_(); expSeq = intakeSeqOf_(expSheet, date); }
-        expSeq++;
+        if (!expSheet) expSheet = intakeExpenseSheet_();
+        // บรรทัดวันที่บนหัว = ค่าใช้จ่ายของวันนั้น (เวลา 12:00 อยู่ในช่วงขายของวันนั้นเสมอ)
+        var eDay = it.day || date;
+        var eTime = eDay === date ? time : '12:00:00';
+        if (expSeqBy[eDay] === undefined) expSeqBy[eDay] = intakeSeqOf_(expSheet, eDay);
+        expSeq = ++expSeqBy[eDay];
         var type = intakeExpenseType_(it.raw);
         var expLoc = it.branch || ctx.location;
         // ค่าพนักงาน (ค่าแรง) ไม่ได้บอกที่ = พนักงานหน้าร้าน หักสาขา (หม่าล่า/เบเกอรี่ครึ่ง ๆ) ไม่ใช่ครัวกลาง
@@ -1947,8 +2037,9 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         }
         // ไม่เขียนธุรกิจ = ปล่อยว่าง (ค่าที่/ค่าแรง แบ่งครึ่ง อย่างอื่นเป็นหม่าล่า — ดู COST_SHARED_TYPES)
         var expBiz = INTAKE_MALA_ONLY_TYPES.indexOf(type) !== -1 ? 'หม่าล่า' : (it.biz || '');
+        if (it.day) markDay(expLoc, it.day, it.baht || 0);
         expRows.push([
-          date, time, 'E' + stamp + '-' + ('00' + expSeq).slice(-3),
+          eDay, eTime, 'E' + eDay.replace(/-/g, '') + '-' + ('00' + expSeq).slice(-3),
           expLoc, ctx.who, type,
           intakeNorm_(it.raw) === intakeNorm_(type) ? '' : it.raw,
           it.baht || 0, ctx.msgId + '-' + i, it.pay, expBiz
@@ -1960,8 +2051,8 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
                       (saleOnly ? '  (แบ่งครึ่งกับเบเกอรี่ถ้าวันนั้นเบเกอรี่ขาย)'
                        : shared ? '  (แบ่งครึ่ง หม่าล่า/เบเกอรี่)' : '');
         expLines.push(expLine);
-        // หัวแยกตามสาขา + ธุรกิจ — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
-        var expKey = expLoc + '|' + (expBiz || 'หม่าล่า');
+        // หัวแยกตามสาขา + ธุรกิจ (+ วันที่ถ้าบอกมา) — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
+        var expKey = expLoc + '|' + (expBiz || 'หม่าล่า') + '|' + (it.day || '');
         if (!expByLoc[expKey]) { expByLoc[expKey] = []; expLocs.push(expKey); }
         expByLoc[expKey].push(expLine);
 
@@ -2079,6 +2170,14 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
       var r2 = intakeAppendRows_(expSheet, expRows, INTAKE_EXPENSE_HEADERS.length);
       for (i = 0; i < expRows.length; i++) saved.e.push(r2 + i);
     }
+    // จดว่าแจ้งค่าใช้จ่ายของวันนั้นแล้ว — สรุปยอดของวันรอข้อนี้กับเช็คสต็อกปิดร้าน (stock-audit.gs)
+    if (dayMarkKeys.length && typeof expDoneMark_ === 'function') {
+      dayMarkKeys.forEach(function (k) {
+        var x = dayMarks[k];
+        var dr = expDoneMark_(x.loc, x.day, ctx.who, x.n, x.total, ctx.msgId);
+        if (dr) saved.d.push(dr);
+      });
+    }
     intakeRememberSaved_(ctx, saved);
   } finally {
     lock.releaseLock();
@@ -2093,16 +2192,40 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
            ((keyLoc(b) === ctx.location ? 0 : 2) + (keyBiz(b) === 'หม่าล่า' ? 0 : 1));
   });
   expLocs.forEach(function (k) {
-    var loc = keyLoc(k), biz = keyBiz(k);
+    var loc = keyLoc(k), biz = keyBiz(k), kd = k.split('|')[2];
     // บอกที่เสมอ (รวมครัวกลาง) — 12/10 ลงครัวกลางเงียบ ๆ เพราะหัวไม่บอกที่ คนอ่านไม่รู้ว่าผิด
-    blocks.push('🧾 ค่าใช้จ่าย ' + loc + (biz !== 'หม่าล่า' ? ' · ' + biz : '') + '\n' + expByLoc[k].join('\n'));
+    blocks.push('🧾 ค่าใช้จ่าย ' + loc + (biz !== 'หม่าล่า' ? ' · ' + biz : '') + (kd ? ' · วันที่ ' + intakeDM_(kd) : '') +
+                '\n' + expByLoc[k].join('\n'));
   });
+  dayMarkKeys.forEach(function (k) {
+    if (!dayMarks[k].n) blocks.push('🧾 ' + dayMarks[k].loc + ' · วันที่ ' + intakeDM_(dayMarks[k].day) + ' — ไม่มีค่าใช้จ่าย (จดไว้แล้ว)');
+  });
+  if (cashLines.length) blocks.push(cashLines.join('\n'));
+  if (cashWarns.length) blocks.push('⚠️ ' + cashWarns.join('\n⚠️ '));
   if (rndLines.length)   blocks.push('🧪 ลองสูตร (ไม่เข้าสต็อก)\n' + rndLines.join('\n'));
   if (stockLines.length) blocks.push('📦 เข้าครัวกลางแล้ว\n' + stockLines.join('\n'));
 
   var msg = '✅ บันทึกแล้ว ' +
             (buyLines.length + expLines.length + rndLines.length) +
             ' รายการ\n\n' + blocks.join('\n\n');
+  if (futureDays.length) {
+    msg += '\n\n⚠️ วันที่ ' + futureDays.map(intakeDM_).join(', ') + ' ยังไม่ถึง — ลงเป็นวันนี้ไปก่อน (วัน/เดือนสลับกัน?)' +
+           '\nถ้าผิด พิมพ์ "ลบ" แล้วส่งใหม่ เขียนวันที่แบบ วัน/เดือน/ปี เช่น 10/10/2026';
+  }
+  // แจ้งค่าใช้จ่ายของวันนั้นครบแล้ว — ถ้าเช็คสต็อกปิดร้าน (และนับเบเกอรี่หลังขาย) ของวันนั้นแล้วด้วย สรุปยอดเลย
+  // ยังไม่ครบ = บอกว่ารออะไร ไม่สรุปว่าขาด/เกิน
+  if (sumKeys.length && typeof daySummaryAfter_ === 'function') {
+    try { SpreadsheetApp.flush(); } catch (e) {}
+    sumKeys.forEach(function (k) {
+      var x = { loc: k.split('|')[0], day: k.split('|')[1] }, res = null;
+      try { res = daySummaryAfter_(x.loc, x.day, { source: 'expense' }); }
+      catch (e) { Logger.log('daySummaryAfter_: ' + e.message); }
+      if (!res || res.none) return;
+      msg += res.sent
+        ? '\n\n📊 ส่งสรุปยอดวันที่ ' + intakeDM_(x.day) + ' ของ ' + x.loc + ' ในกลุ่มสาขาแล้ว'
+        : '\n\n⏳ ยังไม่สรุปยอดวันที่ ' + intakeDM_(x.day) + ' ของ ' + x.loc + ' — รอ ' + res.need.join(' · ');
+    });
+  }
 
   var sums = [];
   if (buyTotal) sums.push('ซื้อของ ' + intakeMoney_(buyTotal));
@@ -2138,11 +2261,6 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
            '\nของพวกนี้เกิดจากการแพ็ค ไม่ได้ซื้อมาเป็นไม้ ๆ' +
            '\nให้ลงในแท็บ "แพ็คของ" บนหน้าเว็บ แล้วเลือกด้วยว่าใช้หมูอะไรไปเท่าไหร่' +
            '\nส่วนหมูกับไส้ที่ซื้อมา ลงทางไลน์ได้ตามปกติ';
-  }
-  // เงินสดหน้าร้านลงในหน้า POS อยู่แล้ว รับทางไลน์ด้วยยอดจะถูกหักสองรอบ
-  if (saidCash) {
-    msg += '\n\n⚠️ ทางไลน์รับแค่ "โอน" กับ "บัตร" — บันทึกให้เป็นโอนไปก่อน' +
-           '\nถ้าจ่ายด้วยเงินสดหน้าร้านจริง พิมพ์ "ลบ" แล้วไปลงในหน้า POS แทน';
   }
   // บรรทัดที่อ่านออกว่าเป็นของ แต่ไม่มั่นใจพอเลยไม่บันทึก
   // ต้องบอกเสมอ ไม่งั้นยอดรวมขาดไปโดยไม่มีใครรู้ว่าขาดตรงไหน
@@ -2189,7 +2307,7 @@ function intakeKeyOf_(srcId) {
 
 /** จำแถวที่เพิ่งเขียน (ทั้งสองชีต) ไว้ให้คำสั่ง "ลบ" ใช้ */
 function intakeRememberSaved_(ctx, saved) {
-  if (!saved || (!saved.p.length && !saved.e.length)) return;
+  if (!saved || (!saved.p.length && !saved.e.length && !(saved.d || []).length && !(saved.c || []).length)) return;
   try {
     intakeProps_().setProperty('INTAKE_LAST_' + intakeKeyOf_(ctx.srcId), JSON.stringify(saved));
   } catch (err) {
@@ -2230,12 +2348,22 @@ function intakeUndo_(ctx) {
   var buys  = last.p || last.rows || [];   // last.rows = รูปแบบเก่าก่อนมีชีตค่าใช้จ่าย
   var exps  = last.e || [];
   var stock = last.s || [];
-  if (!buys.length && !exps.length && !stock.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
+  var marks = last.d || [];
+  var cashes = last.c || [];
+  if (!buys.length && !exps.length && !stock.length && !marks.length && !cashes.length) return 'ไม่มีรายการล่าสุดให้ลบครับ';
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var gone = 0, stockGone = 0;
+    var gone = 0, stockGone = 0, markGone = 0;
+    // จดว่าแจ้งค่าใช้จ่ายของวันไหนแล้ว — ลบด้วย ไม่งั้นระบบนึกว่าแจ้งครบแล้ว
+    if (marks.length && typeof expDoneSheet_ === 'function') {
+      markGone = intakeDeleteRows_(expDoneSheet_(), marks, EXP_DONE_HEADERS.indexOf('messageId') + 1, last.msgId, false);
+    }
+    // เงินสดคงเหลือที่ลงจากไลน์ (ชีตปิดร้าน close_id = L + messageId)
+    if (cashes.length && typeof cashSheet_ === 'function') {
+      markGone += intakeDeleteRows_(cashSheet_(), cashes, CASH_HEADERS.indexOf('close_id') + 1, 'L' + last.msgId, false);
+    }
     gone += intakeDeleteRows_(intakeSheet_(), buys,
               INTAKE_HEADERS.indexOf('messageId') + 1, last.msgId, false);
     gone += intakeDeleteRows_(intakeExpenseSheet_(), exps,
@@ -2254,7 +2382,8 @@ function intakeUndo_(ctx) {
     }
 
     intakeProps_().deleteProperty(key);
-    if (!gone && !stockGone) return 'หาแถวที่จะลบไม่เจอ (อาจถูกลบไปแล้ว)';
+    if (!gone && !stockGone && !markGone) return 'หาแถวที่จะลบไม่เจอ (อาจถูกลบไปแล้ว)';
+    if (!gone && !stockGone) return '🗑️ ลบที่แจ้งไว้ (ไม่มีค่าใช้จ่าย / เงินสดคงเหลือ) ออกแล้ว';
     return '🗑️ ลบออกให้แล้ว ' + gone + ' รายการ' +
            (stockGone ? '\n📦 ถอนของเข้าครัวกลางออกด้วย ' + stockGone + ' รายการ' : '');
   } finally {

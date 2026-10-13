@@ -136,7 +136,10 @@ function makeEnv() {
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       formatDate, getUuid: () => 'uuid-' + Math.random().toString(36).slice(2),
-      sleep() {}, base64Encode: s => Buffer.from(String(s)).toString('base64')
+      sleep() {}, base64Encode: s => Buffer.from(String(s)).toString('base64'),
+      // ไลน์ "ลบ" ใช้ MD5 ย่อ id ต้นทาง — คืนเป็น byte แบบมีเครื่องหมายเหมือน Apps Script
+      DigestAlgorithm: { MD5: 'md5' },
+      computeDigest: (alg, s) => Array.from(require('crypto').createHash(alg).update(String(s)).digest()).map(b => (b > 127 ? b - 256 : b))
     },
     UrlFetchApp: {
       fetch(url, opt) {

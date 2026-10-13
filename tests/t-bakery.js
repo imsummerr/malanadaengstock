@@ -56,15 +56,23 @@ eq('ขาดรส', g.handleBakeryCount_({ token: 't', round: 'หลังข
 eq('ไม่กรอกเงิน', g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([1, 0, 0, 0, 0, 0]), money: { cash: 50 } }).success, false);
 
 section('หลังขาย — ขาย 11 + 5 = 16 ชิ้น = 160 · ได้ 150 → ขาด 10');
+// 13/10: ยังไม่แจ้งค่าใช้จ่ายของวันนี้ → ไม่สรุป บอกว่ารออะไร
 g.__env.SENT.length = 0;
 r = g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([1, 0, 0, 0, 0, 1]),
   money: { cash: 100, transfer: 30, thai: 20 }, id: 'B1' });
 eq('บันทึกได้', r.success, true);
 eq('พนักงานไม่เห็นยอดที่ควรได้', r.expected, undefined);
 txt = g.__env.SENT.map(x => x.messages.map(m => m.text).join('\n')).join('\n');
-eq('ควรได้ 160', /ขายไป 16 ชิ้น × 10 = ควรได้ 160 บาท/.test(txt), true);
-eq('ได้จริงแยกช่องทาง', /ได้จริง 150 บาท\n  เงินสด 100 · เงินโอน 30 · ไทยช่วยไทย 20/.test(txt), true);
-eq('ขาด 10', /🔻 ขาด 10 บาท/.test(txt), true);
+eq('ข้อความนับไม่มีตัวเลขเงิน รอค่าใช้จ่าย', [/ควรได้|ขาด/.test(txt), /⏳ ยังไม่สรุปยอดวันที่ [\d/]+ — รอ แจ้งค่าใช้จ่าย/.test(txt), /ขายไป 16 ชิ้น/.test(txt)], [false, true, true]);
+// เจ้าของแจ้งค่าใช้จ่ายของวันนี้ในไลน์ (ไม่มีค่าใช้จ่าย) → สรุปเลย
+g.__env.SENT.length = 0;
+g.expDoneMark_(SHOP, g.cashBizDay_(NOW), 'เจ้าของ', 0, 0, 'm0');
+const sum1 = g.daySummaryAfter_(SHOP, g.cashBizDay_(NOW));
+txt = g.__env.SENT.map(x => x.messages.map(m => m.text).join('\n')).join('\n');
+eq('ส่งสรุปแล้ว', sum1.sent, true);
+eq('ควรได้ 160', /ขายไป 16 ชิ้น → ควรได้ 160 บาท/.test(txt), true);
+eq('ได้จริงแยกช่องทาง', /ได้จริง 150 บาท \(เงินสด 100 · โอน 30 · ไทยช่วยไทย 20\)/.test(txt), true);
+eq('ขาด 10', /🍡 เบเกอรี่ ⚠️[\s\S]*🔻 ขาด 10 บาท/.test(txt), true);
 const bs = g.__env.SHEETS[g.SHEET_BAKERY];
 eq('ลงชีตเบเกอรี่', bs.rows.length, 1);
 eq('ผลเทียบ', bs.rows[0][bs.headers.indexOf('ผลเทียบ')], 'ขาด');
@@ -77,7 +85,7 @@ r = g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: row
   money: { cash: 110, transfer: 30, thai: 20 }, id: 'B2' });
 txt = g.__env.SENT.map(x => x.messages.map(m => m.text).join('\n')).join('\n');
 eq('ยังขาย 16 ชิ้น', /ขายไป 16 ชิ้น/.test(txt), true);
-eq('ตรงแล้ว', /✅ เบเกอรี่ปิดร้าน/.test(txt), true);
+eq('ตรงแล้ว (สรุปอัปเดต)', /🔄 อัปเดต[\s\S]*🍡 เบเกอรี่ ✅[\s\S]*→ ตรงกัน/.test(txt), true);
 eq('รายได้วันนี้ 160 (แถวล่าสุด)', g.bakeryIncome_()[SHOP]['รวม'], 160);
 
 section('บัญชี — ต้นทุนเบเกอรี่ = 11 × 6.5 + 5 × 6 = 101.5');

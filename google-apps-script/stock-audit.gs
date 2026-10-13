@@ -1034,8 +1034,10 @@ function cashCheck_(loc, day, opt) {
   var oversSold = u.overs.filter(sold).sort(function (a, b) { return b.qty - a.qty; });
   var S = [];
   // กรอกเงินแล้ว = เงินสดเป็นตัวตัดสิน (เงินครบ = ไม่มีอะไรหาย แม้กด POS ไม่ครบ)
-  S.push(((noCash ? stockOk : ok) ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' ' + dd +
-         (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง')));
+  S.push(opt.part
+    ? '🌶️ หม่าล่า ' + ((noCash ? stockOk : ok) ? '✅' : '⚠️') + (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง'))
+    : ((noCash ? stockOk : ok) ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' ' + dd +
+      (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง')));
   S.push('เทียบ ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
   S.push('');
   S.push('ควรได้ (ตามของที่ขายออกไป) ' + auditBaht_(should) + ' บาท');
@@ -1056,7 +1058,7 @@ function cashCheck_(loc, day, opt) {
   if (noCash) {
     S.push('เงินสดในลิ้นชักควรมี ' + auditBaht_(stockOk ? expected : posExpected) + ' บาท' +
            (sDay.expCash ? ' (หักค่าใช้จ่ายเงินสด ' + auditBaht_(sDay.expCash) + ' แล้ว)' : ''));
-    S.push('ยังไม่ได้กรอกเงินปิดร้าน — กรอกใน POS ปุ่ม 💵 ปิดร้าน แล้วระบบเทียบให้');
+    S.push('ยังไม่ได้แจ้งเงินสดคงเหลือ — พิมพ์ในไลน์ "เงินสดคงเหลือ 450" ใต้บรรทัดวันที่ แล้วระบบเทียบให้');
   } else {
     S.push('เงินสดควรมี ' + auditBaht_(expected) + ' · นับได้ ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
     if (!ok) S.push((diff < 0 ? '🔻 เงินสดขาด ' : '🔺 เงินสดเกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
@@ -1176,13 +1178,19 @@ function handleCashClose_(body) {
     lock.releaseLock();
   }
 
-  var res = null;
-  try { res = cashCheck_(loc, cashDayOfRow_(loc, { ms: now.getTime() })); }
-  catch (e) { Logger.log('cashCheck_: ' + e.message); }
-  var out = { success: true, checked: !!(res && res.expected != null),
-              waiting: !res,
-              message: res ? 'บันทึกแล้ว ระบบเทียบกับสต็อกและแจ้งเจ้าของร้านแล้ว'
-                           : 'บันทึกแล้ว — อย่าลืมนับสต็อกปิดร้าน ระบบจะเทียบเงินให้ทันทีที่นับเสร็จ' };
+  // 13/10: สรุปยอดของวันเมื่อครบ (เช็คสต็อก + นับเบเกอรี่ + ค่าใช้จ่ายในไลน์) — เงินสดเทียบในสรุปนั้น
+  var day = cashDayOfRow_(loc, { ms: now.getTime() }), sum = null, res = null;
+  try { sum = daySummaryAfter_(loc, day, { source: 'cash' }); }
+  catch (e) { Logger.log('daySummaryAfter_ cash: ' + e.message); }
+  if (session.role === 'owner') {
+    try { res = cashCheck_(loc, day, { silent: true }); } catch (e) { Logger.log('cashCheck_: ' + e.message); }
+  }
+  var sent = !!(sum && sum.sent);
+  var out = { success: true, checked: sent, waiting: !sent,
+              message: sent ? 'บันทึกแล้ว ระบบสรุปยอดและแจ้งเจ้าของร้านแล้ว'
+                     : 'บันทึกแล้ว — ' + (sum && sum.need && sum.need.length
+                         ? 'สรุปยอดเมื่อครบ: ' + sum.need.join(' · ')
+                         : 'อย่าลืมนับสต็อกปิดร้าน ระบบจะเทียบเงินให้เมื่อครบ') };
   // ยอดที่ควรมีให้เจ้าของร้านดูคนเดียว
   if (session.role === 'owner' && res) { out.expected = res.expected; out.diff = res.diff; }
   return out;
@@ -1205,9 +1213,16 @@ function lateStatus_(loc, nowMs) {
     var prev = openToday ? '' : cashPrevSalesDay_(loc, today);
     if (prev && !(typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(prev)), loc))) {
       var count = !cashCloseCount_(loc, prev).countMs, cash = !cashRowsForDay_(loc, prev).length;
-      if (count || cash) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash };
+      if (count || cash) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash, today: dmOf(today) };
     }
   } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
+  // 13/10: วันขายล่าสุดก่อนวันนี้ ยังไม่แจ้งค่าใช้จ่ายในไลน์ — สรุปยอดของวันนั้นรอข้อนี้ (เตือนเจ้าของ ไม่มีตัวเลข)
+  try {
+    var pe = cashPrevSalesDay_(loc, today);
+    if (pe && !expDoneHas_(loc, pe) && !(typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(pe)), loc))) {
+      out.exp = { day: pe, dm: dmOf(pe) };
+    }
+  } catch (e) { Logger.log('lateStatus exp: ' + e.message); }
   try {
     var before = {}, later = {};
     readMoves_(SHEET_COUNT).forEach(function (m) {
@@ -1233,6 +1248,242 @@ function lateStatus_(loc, nowMs) {
     }
   } catch (e) { Logger.log('lateStatus bakery: ' + e.message); }
   return out;
+}
+
+/* ═══════════════════ สรุปยอดรายวัน — รอให้ครบก่อนค่อยสรุป (13/10) ═══════════════════
+ *
+ * เจ้าของ 13/10: ขายวันที่ 10 = ระหว่างเช็คสต็อกปิดร้านวันที่ 9 ถึงเช็คสต็อกปิดร้านวันที่ 10
+ *   ค่าใช้จ่ายของแต่ละวันแจ้งในไลน์ครั้งเดียว เขียนวันที่ไว้บรรทัดแรก (line-intake.gs จดไว้ในชีต แจ้งค่าใช้จ่ายแล้ว)
+ *   สรุปยอด (ตรง/ขาด/เกิน) ทั้งหม่าล่าและเบเกอรี่ ส่งเมื่อครบทั้ง 3 อย่างของวันนั้น
+ *     • เช็คสต็อกปิดร้านหม่าล่า (ถ้าวันนั้นหม่าล่าขาย)
+ *     • นับเบเกอรี่หลังขาย (ถ้าวันนั้นเบเกอรี่ออกขาย)
+ *     • แจ้งค่าใช้จ่ายของวันนั้นในไลน์ ("ไม่มีค่าใช้จ่าย" ก็ได้)
+ *   ยังไม่ครบ = ไม่สรุปตัวเลข บอกแค่ว่ารออะไร · ตอน 23:59 ยังไม่ครบ → เตือนในกลุ่ม (ไม่มีตัวเลข)
+ *   อันไหนเข้ามาเป็นอันสุดท้าย (นับสต็อก / นับเบเกอรี่ / ค่าใช้จ่ายในไลน์ / เงินสดคงเหลือ) → สรุปตอนนั้นเลย
+ */
+var SHEET_EXP_DONE = 'แจ้งค่าใช้จ่ายแล้ว';
+var EXP_DONE_HEADERS = ['วันที่', 'สาขา', 'แจ้งเมื่อ', 'ผู้แจ้ง', 'รายการ', 'รวมเงิน', 'messageId'];
+
+function expDoneSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_EXP_DONE);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_EXP_DONE);
+    sh.appendRow(EXP_DONE_HEADERS);
+    sh.getRange(1, 1, 1, EXP_DONE_HEADERS.length)
+      .setFontWeight('bold').setBackground('#e0f2fe').setFontColor('#075985');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** จดว่าแจ้งค่าใช้จ่ายของวันนั้นแล้ว — คืนเลขแถว (ไว้ให้ "ลบ" ในไลน์) */
+function expDoneMark_(loc, day, who, n, total, msgId) {
+  var sh = expDoneSheet_();
+  sh.appendRow([day, loc, Utilities.formatDate(new Date(), auditTz_(), 'yyyy-MM-dd HH:mm:ss'),
+                who || '', n || 0, auditRound_(total || 0), msgId || '']);
+  return sh.getLastRow();
+}
+
+/** แจ้งค่าใช้จ่ายของวันนั้นแล้วหรือยัง */
+function expDoneHas_(loc, day) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EXP_DONE);
+  if (!sh || sh.getLastRow() < 2) return false;
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+  for (var i = v.length - 1; i >= 0; i--) {
+    var d = (typeof normDate_ === 'function') ? normDate_(v[i][0]) : String(v[i][0]).slice(0, 10);
+    var same = (typeof sameBranch_ === 'function') ? sameBranch_(v[i][1], loc) : String(v[i][1]).trim() === loc;
+    if (d === day && same) return true;
+  }
+  return false;
+}
+
+/** เบเกอรี่วันนั้น — ออกขายไหม (นับก่อนขาย) · นับหลังขาย/กรอกเงินแล้วหรือยัง (แถวล่าสุด) */
+function bakeryDayState_(loc, day) {
+  var out = false, row = null;
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT) return;
+    var t = timeOf_(m.when);
+    if (t && cashBizDay_(t) === day && String(m.note || '').indexOf('ก่อนขาย') === 0) out = true;
+  });
+  bakeryMoneyRows_().forEach(function (r) {
+    if (r.loc === loc && r.day === day && (!row || r.ms >= row.ms)) row = r;
+  });
+  if (row) out = true;
+  return { out: out, row: row };
+}
+
+/** ค่าใช้จ่ายของวันทำการนั้น — รวม / เงินสด · แยกเบเกอรี่ (เงินสดเบเกอรี่ = หยิบจากเงินขายเบเกอรี่) */
+function dayExpenses_(loc, day) {
+  var out = { total: 0, cash: 0, bkTotal: 0, bkCash: 0, n: 0 };
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(typeof SHEET_EXPENSE === 'string' ? SHEET_EXPENSE : 'POS_Expenses');
+  if (!sh || sh.getLastRow() < 2) return out;
+  var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  var idx = {};
+  v[0].forEach(function (h, i) { idx[String(h).trim()] = i; });
+  for (var i = 1; i < v.length; i++) {
+    var b = v[i][idx['สาขา']];
+    var same = (typeof sameBranch_ === 'function') ? sameBranch_(b, loc) : String(b).trim() === loc;
+    if (!same) continue;
+    var stamp = auditRowStamp_(v[i][idx['วันที่']], v[i][idx['เวลา']]);
+    if (!stamp || cashBizDay_(new Date(stamp.replace(' ', 'T') + '+07:00').getTime()) !== day) continue;
+    var amt = num_(v[i][idx['จำนวนเงิน']]);
+    var how = idx['วิธีจ่าย'] !== undefined ? String(v[i][idx['วิธีจ่าย']] || '').trim() : '';
+    var cash = !how || how === 'เงินสด';
+    var bk = idx['ธุรกิจ'] !== undefined && /เบเกอรี/.test(String(v[i][idx['ธุรกิจ']] || ''));
+    out.n++; out.total += amt; if (cash) out.cash += amt;
+    if (bk) { out.bkTotal += amt; if (cash) out.bkCash += amt; }
+  }
+  ['total', 'cash', 'bkTotal', 'bkCash'].forEach(function (k) { out[k] = auditRound_(out[k]); });
+  return out;
+}
+
+/** สถานะของวันขาย — อะไรครบ อะไรยังขาด */
+function dayStatus_(loc, day) {
+  var start = cashDayStart_(day);
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  var bills = auditSales_(loc, st(start - 1000), st(start + 86400000 - 1000));
+  var malaSold = (bills.orders + bills.dlvOrders) > 0;
+  var cc = malaSold ? cashCloseCount_(loc, day) : { countMs: 0, prevMs: 0 };
+  var bk = bakeryDayState_(loc, day);
+  var exp = expDoneHas_(loc, day);
+  var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
+  var need = [];
+  if (malaSold && !cc.countMs) need.push('เช็คสต็อกปิดร้านหม่าล่า');
+  if (bk.out && !bk.row) need.push('นับเบเกอรี่หลังขาย');
+  if (!exp) need.push('แจ้งค่าใช้จ่ายของวันที่ ' + dm + ' ในไลน์');
+  var any = malaSold || bk.out;
+  return { day: day, dm: dm, malaSold: malaSold, cc: cc, bills: bills, bk: bk, exp: exp,
+           need: need, any: any, ready: any && !need.length };
+}
+
+/** ข้อความสรุปยอดของวัน — หม่าล่า (ของที่ออกเทียบ POS + เงินสด) · เบเกอรี่ (ขายไปเทียบเงิน) · ค่าใช้จ่าย */
+function daySummaryText_(loc, day, st) {
+  st = st || dayStatus_(loc, day);
+  var L = ['📊 สรุปยอด ' + loc + ' วันที่ ' + st.dm];
+  if (st.malaSold) {
+    var c = null;
+    try { c = cashCheck_(loc, day, { silent: true, noCashOk: true, part: true }); }
+    catch (e) { Logger.log('daySummary cashCheck_: ' + e.message); }
+    L.push('', c && c.text ? c.text : '🌶️ หม่าล่า — ยังเทียบไม่ได้ (ไม่มีรอบเช็คสต็อกก่อนหน้า)');
+  }
+  var ex = dayExpenses_(loc, day);
+  if (st.bk.out && st.bk.row) {
+    var r = st.bk.row;
+    var expected = auditRound_(r.sold * BAKERY_PRICE);
+    var got = auditRound_(r.cash + r.transfer + r.thai);
+    // เงินสดที่หยิบจากเงินขายเบเกอรี่ไปจ่ายค่าใช้จ่าย (แจ้งในไลน์ · เบเกอรี่ · เงินสด) บวกกลับ
+    var diff = auditRound_(got + ex.bkCash - expected), ok = diff === 0;
+    L.push('', '🍡 เบเกอรี่ ' + (ok ? '✅' : '⚠️'));
+    L.push('ขายไป ' + r.sold + ' ชิ้น → ควรได้ ' + auditBaht_(expected) + ' บาท');
+    L.push('ได้จริง ' + auditBaht_(got) + ' บาท (เงินสด ' + auditBaht_(r.cash) + ' · โอน ' + auditBaht_(r.transfer) +
+           ' · ไทยช่วยไทย ' + auditBaht_(r.thai) + ')');
+    if (ex.bkCash) L.push('+ จ่ายค่าใช้จ่ายเงินสดจากเงินขาย ' + auditBaht_(ex.bkCash) + ' บาท');
+    L.push(ok ? '→ ตรงกัน' : (diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
+    // ผลเทียบในชีตเบเกอรี่ (คิดตอนนับ ยังไม่รวมค่าใช้จ่ายในไลน์) — เขียนทับด้วยผลจริง
+    try {
+      var bs = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_BAKERY);
+      var bh = bs.getRange(1, 1, 1, bs.getLastColumn()).getValues()[0].map(function (x) { return String(x).trim(); });
+      if (bh.indexOf('ต่าง') !== -1) bs.getRange(r.row, bh.indexOf('ต่าง') + 1).setValue(diff);
+      if (bh.indexOf('ผลเทียบ') !== -1) bs.getRange(r.row, bh.indexOf('ผลเทียบ') + 1).setValue(ok ? 'ตรง' : (diff < 0 ? 'ขาด' : 'เกิน'));
+    } catch (e) { Logger.log('daySummary bakery row: ' + e.message); }
+  }
+  L.push('', '💸 ค่าใช้จ่ายวันที่ ' + st.dm + ' ' + (ex.total ? auditBaht_(ex.total) + ' บาท' +
+         (ex.cash ? ' (เงินสด ' + auditBaht_(ex.cash) + ')' : '') : 'ไม่มี'));
+  return L.join('\n');
+}
+
+/**
+ * มีอะไรเข้ามาของวันนั้น (นับสต็อก / นับเบเกอรี่ / ค่าใช้จ่าย / เงินสด) — ครบแล้วสรุปส่งกลุ่มสาขาเลย
+ * คืน { sent, need, none } · none = วันนั้นไม่ได้ขายอะไร ไม่มีอะไรให้สรุป
+ * สรุปซ้ำได้ (แก้ตัวเลข/แจ้งเพิ่ม) ขึ้นว่า "อัปเดต"
+ */
+function daySummaryAfter_(loc, day, opt) {
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  var st = dayStatus_(loc, day);
+  if (!st.any) return { sent: false, none: true, need: [] };
+  if (!st.ready) return { sent: false, need: st.need, st: st };
+  var text = daySummaryText_(loc, day, st);
+  var props = PropertiesService.getScriptProperties(), key = 'DAY_SUM_' + loc + '|' + day;
+  if (props.getProperty(key)) text = '🔄 อัปเดต — ' + text;
+  var r = { sent: false };
+  try { if (typeof stockNotify_ === 'function') r = stockNotify_(loc, text); }
+  catch (e) { Logger.log('daySummaryAfter_ notify: ' + e.message); }
+  props.setProperty(key, String(Date.now()));
+  return { sent: true, text: text, st: st, need: [], lineSent: r.sent };
+}
+
+/** รอบนับนี้ปิดยอดของวันไหน — วันนี้ (นับหลังบิลสุดท้าย) / วันขายก่อนหน้า (นับเช้าก่อนบิลแรก) / '' นับกลางวัน */
+function closeDayOfCount_(loc, ms) {
+  var day = cashBizDay_(ms);
+  var near = function (d) { var c = cashCloseCount_(loc, d); return c.countMs && Math.abs(c.countMs - ms) <= 5 * 60000; };
+  var pd = cashPrevSalesDay_(loc, day);
+  if (pd && near(pd)) return pd;
+  if (near(day)) return day;
+  return '';
+}
+
+/**
+ * ตอน 23:59 — วันนี้ขายแล้วแต่ยังไม่ครบ (ยังไม่เช็คสต็อก / ยังไม่นับเบเกอรี่ / ยังไม่แจ้งค่าใช้จ่าย)
+ * แจ้งกลุ่มสาขาว่ายังไม่สรุปยอด ไม่มีตัวเลข · อาศัย trigger checkNewIncoming (ทุก 5 นาที) ไม่ต้องตั้งเพิ่ม
+ * ช่วง 23:55–03:59 (ยังเป็นวันทำการเดิม) ส่งวันละครั้ง
+ */
+function dayEndMaybe_(nowMs) {
+  var now = nowMs || Date.now();
+  var hm = Number(Utilities.formatDate(new Date(now), auditTz_(), 'HHmm'));
+  if (!(hm >= 2355 || hm < CASH_DAY_CUT_HOURS * 100)) return [];
+  var day = cashBizDay_(now), props = PropertiesService.getScriptProperties();
+  if (props.getProperty('DAY_END_CHECKED') === day) return [];
+  props.setProperty('DAY_END_CHECKED', day);
+  var sent = [];
+  auditLocations_().forEach(function (loc) {
+    if (loc === auditCentral_()) return;
+    try {
+      var st = dayStatus_(loc, day);
+      if (!st.any || st.ready) return;
+      var msg = '⏰ ' + loc + ' วันที่ ' + st.dm + ' — ยังไม่สรุปยอด\n' +
+                'ยังไม่มี: ' + st.need.join(' · ') + '\n\n' +
+                'ยังไม่บอกว่าตรง/ขาด/เกิน จนกว่าจะครบ' +
+                (st.need.some(function (x) { return /เช็คสต็อก|เบเกอรี่/.test(x); })
+                  ? '\nลืมนับ = นับพรุ่งนี้ก่อนขายบิลแรก ระบบลงเป็นของวันที่ ' + st.dm : '');
+      if (typeof stockNotify_ === 'function') stockNotify_(loc, msg);
+      sent.push(loc);
+    } catch (e) { Logger.log('dayEndMaybe_ ' + loc + ': ' + e.message); }
+  });
+  return sent;
+}
+
+/** เจ้าของกดดูเอง — สรุปยอดของวัน (ไม่ส่งไลน์) เว้นว่าง = เมื่อวาน */
+function previewDaySummary() {
+  var day = cashBizDay_(Date.now() - 86400000), ui = null;
+  try {
+    ui = SpreadsheetApp.getUi();
+    var r = ui.prompt('สรุปยอดรายวัน', 'วันที่ (ปปปป-ดด-วว) เว้นว่าง = ' + day, ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return;
+    var t = String(r.getResponseText() || '').trim();
+    if (t) day = t;
+  } catch (e) { ui = null; }
+  var parts = [];
+  auditLocations_().forEach(function (loc) {
+    if (loc === auditCentral_()) return;
+    var st = dayStatus_(loc, day);
+    if (!st.any) return parts.push(loc + ' วันที่ ' + st.dm + ' — ไม่ได้ขาย');
+    parts.push(st.ready ? daySummaryText_(loc, day, st) : loc + ' วันที่ ' + st.dm + ' — ยังไม่ครบ: ' + st.need.join(' · '));
+  });
+  var out = parts.join('\n\n────────\n\n') || 'ไม่มีสาขา';
+  if (ui) ui.alert(out); else Logger.log(out);
+  return out;
+}
+
+/** ไลน์ "เงินสดคงเหลือ 450" — ลงเป็นเงินปิดร้านหม่าล่าของวันนั้น (แทนกรอกในหน้า POS) · คืนเลขแถว */
+function cashFromLine_(loc, day, amount, who, msgId) {
+  var sh = cashSheet_(), now = new Date();
+  // วันนี้ = เวลาตอนนี้ · ลงย้อนหลัง = 23:59 ของวันนั้น (หลังบิลสุดท้ายเสมอ ไม่ถูกนับเป็นเงินของวันอื่น)
+  var isToday = day === cashBizDay_(now.getTime());
+  var date = isToday ? Utilities.formatDate(now, auditTz_(), 'yyyy-MM-dd') : day;
+  var time = isToday ? Utilities.formatDate(now, auditTz_(), 'HH:mm:ss') : '23:59:00';
+  sh.appendRow([date, time, loc, who || '', auditRound_(amount), 'ไลน์', 'L' + (msgId || now.getTime())]);
+  return sh.getLastRow();
 }
 
 /** GET action=lateStatus — POS ถามก่อนเปิดหน้าปิดร้าน ว่าเมื่อวานลืมอะไรไหม */
@@ -1601,29 +1852,26 @@ function handleBakeryCount_(body) {
         spent || ''
       ]);
       bakeryWriteExpenses_(ex.rows, loc, session.name, bDate, bTime, body.id);
-      L.push((ok ? '✅ ' : '⚠️ ') + 'เบเกอรี่ปิดร้าน' + (late ? ' (ลงย้อนหลัง ของวันที่ ' + late.dm + ')' : '') +
-             ' — ' + loc + ' — ' + (ok ? 'เงินตรง' : 'เงินไม่ตรง'));
-      L.push(Utilities.formatDate(now, auditTz_(), 'd/M/yyyy HH:mm') + ' โดย ' + session.name, '');
-      if (late) L.push(late.counts ? 'ใช้ยอดที่นับก่อนขายวันถัดไปเป็นยอดหลังขาย' : 'นับของที่เหลือตอนนี้ = หลังขาย ' + late.dm + ' และก่อนขายวันนี้', '');
-      L.push('ขายไป ' + soldN + ' ชิ้น × ' + BAKERY_PRICE + ' = ควรได้ ' + auditBaht_(expected) + ' บาท');
-      sold.forEach(function (x) { L.push('• ' + x.name + ' ' + x.qty); });
-      L.push('', 'ได้จริง ' + auditBaht_(money) + ' บาท');
-      L.push('  เงินสด ' + auditBaht_(cash) + ' · เงินโอน ' + auditBaht_(tr) + ' · ไทยช่วยไทย ' + auditBaht_(thai));
-      if (spent) {
-        L.push('  + จ่ายค่าใช้จ่ายจากเงินขาย (เงินสด) ' + auditBaht_(spent));
-        ex.rows.forEach(function (x) { L.push('     · ' + x.text + ' ' + auditBaht_(x.baht)); });
-      }
-      if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
+      // 13/10: ไม่บอกตรง/ขาดตรงนี้แล้ว — รอแจ้งค่าใช้จ่ายของวันนั้นในไลน์ (เงินสดที่หยิบไปจ่ายบวกกลับ) แล้วสรุปรวมกับหม่าล่า
+      var bDay = late ? forDay : cashBizDay_(now.getTime());
+      L.push('🍡 นับเบเกอรี่หลังขาย — ' + loc + (late ? ' (ลงย้อนหลัง ของวันที่ ' + late.dm + ')' : ''));
+      L.push(Utilities.formatDate(now, auditTz_(), 'd/M/yyyy HH:mm') + ' โดย ' + session.name);
+      if (late) L.push(late.counts ? 'ใช้ยอดที่นับก่อนขายวันถัดไปเป็นยอดหลังขาย' : 'นับของที่เหลือตอนนี้ = หลังขาย ' + late.dm + ' และก่อนขายวันนี้');
+      L.push('ขายไป ' + soldN + ' ชิ้น · เหลือ ' + (left.length ? left.join(' · ') : 'หมด'));
       if (overs.length) {
         L.push('', 'นับได้เกินที่ควรเหลือ (ลืมลงของเข้าร้าน?)');
         overs.forEach(function (x) { L.push('• ' + x.name + ' +' + x.qty); });
       }
-      L.push('', 'เหลือ ' + (left.length ? left.join(' · ') : 'หมด'));
+      SpreadsheetApp.flush();
+      var bsum = null;
+      try { bsum = (typeof daySummaryAfter_ === 'function') ? daySummaryAfter_(loc, bDay, { source: 'bakery' }) : null; }
+      catch (e) { Logger.log('daySummaryAfter_ bakery: ' + e.message); }
+      if (bsum && !bsum.sent && !bsum.none) L.push('', '⏳ ยังไม่สรุปยอดวันที่ ' + bsum.st.dm + ' — รอ ' + bsum.need.join(' · '));
       stockNotify_(loc, L.join('\n'));
       // พนักงานไม่เห็นยอดที่ควรได้ — ไม่งั้นจะกรอกให้ตรงแทนการนับเงินจริง
       res = { success: true, tossText: tossText,
               message: late ? 'บันทึกหลังขายของวันที่ ' + late.dm + ' แล้ว' + (late.counts ? '' : ' (ยอดที่นับนี้เป็นก่อนขายของวันนี้ด้วย ไม่ต้องนับก่อนขายซ้ำ)')
-                            : 'บันทึกหลังขายแล้ว ระบบเทียบเงินและแจ้งเจ้าของร้านแล้ว' };
+                            : 'บันทึกหลังขายแล้ว — ระบบสรุปยอดให้เจ้าของร้านเมื่อครบ (เช็คสต็อก + ค่าใช้จ่าย)' };
       if (session.role === 'owner') { res.expected = expected; res.diff = diff; res.sold = soldN; }
     }
   } finally {

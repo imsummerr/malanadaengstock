@@ -158,6 +158,9 @@ function checkNewIncoming() {
   catch (e) { Logger.log('checkPaybackReminder: ' + e.message); }
   // เบเกอรี่ในครัวกลางหมดอายุ — วันละครั้ง
   try { checkBakeryExpiryDaily(); } catch (e) { Logger.log('checkBakeryExpiryDaily: ' + e.message); }
+  // 23:59 วันนี้ขายแล้วแต่ยังไม่ครบ (เช็คสต็อก/นับเบเกอรี่/ค่าใช้จ่าย) — เตือนว่ายังไม่สรุปยอด (stock-audit.gs)
+  try { if (typeof dayEndMaybe_ === 'function') dayEndMaybe_(); }
+  catch (e) { Logger.log('dayEndMaybe_: ' + e.message); }
   var ss = ss_();
   var sheet = ss.getSheetByName(INCOMING_SHEET_NAME);
   if (!sheet) return;
