@@ -1060,7 +1060,10 @@ var INTAKE_ALIAS = {
   'ปลาดอลลี่': 'ดอลลี่', 'ปลาสไลด์': 'ดอลลี่',
 
   // ── หมู — ซื้อมาหั่นเสร็จแล้ว ของดิบใช้ชื่อเดียวกับของที่แพ็ค ──
-  // หมูสามชั้นเลิกใช้แล้ว (7/10) — พิมพ์มาจะขึ้นเตือนว่าไม่มีในรายการสินค้า
+  // หมูสามชั้น กลับมาขาย 13/10 — ซื้อเป็นโล เข้าของดิบชื่อเดียวกัน
+  'สามชั้น': 'หมูสามชั้นสไลซ์ (ดิบ)', 'หมูสามชั้น': 'หมูสามชั้นสไลซ์ (ดิบ)',
+  'สามชั้นสไลซ์': 'หมูสามชั้นสไลซ์ (ดิบ)', 'สามชั้นสไลด์': 'หมูสามชั้นสไลซ์ (ดิบ)',
+  'หมูสามชั้นสไลด์': 'หมูสามชั้นสไลซ์ (ดิบ)', 'หมูสามชั้นสไลซ์': 'หมูสามชั้นสไลซ์ (ดิบ)',
   // หมูไม่ติดมัน (สาขา) = สะโพกหมูสไลซ์ (ครัวกลาง) — ซื้อเข้าเป็นของดิบชื่อสะโพก
   'หมูไม่ติดมัน': 'สะโพกหมูสไลซ์ (ดิบ)', 'ไม่ติดมัน': 'สะโพกหมูสไลซ์ (ดิบ)',
   'สะโพก': 'สะโพกหมูสไลซ์ (ดิบ)', 'สะโพกหมู': 'สะโพกหมูสไลซ์ (ดิบ)',
@@ -1100,6 +1103,8 @@ var INTAKE_ALIAS = {
   // เห็ด
   'เข็มทอง': 'เห็ดเข็ม', 'เห็ดเข็มทอง': 'เห็ดเข็ม',
   'ออรินจิ': 'เห็ดออเร็นจิ', 'เห็ดออรินจิ': 'เห็ดออเร็นจิ',
+  // เห็ดนางรมหลวง = ออรินจิ ตัวเดียวกัน (เจ้าของยืนยัน 13/10)
+  'นางรมหลวง': 'เห็ดออเร็นจิ', 'เห็ดนางรมหลวง': 'เห็ดออเร็นจิ', 'เห็ดนางรมหลวงใหญ่': 'เห็ดออเร็นจิ',
   'ออเร็น': 'เห็ดออเร็นจิ', 'ออเร็นจิ': 'เห็ดออเร็นจิ',
   'หูหนู': 'เห็ดหูหนูขาว', 'เห็ดหูหนู': 'เห็ดหูหนูขาว', 'หูหนูขาว': 'เห็ดหูหนูขาว',
   'หูหนูดำ': 'เห็ดหูหนูดำ', 'เห็ดดำ': 'เห็ดหูหนูดำ',
@@ -1337,6 +1342,57 @@ function intakeStockQty_(item, counts, gram, perBag) {
   // บอกมาแค่แพ็ค — คูณจากชีตได้ ถ้าชีตตั้งจำนวนต่อแพ็คไว้จริง (ไม่ใช่ 1)
   if (packs > 0 && item.perPack > 1) {
     return { base: Math.round(packs * item.perPack * 1000) / 1000, packs: packs, per: item.perPack };
+  }
+  return null;
+}
+
+/**
+ * ค่าซื้อที่ลงไปแล้วแต่ของยังไม่เข้าสต็อก — ของชื่อนี้ ที่นี้ ภายใน INTAKE_LINK_DAYS วัน (ล่าสุดก่อน)
+ *
+ * บอทเตือนว่าหน่วยไม่ตรง ("มันเทศ 1 โล" แต่ชีตนับเป็นอัน) แล้วให้ส่งจำนวนมาใหม่ไม่ต้องใส่ราคา
+ * บัญชีจับราคากับของเข้าด้วย messageId + ชื่อ — ถ้าลงของเข้าด้วยข้อความใหม่
+ * ของล็อตนั้นจะต้นทุน 0 แล้วเงินที่จ่ายไปลอยอยู่ ไม่ได้เข้าต้นทุนของ
+ * เจอ = ลงของเข้าด้วย messageId ของข้อความที่จ่ายเงิน
+ */
+var INTAKE_LINK_DAYS = 3;
+function intakePaidMsgFor_(itemName, location) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var buy = ss.getSheetByName(INTAKE_SHEET);
+  if (!buy || buy.getLastRow() < 2) return null;
+  var trim = function (x) { return String(x || '').trim(); };
+  var head = buy.getRange(1, 1, 1, buy.getLastColumn()).getValues()[0].map(trim);
+  var iItem = head.indexOf('รายการ'), iBaht = head.indexOf('จำนวนเงิน'), iMsg = head.indexOf('messageId');
+  var iLoc = head.indexOf('สถานที่'), iDate = head.indexOf('วันที่'), iKind = head.indexOf('ประเภทซื้อ');
+  if (iItem === -1 || iBaht === -1 || iMsg === -1) return null;
+  var last = buy.getLastRow(), from = Math.max(2, last - 199);
+  var v = buy.getRange(from, 1, last - from + 1, head.length).getValues();
+
+  // ข้อความไหนลงของเข้าชื่อนี้ไปแล้ว — ไม่ผูกซ้ำ
+  var done = {};
+  var inName = (typeof SHEET_INCOMING === 'string') ? SHEET_INCOMING : 'จำนวนของเข้า';
+  var inSh = ss.getSheetByName(inName);
+  if (inSh && inSh.getLastRow() > 1) {
+    var ih = inSh.getRange(1, 1, 1, inSh.getLastColumn()).getValues()[0].map(trim);
+    var jItem = ih.indexOf('รายการ'), jMsg = ih.indexOf('messageId');
+    if (jItem !== -1 && jMsg !== -1) {
+      var il = inSh.getLastRow(), ifrom = Math.max(2, il - 499);
+      inSh.getRange(ifrom, 1, il - ifrom + 1, ih.length).getValues().forEach(function (r) {
+        if (trim(r[jItem]) === itemName && trim(r[jMsg])) done[trim(r[jMsg])] = true;
+      });
+    }
+  }
+
+  var minT = Date.now() - INTAKE_LINK_DAYS * 86400000;
+  for (var r = v.length - 1; r >= 0; r--) {
+    var row = v[r], msg = trim(row[iMsg]), baht = Number(row[iBaht]) || 0;
+    if (trim(row[iItem]) !== itemName || !msg || !(baht > 0) || done[msg]) continue;
+    if (iLoc !== -1 && trim(row[iLoc]) && trim(row[iLoc]) !== location) continue;
+    if (iKind !== -1 && trim(row[iKind]) === INTAKE_KIND_RND) continue;
+    var d = iDate === -1 ? null : row[iDate], t = 0;
+    if (d instanceof Date) t = d.getTime();
+    else { var m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) t = new Date(+m[1], m[2] - 1, +m[3]).getTime(); }
+    if (!t || t < minT - 86400000) continue;            // ไม่รู้วันหรือเก่าเกิน — ไม่เดา
+    return { msg: msg, baht: baht };
   }
   return null;
 }
@@ -1993,7 +2049,10 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             intakeStaleUnitHint_(hit.name, byName[hit.name].subUnit));
         }
         if (!makeOnly && q && q.base > 0) {
-          var srow = intakeAddStockIn_(byName[hit.name], q, ctx, it.start);
+          // ส่งจำนวนเพิ่มแบบไม่ใส่ราคา (หลังบอทเตือนหน่วยไม่ตรง) — ผูกกับค่าซื้อที่ลงไว้แล้ว
+          var link = !(it.baht > 0) ? intakePaidMsgFor_(hit.name, ctx.location) : null;
+          var sctx = link ? Object.assign({}, ctx, { msgId: link.msg }) : ctx;
+          var srow = intakeAddStockIn_(byName[hit.name], q, sctx, it.start);
           if (srow && typeof bakeryNeedsStart_ === 'function' && bakeryNeedsStart_(hit.name) && !it.start) {
             noDate.push(hit.name);          // ลงสต็อกแล้ว แค่ไม่รู้วันเข้า — ไม่ใช่ "ยังไม่ได้ลงสต็อก"
           }
@@ -2005,6 +2064,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
                             (q.packs ? '  (' + q.packs + ' ' + it0.packUnit + ')' : '') +
                             (it.start && it0.bakery ? '  วันเข้า ' + intakeDM_(it.start) : '') +
                             (q.unitNote ? '  (' + q.unitNote + ')' : '') +
+                            (link ? '  (ต้นทุนจากที่ซื้อไว้ ' + intakeMoney_(link.baht) + ' บาท)' : '') +
                             (q.unitWarn ? '  ⚠️' : ''));
           }
         }
