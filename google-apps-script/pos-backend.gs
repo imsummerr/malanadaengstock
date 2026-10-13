@@ -2200,8 +2200,7 @@ function handleStockIn_(body) {
     'แพ็ค': Number(body.packs) || 0, 'เศษ': Number(body.rem) || 0,
     'เศษ(ชิ้น)': Number(body.pieces) || 0, 'ชิ้นต่อไม้': perStickOf_(p.item),
     'ไม้ต่อแพ็ค': p.item.perPack, 'ประเภท': 'ของเข้าครัวกลาง',
-    'หมายเหตุ': [String(body.note || '').trim(),
-                 leftover.length ? 'ใช้ของเหลือจากรอบก่อน: ' + leftover.join(', ') : ''].filter(String).join(' · ')
+    'หมายเหตุ': String(body.note || '')
   };
   if (start && p.item.bakery) row[BAKERY_START_COL] = start;
   if (!stockAppendOnce_(sh, cols, row, body.reqId)) return stockDupRes_(fmtPack_(p.total, p.item));
