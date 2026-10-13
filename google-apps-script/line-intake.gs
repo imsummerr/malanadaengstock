@@ -1072,6 +1072,13 @@ function intakeParseLine_(line) {
   // ไม่มีตัวเลขเลย = เป็นประโยคคุยกันเฉย ๆ ไม่ใช่รายการของ
   if (!baht && !gram && !qty) return null;
 
+  // บอกแค่ "โลละ" ไม่ได้พิมพ์ยอดรวม — คูณให้ ไม่งั้นต้นทุนเป็น 0 (14/10 น้ำจิ้มสุกี้ 0.455 กิโลลิตร โลละ 47.8)
+  // นับเป็นถุง/แพ็ค ไม่รู้น้ำหนัก = คูณไม่ได้ ปล่อยไว้ให้เตือนเหมือนเดิม
+  if (!baht && perKg > 0) {
+    var kgs = gram > 0 ? gram / 1000 : (qty > 0 && /^กิโล/.test(unit) ? qty : 0);
+    if (kgs > 0) baht = Math.round(kgs * perKg * 100) / 100;
+  }
+
   return {
     raw: name, baht: baht, gram: gram, qty: qty, unit: unit, counts: counts,
     perKg: perKg,                                     // คนพิมพ์บอกมาเอง ใช้แทนที่จะหาร
