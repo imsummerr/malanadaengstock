@@ -70,42 +70,6 @@ function costBizCell_(v) {
   return /เบเกอรี/.test(b) ? 'เบเกอรี่' : 'หม่าล่า';
 }
 var COST_BIZES = ['หม่าล่า', 'เบเกอรี่'];
-/**
- * ค่าใช้จ่ายที่ใช้ร่วมกัน — ไม่ได้เขียนธุรกิจกำกับ แบ่งให้เบเกอรี่ตามสัดส่วนนี้ ที่เหลือหม่าล่า
- *   ค่าที่ 120 → หม่าล่า 60 เบเกอรี่ 60 · ค่าพนักงาน (ค่าแรง) 300 → 150 / 150
- * ค่าน้ำ ค่าน้ำแข็ง ค่าไฟ และอื่น ๆ ที่ไม่ได้อยู่ในนี้ = หม่าล่าทั้งหมด
- */
-var COST_SHARED_TYPES = { 'ค่าที่': 0.5, 'ค่าแรง': 0.5 };
-/**
- * เริ่มแบ่งตั้งแต่วันที่เบเกอรี่เริ่มขาย (BAKERY_START_DATE) — ก่อนนั้นเป็นหม่าล่าทั้งหมด
- *   ค่าที่   แบ่งครึ่งทุกวัน แม้วันนั้นเบเกอรี่ไม่ได้ขาย
- *   ค่าแรง  แบ่งครึ่งเฉพาะวันที่เบเกอรี่ขาย · วันไม่ขาย = หม่าล่า 300 เต็ม
- */
-var COST_SHARED_SALE_DAYS_ONLY = { 'ค่าแรง': true };
-
-/**
- * วันที่เบเกอรี่ขาย — วันที่พนักงานสาขากรอกยอดเบเกอรี่หลังขายแล้วมีขาย
- * คืน { 'สาขา|yyyy-MM-dd': true }
- */
-function costBakeryDays_() {
-  return cached_('cost:bakerydays', function () {
-    var out = {};
-    if (typeof bakeryMoneyRows_ !== 'function') return out;
-    bakeryMoneyRows_().forEach(function (r) {
-      if (typeof BAKERY_START_DATE === 'string' && r.day < BAKERY_START_DATE) return;
-      if (r.money > 0 || r.sold > 0) out[r.loc + '|' + r.day] = true;
-    });
-    return out;
-  });
-}
-/** วันทำการของแถวค่าใช้จ่าย (ตี 4 ยังเป็นวันก่อน เหมือนปิดร้าน) */
-function costExpenseDay_(dateCell, timeCell) {
-  var t = costRowTime_(dateCell, timeCell);
-  var ms = t instanceof Date ? t.getTime() : costTime_(t);
-  if (!ms) return '';
-  return (typeof cashBizDay_ === 'function') ? cashBizDay_(ms) : Utilities.formatDate(new Date(ms), costTz_(), 'yyyy-MM-dd');
-}
-
 function costCentral_() { return (typeof CENTRAL === 'string' && CENTRAL) ? CENTRAL : 'ครัวกลาง'; }
 
 /**
@@ -862,35 +826,23 @@ function costOutgo_(biz, from) {
     var baht = Number(v[r][iBaht]) || 0;
     if (!loc || !baht) continue;
     var type = iType === -1 ? 'อื่น ๆ' : (String(v[r][iType] || '').trim() || 'อื่น ๆ');
-    var full = baht;
-    // แยกบัญชีหม่าล่า/เบเกอรี่ — เขียนธุรกิจกำกับมา = ของธุรกิจนั้นทั้งก้อน
-    // ไม่ได้เขียน: ค่าที่ / ค่าแรง(ค่าพนักงาน) แบ่งครึ่ง · อย่างอื่นเป็นหม่าล่าหมด
+    // แยกบัญชีหม่าล่า/เบเกอรี่ — เขียนธุรกิจกำกับมา = ของธุรกิจนั้นทั้งก้อน · ไม่ได้เขียน = หม่าล่า
+    // ไม่หารครึ่งให้เอง (14/10) — ค่าที่/ค่าแรงจะแบ่งเบเกอรี่ เจ้าของพิมพ์แยกบรรทัดมาเอง
     if (biz) {
       var tag = iBiz === -1 ? '' : String(v[r][iBiz] || '').trim();
-      // ค่าที่ แบ่งครึ่งทุกวันตั้งแต่เบเกอรี่เริ่มขาย · ค่าแรง แบ่งเฉพาะวันที่เบเกอรี่ขาย
-      var cut = 0;
-      if (!tag && COST_SHARED_TYPES.hasOwnProperty(type)) {
-        var day = costExpenseDay_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]);
-        var started = !(typeof BAKERY_START_DATE === 'string') || (day && day >= BAKERY_START_DATE);
-        var saleDay = !COST_SHARED_SALE_DAYS_ONLY[type] || costBakeryDays_()[loc + '|' + day];
-        if (started && saleDay) cut = COST_SHARED_TYPES[type];
-      }
-      var share = COST_MALA_ONLY_TYPES[type] ? (biz === 'หม่าล่า' ? 1 : 0)
-                : tag ? (costBizCell_(tag) === biz ? 1 : 0)
-                      : (biz === 'เบเกอรี่' ? cut : 1 - cut);
-      if (!share) continue;
-      baht = costBaht_(baht * share);
+      var mine = COST_MALA_ONLY_TYPES[type] ? biz === 'หม่าล่า' : costBizCell_(tag) === biz;
+      if (!mine) continue;
     }
     if (!out[loc]) out[loc] = { รวม: 0, ตามประเภท: {}, รายการ: [] };
     out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
     out[loc]['ตามประเภท'][type] = costBaht_((out[loc]['ตามประเภท'][type] || 0) + baht);
-    // ทีละแถว ให้หน้าบัญชีกดดูได้ว่าจ่ายค่าอะไรไปบ้าง · แถว = เลขแถวในชีต (บัญชีรวมเอาไว้รวมครึ่งกลับเป็นแถวเดียว)
+    // ทีละแถว ให้หน้าบัญชีกดดูได้ว่าจ่ายค่าอะไรไปบ้าง · แถว = เลขแถวในชีต
     var when = iDate === -1 ? 0 : costTime_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]));
     out[loc]['รายการ'].push({
       แถว: r + 1, t: when,
       เวลา: when ? Utilities.formatDate(new Date(when), costTz_(), 'd/M HH:mm') : '',
       ประเภท: type, รายละเอียด: iNote === -1 ? '' : String(v[r][iNote] || '').trim(),
-      บาท: baht, เต็ม: full, วิธีจ่าย: iPay === -1 ? '' : String(v[r][iPay] || '').trim()
+      บาท: baht, วิธีจ่าย: iPay === -1 ? '' : String(v[r][iPay] || '').trim()
     });
   }
   return out;
@@ -1162,7 +1114,7 @@ function costSummary_() {
 
 /**
  * บัญชีรวม หม่าล่า + เบเกอรี่ — บวกกันตรง ๆ
- * ค่าใช้จ่ายที่ใช้ร่วม (ค่าที่ ค่าแรง) แบ่งไปแล้วฝั่งละครึ่ง รวมกลับก็ได้ยอดเต็มพอดี ไม่นับซ้ำ
+ * ค่าใช้จ่ายแต่ละแถวอยู่ฝั่งเดียว (ตามป้ายธุรกิจ) — รวมกันไม่นับซ้ำ
  */
 function costCombine_(a, b) {
   var num = function (x) { return Number(x) || 0; };
@@ -1210,14 +1162,8 @@ function costCombine_(a, b) {
       Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
     });
     p['ตามประเภท'] = tp;
-    // ค่าที่/ค่าแรงที่แบ่งครึ่ง โผล่ทั้งสองฝั่ง — รวมกลับเป็นแถวเดียวยอดเต็มตามแถวในชีต
-    var byRow = {}, list = [];
-    (x['รายการค่าใช้จ่าย'] || []).concat(y['รายการค่าใช้จ่าย'] || []).forEach(function (e) {
-      if (byRow[e['แถว']]) { byRow[e['แถว']]['บาท'] = costBaht_(byRow[e['แถว']]['บาท'] + e['บาท']); return; }
-      var c = {}; Object.keys(e).forEach(function (k) { c[k] = e[k]; });
-      byRow[e['แถว']] = c; list.push(c);
-    });
-    p['รายการค่าใช้จ่าย'] = list.sort(function (m, n) { return n.t - m.t; });
+    p['รายการค่าใช้จ่าย'] = (x['รายการค่าใช้จ่าย'] || []).concat(y['รายการค่าใช้จ่าย'] || [])
+      .sort(function (m, n) { return n.t - m.t; });
     if (x['เงินหมุนเวียน'] || y['เงินหมุนเวียน']) {
       var cx = x['เงินหมุนเวียน'] || {}, cy = y['เงินหมุนเวียน'] || {}, cb = { ตั้งแต่: cx['ตั้งแต่'] || cy['ตั้งแต่'] };
       ['เงินทุน', 'ซื้อของ', 'ลองสูตร', 'ค่าใช้จ่าย', 'รับคืนค่าของ', 'รับกำไร', 'คงเหลือ', 'ของในครัวกลาง',
@@ -1379,7 +1325,7 @@ function buildLocationPL() {
     ['สถานที่', 'บัญชี', 'ขายหน้าร้าน (หม่าล่า)', 'เดลิเวอรี่ (ราคาบนแอป)', 'ค่าคอม+VAT', 'ขายเบเกอรี่',
      'รายได้รวม', 'ค่าใช้จ่ายวัตถุดิบ', 'ของเสีย', 'กำไรขั้นต้น',
      'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ', 'วัตถุดิบคงเหลือ'], rows,
-    'ตัวเลขสะสมตั้งแต่เริ่มระบบ · แต่ละที่มี 3 แถว รวม / หม่าล่า / เบเกอรี่ · ค่าที่ ค่าแรง แบ่งครึ่ง · ' +
+    'ตัวเลขสะสมตั้งแต่เริ่มระบบ · แต่ละที่มี 3 แถว รวม / หม่าล่า / เบเกอรี่ · ค่าใช้จ่ายไม่เขียนธุรกิจ = หม่าล่า · ' +
     'ครัวกลางไม่มีรายได้เพราะส่งต่อที่ต้นทุน · อัปเดตเมื่อ ' +
     Utilities.formatDate(new Date(), costTz_(), 'd/M/yyyy HH:mm'));
   Logger.log('เขียนชีต "' + COST_SHEET_PL + '" แล้ว ' + rows.length + ' แถว');

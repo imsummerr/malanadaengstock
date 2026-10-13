@@ -20,7 +20,7 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-13i · เงินสดคงเหลือแจ้งในไลน์ (ไม่มีปิดร้านนับเงินใน POS) · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-14a · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -230,6 +230,12 @@ function doPost(e) {
       case 'stockWaste':  return json_(withLineBatch_(function () { return handleStockWaste_(body); }));
       case 'stockCount':  return json_(handleStockCount_(body));
       case 'stockPack':   return json_(withLineBatch_(function () { return handleStockPack_(body); }));
+      // เจ้าของกด "ลงครบแล้ว" ที่กล่องเตือน — ค่าใช้จ่ายของวันนั้นลงครบแล้ว (ไม่ได้ลงผ่านไลน์)
+      case 'expDone':
+        if (typeof handleExpDone_ !== 'function') {
+          return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
+        }
+        return json_(withLineBatch_(function () { return handleExpDone_(body); }));
       case 'bakeryCount':
         if (typeof handleBakeryCount_ !== 'function') {
           return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
@@ -275,7 +281,7 @@ function handleVersion_() {
     version: BACKEND_VERSION,
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus'],
+              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -1239,7 +1245,7 @@ var KIND_BAKERY = 'เบเกอรี่';
  * สาขานับในแท็บ 🍡 เบเกอรี่ วันละ 2 รอบ (ก่อนขาย / หลังขาย) ไม่ได้นับรวมกับเช็คสต็อกหม่าล่า
  * [ชื่อ, ต้นทุน/ชิ้น] */
 var BAKERY_PRICE = 10;
-/** เบเกอรี่เริ่มขาย 9/10/2026 — ยอดเงิน/การแบ่งค่าที่ค่าแรงก่อนวันนี้ไม่นับ (กรอกลองระบบ) */
+/** เบเกอรี่เริ่มขาย 9/10/2026 — ยอดเงินก่อนวันนี้ไม่นับ (กรอกลองระบบ) */
 var BAKERY_START_DATE = '2026-10-09';
 /* หน่วยของเบเกอรี่ (8/10) — ยอดเก็บเป็นชิ้น/ลูกเสมอ
  *   ไดฟุกุ   1 แพ็ค = 2 ชุด · 1 ชุด = 40 ลูก · ส่งสาขาเป็นชุด

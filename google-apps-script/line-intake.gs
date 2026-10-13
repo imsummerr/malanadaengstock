@@ -622,7 +622,8 @@ var INTAKE_PERBAG_RE =
  * คืน { day: 'yyyy-MM-dd', rest } หรือ null · ที่เหลือมีตัวเลข = ไม่ใช่หัว (เป็นรายการ)
  */
 var INTAKE_DAY_HEAD_RE = /^\s*(?:ค่าใช้จ่าย|รายจ่าย)?\s*(?:ของ|ประจำ)?\s*(?:วันที่|วัน)?\s*(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{2,4}))?(?!\d)\s*(.*)$/;
-var INTAKE_NO_EXP_RE = /ไม่มีค่าใช้จ่าย|ไม่มีรายจ่าย/;
+// "ค่าใช้จ่ายครบ" = ลงครบแล้วทางอื่น ไม่มีเพิ่ม (14/10) — ใต้บรรทัดวันที่ ถือว่าแจ้งของวันนั้นแล้ว
+var INTAKE_NO_EXP_RE = /ไม่มีค่าใช้จ่าย|ไม่มีรายจ่าย|ค่าใช้จ่ายครบ|ลงค่าใช้จ่ายครบ/;
 /** "เงินสดคงเหลือ 450" — เงินสดที่นับได้ตอนปิดร้านหม่าล่า (แทนกรอกในหน้า POS) · 13/10 */
 var INTAKE_CASH_LEFT_RE = /(?:เงินสด\s*คงเหลือ|เงิน\s*คงเหลือ|คงเหลือ\s*เงินสด|เงินสด\s*เหลือ|เงินสด\s*ในลิ้นชัก|เงิน\s*ในลิ้นชัก|เงินสด\s*นับได้|เงินสด\s*ปิดร้าน)\D{0,20}?(\d+(?:\.\d+)?)/;
 function intakeDayHead_(line) {
@@ -2036,14 +2037,14 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
         expSeq = ++expSeqBy[eDay];
         var type = intakeExpenseType_(it.raw);
         var expLoc = it.branch || ctx.location;
-        // ค่าพนักงาน (ค่าแรง) ไม่ได้บอกที่ = พนักงานหน้าร้าน หักสาขา (หม่าล่า/เบเกอรี่ครึ่ง ๆ) ไม่ใช่ครัวกลาง
+        // ค่าพนักงาน (ค่าแรง) ไม่ได้บอกที่ = พนักงานหน้าร้าน หักสาขา ไม่ใช่ครัวกลาง
         // มีสาขาเดียวลงสาขานั้นเลย · เขียน "ครัวกลาง" กำกับมาเอง = ค่าแรงของครัวกลางจริง ๆ
         if (!it.branch && expLoc === intakeCentral_() && INTAKE_BRANCH_EXPENSE_TYPES.indexOf(type) !== -1 &&
             !/ครัวกลาง/.test(it.raw)) {
           var onlyBranch = intakeOnlyBranch_();
           if (onlyBranch) expLoc = onlyBranch;
         }
-        // ไม่เขียนธุรกิจ = ปล่อยว่าง (ค่าที่/ค่าแรง แบ่งครึ่ง อย่างอื่นเป็นหม่าล่า — ดู COST_SHARED_TYPES)
+        // ไม่เขียนธุรกิจ = ปล่อยว่าง = หม่าล่า · ไม่หารครึ่งให้ — จะแบ่งเบเกอรี่พิมพ์แยกบรรทัดมาเอง
         var expBiz = INTAKE_MALA_ONLY_TYPES.indexOf(type) !== -1 ? 'หม่าล่า' : (it.biz || '');
         if (it.day) markDay(expLoc, it.day, it.baht || 0);
         expRows.push([
@@ -2053,11 +2054,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
           it.baht || 0, ctx.msgId + '-' + i, it.pay, expBiz
         ]);
         expTotal += it.baht || 0;
-        var shared = !expBiz && typeof COST_SHARED_TYPES === 'object' && COST_SHARED_TYPES.hasOwnProperty(type);
-        var saleOnly = shared && typeof COST_SHARED_SALE_DAYS_ONLY === 'object' && COST_SHARED_SALE_DAYS_ONLY[type];
-        var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay) +
-                      (saleOnly ? '  (แบ่งครึ่งกับเบเกอรี่ถ้าวันนั้นเบเกอรี่ขาย)'
-                       : shared ? '  (แบ่งครึ่ง หม่าล่า/เบเกอรี่)' : '');
+        var expLine = '• ' + it.raw + ' — ' + intakeMoney_(it.baht) + ' บาท' + intakePayTag_(it.pay);
         expLines.push(expLine);
         // หัวแยกตามสาขา + ธุรกิจ (+ วันที่ถ้าบอกมา) — หม่าล่าไม่ต้องเขียนกำกับ (ค่าเริ่มต้น)
         var expKey = expLoc + '|' + (expBiz || 'หม่าล่า') + '|' + (it.day || '');
@@ -2206,7 +2203,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
                 '\n' + expByLoc[k].join('\n'));
   });
   dayMarkKeys.forEach(function (k) {
-    if (!dayMarks[k].n) blocks.push('🧾 ' + dayMarks[k].loc + ' · วันที่ ' + intakeDM_(dayMarks[k].day) + ' — ไม่มีค่าใช้จ่าย (จดไว้แล้ว)');
+    if (!dayMarks[k].n) blocks.push('🧾 ' + dayMarks[k].loc + ' · วันที่ ' + intakeDM_(dayMarks[k].day) + ' — ไม่มีค่าใช้จ่ายเพิ่ม (จดว่าแจ้งแล้ว)');
   });
   if (cashLines.length) blocks.push(cashLines.join('\n'));
   if (cashWarns.length) blocks.push('⚠️ ' + cashWarns.join('\n⚠️ '));

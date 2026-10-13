@@ -158,6 +158,42 @@ eq('"วันที่ 9/10/69" (พ.ศ.) ได้', g.intakeDayHead_('วั
      g4.intakeDayStamp_('2026-10-13', new Date('2026-10-13T10:30:00+07:00')), { date: '2026-10-13', time: '10:30:00' });
 }
 
+section('ค่าใช้จ่ายลงครบแล้วทางอื่น (ไม่ได้ลงในไลน์) — ปุ่มเจ้าของในหน้าสต็อก (14/10)');
+g = setup(200);
+g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g, { 'ดอลลี่': 10 }) });
+push(g, g.SHEET_EXPENSE, { 'วันที่': ymd(at(30)), 'เวลา': hms(at(30)), 'สาขา': SHOP, 'ประเภท': 'ค่าที่', 'จำนวนเงิน': 60, 'วิธีจ่าย': 'เงินสด' });
+g.cacheClear_();
+const nextDay = g.cashDayStart_(D) + 30 * 3600000;   // วันถัดไป ยังไม่ขาย
+eq('วันถัดไป กล่องเตือนเจ้าของขึ้น "แจ้งค่าใช้จ่ายของวันที่ D"', (g.lateStatus_(SHOP, nextDay).exp || {}).day, D);
+g.__env.SENT.length = 0;
+g.checkToken_ = () => staff;
+r = g.handleExpDone_({ token: 't', location: SHOP, day: D });
+eq('พนักงานกดไม่ได้', [r.success, r.code, g.expDoneHas_(SHOP, D), texts(g)], [false, 403, false, '']);
+g.checkToken_ = () => owner;
+eq('วันที่ผิด / ยังไม่ถึง / ครัวกลาง ไม่รับ', [
+  g.handleExpDone_({ token: 't', location: SHOP, day: '13/10' }).success,
+  g.handleExpDone_({ token: 't', location: SHOP, day: '2099-01-01' }).success,
+  g.handleExpDone_({ token: 't', location: g.CENTRAL, day: D }).success], [false, false, false]);
+r = g.handleExpDone_({ token: 't', location: SHOP, day: D });
+t = texts(g);
+eq('เจ้าของกด → จดว่าแจ้งแล้ว + ส่งสรุป', [r.success, r.sent, g.expDoneHas_(SHOP, D), /ส่งสรุปยอดวันที่/.test(r.message)], [true, true, true, true]);
+eq('สรุปใช้ค่าใช้จ่ายที่ลงไว้แล้ว (ค่าที่ 60 เงินสด)', [/📊 สรุปยอด ตลาดทรัพย์พัฒนา/.test(t), /💸 ค่าใช้จ่ายวันที่ [\d/]+ 60 บาท \(เงินสด 60\)/.test(t)], [true, true]);
+const ed = g.__env.SHEETS[g.SHEET_EXP_DONE];
+eq('ชีตแจ้งค่าใช้จ่ายแล้ว: ผู้แจ้ง (หน้าเว็บ) · 1 รายการ 60', [ed.rows.length, ed.rows[0][ed.headers.indexOf('ผู้แจ้ง')], ed.rows[0][ed.headers.indexOf('รายการ')], ed.rows[0][ed.headers.indexOf('รวมเงิน')]],
+   [1, 'เจ้าของ (หน้าเว็บ)', 1, 60]);
+eq('กล่องเตือนหายไป', g.lateStatus_(SHOP, nextDay).exp || null, null);
+g.__env.SENT.length = 0;
+r = g.handleExpDone_({ token: 't', location: SHOP, day: D });
+eq('กดซ้ำ ไม่จดซ้ำ ไม่ส่งซ้ำ', [r.success, ed.rows.length, texts(g)], [true, 1, '']);
+
+section('ไลน์: "ค่าใช้จ่ายครบ" ใต้บรรทัดวันที่ = แจ้งแล้ว (ไม่มีอะไรเพิ่ม)');
+g = setup(200);
+g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g, { 'ดอลลี่': 10 }) });
+g.__env.SENT.length = 0;
+out = line(g, [HEAD, 'หม่าล่า ทรัพย์', 'ค่าใช้จ่ายครบ'].join('\n'), 'L5');
+eq('จดว่าแจ้งแล้ว · ไม่ลงค่าใช้จ่าย · ส่งสรุป', [g.expDoneHas_(SHOP, D), g.__env.SHEETS[g.SHEET_EXPENSE].rows.length, /ไม่มีค่าใช้จ่ายเพิ่ม/.test(out), /📊 สรุปยอด/.test(texts(g))],
+   [true, 0, true, true]);
+
 section('พนักงานนับ — ไม่ได้ตัวเลขเงินกลับไป');
 g = setup(150);
 g.checkToken_ = () => staff;

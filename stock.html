@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-13e';
+const PAGE_BUILD = '2026-10-14a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -535,13 +535,29 @@ function lateBanner() {
         — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${s.mala.dm}` + btn('ไปนับ', "go('count')"));
     // ค่าใช้จ่าย + เงินสดคงเหลือ เจ้าของร้านแจ้งในไลน์ — พนักงานไม่ต้องเห็น
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
-        — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้`);
+        — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้<br>
+        <small>ลงครบแล้วทางอื่น (ไม่ได้ลงในไลน์) กดปุ่มนี้แทนได้</small>` +
+        btn('✅ ค่าใช้จ่ายลงครบแล้ว', `expDoneGo('${esc(loc)}','${esc(s.exp.day)}','${esc(s.exp.dm)}')`));
     if (s.bakery) rows.push(`🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${s.bakery.dm}` +
         (s.bakery.counted ? ' — เช้านี้นับเบเกอรี่แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
         btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}')`));
     if (rows.length) out.push(`<b>⏰ ${esc(loc)} — ลืมลงของวันก่อน</b><br>` + rows.join('<br>'));
   });
   return out.length ? `<div class="card"><div class="warnbox" style="margin:0">${out.join('<hr>')}</div></div>` : '';
+}
+
+/** เจ้าของกด "ค่าใช้จ่ายลงครบแล้ว" — จดว่าแจ้งแล้ว แล้วหลังบ้านสรุปยอดของวันนั้นให้ (ถ้าเช็คสต็อกครบ) */
+async function expDoneGo(loc, day, dm) {
+  if (!confirm('ค่าใช้จ่ายของวันที่ ' + dm + ' (' + loc + ') ลงครบแล้ว?\nระบบจะสรุปยอดของวันนั้นให้')) return;
+  try {
+    const r = await apiPost({ action: 'expDone', location: loc, day });
+    if (D.late && D.late[loc]) D.late[loc].exp = null;
+    toast('✅ ' + esc(r.message || 'จดแล้ว'), 6000);
+    render();
+  } catch (e) {
+    if (/เวอร์ชันเก่า|ไม่รู้จัก action/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 6000);
+  }
 }
 
 /* ── บัญชี — เจ้าของร้านคนเดียว ── */
@@ -713,7 +729,6 @@ function viewMoney(v) {
 
 /**
  * แถว "ค่าใช้จ่ายอื่น" — กดแล้วกางดูทีละรายการ แยกตามประเภท (ล่าสุดอยู่บน)
- * ค่าที่/ค่าแรงที่แบ่งครึ่งกับเบเกอรี่ บอกว่าครึ่งจากเท่าไหร่ · บัญชีรวมเป็นยอดเต็ม
  * หลังบ้านเก่าไม่ส่งรายการมา = แถวเดียวกดไม่ได้เหมือนเดิม
  */
 function expenseRows(p, id) {
@@ -729,11 +744,10 @@ function expenseRows(p, id) {
         <tr class="${id} hidden"><td><small><b>${esc(t)}</b> · ${byType[t].length} รายการ</small></td>
             <td class="num"><small><b>${baht(sum(byType[t]))}</b></small></td></tr>` +
     byType[t].map(e => {
-      const half = Number(e['บาท']) < Number(e['เต็ม']) - 0.005 ? ` <span style="color:var(--muted)">(ครึ่งจาก ${baht(e['เต็ม'])})</span>` : '';
       const note = e['รายละเอียด'] ? ' ' + esc(e['รายละเอียด']) : '';
       const pay = e['วิธีจ่าย'] ? ` <span style="color:var(--muted)">${esc(e['วิธีจ่าย'])}</span>` : '';
       return `
-        <tr class="${id} hidden"><td><small>&nbsp;&nbsp;· ${esc(e['เวลา'])}${note}${pay}${half}</small></td>
+        <tr class="${id} hidden"><td><small>&nbsp;&nbsp;· ${esc(e['เวลา'])}${note}${pay}</small></td>
             <td class="num"><small>${baht(e['บาท'])}</small></td></tr>`;
     }).join('')).join('');
   return `<tr onclick="toggleRows('${id}', this)" style="cursor:pointer">

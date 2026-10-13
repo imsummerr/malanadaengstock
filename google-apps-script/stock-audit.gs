@@ -1476,6 +1476,37 @@ function previewDaySummary() {
   return out;
 }
 
+/**
+ * เจ้าของกด "✅ ลงครบแล้ว" ที่กล่องเตือนในหน้าสต็อก (14/10)
+ * ค่าใช้จ่ายของวันนั้นลงครบแล้วทางอื่น (POS / ไลน์ที่ไม่ได้เขียนวันที่) — จดว่าแจ้งแล้ว แล้วลองสรุปยอดเลย
+ * เจ้าของร้านเท่านั้น
+ */
+function handleExpDone_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (!(typeof isStockOwner_ === 'function' ? isStockOwner_(session) : session.role === 'owner')) {
+    return { success: false, code: 403, message: 'เจ้าของร้านเท่านั้น' };
+  }
+  var loc = String(body.location || '').trim(), day = String(body.day || '').trim();
+  if (!loc || loc === auditCentral_()) return { success: false, message: 'เลือกสาขา' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > cashBizDay_(Date.now())) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+  var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
+  // กดซ้ำ (เน็ตหลุด/กดสองที) — จดไว้แล้วและสรุปส่งไปแล้ว ไม่ส่งซ้ำ
+  if (expDoneHas_(loc, day) && PropertiesService.getScriptProperties().getProperty('DAY_SUM_' + loc + '|' + day)) {
+    return { success: true, sent: false, need: [], message: 'จดไว้แล้ว — สรุปยอดวันที่ ' + dm + ' ส่งไปแล้ว' };
+  }
+  if (!expDoneHas_(loc, day)) {
+    var ex = dayExpenses_(loc, day);
+    expDoneMark_(loc, day, (session.name || 'เจ้าของ') + ' (หน้าเว็บ)', ex.n, ex.total, 'WEB' + Date.now());
+  }
+  SpreadsheetApp.flush();
+  var sum = daySummaryAfter_(loc, day, { source: 'web' });
+  return { success: true, sent: !!sum.sent, need: sum.need || [],
+           message: sum.sent ? 'ส่งสรุปยอดวันที่ ' + dm + ' ในกลุ่มสาขาแล้ว'
+                  : sum.none ? 'จดแล้ว — วันที่ ' + dm + ' ไม่มียอดขายให้สรุป'
+                  : 'จดแล้ว — ยังไม่สรุปยอดวันที่ ' + dm + ' รอ ' + sum.need.join(' · ') };
+}
+
 /** ไลน์ "เงินสดคงเหลือ 450" — ลงเป็นเงินปิดร้านหม่าล่าของวันนั้น (แทนกรอกในหน้า POS) · คืนเลขแถว */
 function cashFromLine_(loc, day, amount, who, msgId) {
   var sh = cashSheet_(), now = new Date();
