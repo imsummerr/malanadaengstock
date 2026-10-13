@@ -1048,7 +1048,8 @@ function cashCheck_(loc, day, opt) {
     S.push('🔺 POS มากกว่าของที่ออก ' + auditBaht_(-gap) + ' บาท — ลืมลงของเข้าร้าน หรือนับเกิน');
     if (oversSold.length) S.push('   นับได้เกินระบบ: ' + oversSold.slice(0, 4).map(function (x) {
       return x.name + ' ' + x.qty + ' ' + x.unit; }).join(', ') + (oversSold.length > 4 ? ' …' : ''));
-    S.push('   ลงของเข้าร้านย้อนหลังแล้วตัวเลขจะถูก');
+    // ลงของเข้าร้านตอนนี้ไม่ได้ — รอบนับนี้รวมของนั้นไปแล้ว ลงหลังเวลานับยอดจะเบิ้ล
+    S.push('   ส่งไปแล้วไม่ได้ลง? อย่าลงของเข้าร้านตอนนี้ (นับรวมไปแล้ว ยอดจะเบิ้ล) ต้องแก้ย้อนหลังในชีต');
   }
   if (u.wasteValue) S.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
   S.push('');
