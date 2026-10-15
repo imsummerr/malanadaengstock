@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-15f';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-15g';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -886,8 +886,12 @@ function cashCountTimes_(loc) {
  * กำไรก็ลดไปแล้วเพราะรายได้ได้น้อยกว่าที่ควร — ตัวนี้บอกให้เห็นเฉย ๆ ไม่หักซ้ำ
  * คืน { บาท, ควรได้, ได้จริง, ตั้งแต่, ถึง } · ยังเทียบไม่ได้ (นับรอบเดียว) = null
  */
-/** ของหายเริ่มนับวันไหน — 15/10 เจ้าของ: เอาตั้งแต่ 8/10 (7/10 ยังลองระบบ) */
-var MISSING_GOODS_FROM = '2026-10-08';
+/**
+ * ของหายเริ่มนับวันไหน — 15/10 เจ้าของ: เอาตั้งแต่ 10/10
+ * หม่าล่า: รอบเช็คสต็อกแรกตั้งแต่เที่ยงคืนวันนั้น (10/10 01:39 ปิดร้านของคืน 9/10) เป็นฐาน
+ * เบเกอรี่: วันขายตั้งแต่วันนั้น
+ */
+var MISSING_GOODS_FROM = '2026-10-10';
 function missingGoods_(loc, biz) {
   var dm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'd/M'); };
   var should = 0, got = 0, from = 0, to = 0;
@@ -911,7 +915,8 @@ function missingGoods_(loc, biz) {
     });
     from = last[days[0]].ms; to = last[days[days.length - 1]].ms;
   } else {
-    var times = cashCountTimes_(loc).filter(function (t) { return cashBizDay_(t) >= MISSING_GOODS_FROM; })
+    var fromMs = new Date(MISSING_GOODS_FROM + 'T00:00:00+07:00').getTime();
+    var times = cashCountTimes_(loc).filter(function (t) { return t >= fromMs; })
       .reverse();                                                  // เก่า → ใหม่ · รอบแรกตั้งแต่วันเริ่ม = ฐาน
     if (times.length < 2) return null;
     var st = function (ms) { return auditStamp_(new Date(ms)); };
