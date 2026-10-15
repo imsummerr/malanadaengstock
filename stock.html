@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-15b';
+const PAGE_BUILD = '2026-10-15c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -495,7 +495,8 @@ function renderTabs() {
     .map(t => `<button class="tab${t.id === tab ? ' on' : ''}" onclick="go('${t.id}')">${t.label}</button>`)
     .join('');
 }
-function go(id) { tab = id; renderTabs(); render(); }
+// เข้าแท็บบัญชีทุกครั้ง = คิดตัวเลขใหม่ — เดิมโหลดครั้งเดียวแล้วค้าง ลงของเข้า/ส่งสาขาทีหลังไม่ขึ้น (15/10)
+function go(id) { if (id === 'money' && tab !== 'money') MONEY = null; tab = id; renderTabs(); render(); }
 
 /* ════════════════════════════════════════════════════════
    หน้าจอ
@@ -589,6 +590,7 @@ async function expDoneGo(loc, day, dm) {
 /** ตัวเลขบัญชีโหลดแยก เพราะต้องไล่ทุกแถวย้อนหลัง หนักกว่าหน้าอื่น */
 let MONEY = null;
 let MONEY_BIZ = 'รวม';      // บัญชีที่ดูอยู่ — รวม / หม่าล่า / เบเกอรี่
+let MONEY_AT = null;        // ตัวเลขคิด ณ เวลาไหน
 
 const baht = n => (Math.round((Number(n) || 0) * 100) / 100)
   .toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -747,8 +749,8 @@ function viewMoney(v) {
          สิ้นเดือนสาขาส่งเงินทั้งหมดเข้าครัวกลาง (คืนค่าของ + กำไร)</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${MONEY.total ? tabBtn('รวม', '📊 รวม') : ''}${tabBtn('หม่าล่า', '🌶️ หม่าล่า')}${MONEY.bakery ? tabBtn('เบเกอรี่', '🍡 เบเกอรี่') : ''}
-        <button class="key" onclick="MONEY=null;render()">โหลดใหม่</button>
-      </div>
+        <button class="key" onclick="MONEY=null;render()">🔄 โหลดใหม่</button>
+      </div>${MONEY_AT ? `<p class="note" style="margin-top:6px">ตัวเลข ณ ${String(MONEY_AT.getHours()).padStart(2, '0')}:${String(MONEY_AT.getMinutes()).padStart(2, '0')} น.</p>` : ''}
     </div>${isBk ? '' : warn}${cards || '<div class="card"><div class="empty">ยังไม่มีข้อมูล</div></div>'}`;
 }
 
@@ -792,6 +794,7 @@ function toggleRows(cls, el) {
 async function loadMoney() {
   try {
     MONEY = (await apiGet({ action: 'costBoard' })).data;
+    MONEY_AT = new Date();
     if (tab === 'money') render();
   } catch (e) {
     document.getElementById('view').innerHTML =

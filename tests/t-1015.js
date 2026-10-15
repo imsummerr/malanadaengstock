@@ -56,4 +56,20 @@ section('บราวนี่ อัลม่อนสไลซ์');
   eq('บราวนี่โอริโอ้ไม่ปน', g.stockBalances_()[g.CENTRAL]['บราวนี่ โอริโอ้'] || 0, 0);
 }
 
+section('ส่งสาขาก่อนลงซื้อเข้าในไลน์ (15/10 17:11 ส่ง · 17:13 ลงซื้อ) — มูลค่าครัวกลางไม่เบิ้ล');
+{
+  const g = fresh(), { push, D } = require('./fixture');
+  const msg = 'buy1';
+  push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(15, 17, 9), 'สาขา': SHOP, 'รายการ': S, 'จำนวน': 40, 'ประเภท': 'ของเข้าร้าน' });
+  push(g, g.INTAKE_SHEET, { 'รายการ': S, 'จำนวนเงิน': 520, 'messageId': msg });
+  push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(15, 18, 9), 'สาขา': g.CENTRAL, 'รายการ': S, 'จำนวน': 80, 'ประเภท': 'ของเข้าครัวกลาง', 'messageId': msg });
+  const s = g.costSummary_(), bk = s.biz['เบเกอรี่'];
+  const row = (loc) => (bk.stock[loc].rows.find(r => r.item === S) || {});
+  eq('ครัวกลางเหลือ 40 ลูก = 260 (ไม่ใช่ 80 = 520)', [row(g.CENTRAL).qty, row(g.CENTRAL).value, g.stockBalances_()[g.CENTRAL][S]], [40, 260, 40]);
+  eq('สาขา 40 ลูก = 260 · ลงซื้อแล้วไม่เตือน', [row(SHOP).qty, row(SHOP).value, s.warn.filter(w => w.item === S).length], [40, 260, 0]);
+  push(g, g.SHEET_INCOMING, { 'วันที่เวลา': D(16, 17, 9), 'สาขา': SHOP, 'รายการ': S, 'จำนวน': 60, 'ประเภท': 'ของเข้าร้าน' });
+  const s2 = g.costSummary_();
+  eq('ส่งเกินที่ซื้อ ยังไม่ลงของเข้า → เตือนขาด 20', s2.warn.filter(w => w.item === S).map(w => /ขาด 20 — ยังไม่ได้ลงของเข้า/.test(w.msg)), [true]);
+}
+
 process.exit(done().fail ? 1 : 0);

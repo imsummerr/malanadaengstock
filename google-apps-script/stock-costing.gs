@@ -521,6 +521,10 @@ function costReplayRaw_(all) {
   var lay = {}, used = {}, sent = {}, sentBiz = {}, moved = {}, warn = [], log = [];
   var buys = [], sendLog = [];   // เงินหมุนเวียนครัวกลาง — ซื้อเข้า / ส่งสาขา ตามเวลา
   var lastCost = {};     // loc|item → ต้นทุนต่อหน่วยที่รู้ล่าสุด ไว้เดาตอนไม่มีบิล
+  // ส่งสาขา/แพ็คไปก่อน แล้วค่อยลงของเข้า (15/10 ส่งไดฟุกุ 17:11 ลงซื้อในไลน์ 17:13) — ของออกไปแล้ว
+  // แต่ชั้นต้นทุนยังไม่มา จดไว้ว่าค้าง พอของเข้ามาหักส่วนที่ค้างก่อน ไม่งั้นมูลค่าครัวกลางเบิ้ล
+  // (ยอดจำนวนก็คิดแบบนี้อยู่แล้ว ติดลบก่อนแล้วของเข้ามาเติม) · นับสต็อก/ล้างยอด = ล้างที่ค้าง
+  var owe = {}, oweWarn = {};
   // ราคาจากประวัติทั้งหมด รวมก่อนวันเริ่มนับ — ยอดตั้งต้นของสาขาต้องมีราคา
   // ไม่งั้นนับวันแรกแล้วต้นทุนเป็น 0 กำไรวันนั้นจะดูดีเกินจริงทั้งก้อน
   var book = all ? {} : costPriceBook_();
@@ -555,6 +559,14 @@ function costReplayRaw_(all) {
   }
   function put(loc, item, qty, cost, shown) {
     if (!(qty > 0)) return;
+    var ok = loc + '|' + item;
+    if (owe[ok] > 0) {
+      var paid0 = Math.min(owe[ok], qty);
+      owe[ok] = costQty_(owe[ok] - paid0); qty = costQty_(qty - paid0);
+      if (!(owe[ok] > 0)) delete oweWarn[ok];
+      if (cost > 0) lastCost[ok] = cost;
+      if (!(qty > 0)) return;
+    }
     // shown = ราคาต่อหน่วยที่พิมพ์มาเอง (โลละ 84) ไว้โชว์ — คิดเงินยังใช้ cost
     box(loc, item).push(shown > 0 ? { qty: qty, cost: cost, shown: shown } : { qty: qty, cost: cost });
     if (cost > 0) lastCost[loc + '|' + item] = cost;
@@ -621,8 +633,9 @@ function costReplayRaw_(all) {
         var t = take(e.loc, r.name, r.qty);
         sum += t.value;
         if (t.short > 0) {
-          warn.push({ when: e.t, loc: e.loc, item: r.name,
-                      msg: 'แพ็คของโดยที่ของดิบในระบบไม่พอ ขาด ' + t.short });
+          var ko = e.loc + '|' + r.name;
+          owe[ko] = costQty_((owe[ko] || 0) + t.short);
+          oweWarn[ko] = { when: e.t, loc: e.loc, item: r.name, msg: 'แพ็คของโดยที่ของดิบในระบบไม่พอ' };
         }
       });
       if (e.qty > 0) put(e.loc, e.item, e.qty, sum / e.qty);
@@ -638,9 +651,9 @@ function costReplayRaw_(all) {
       var unitCost = t2.qty > 0 ? t2.value / t2.qty : guessCost(central, e.item);
       var value = costBaht_(t2.value + t2.short * unitCost);
       if (t2.short > 0) {
-        warn.push({ when: e.t, loc: central, item: e.item,
-                    msg: 'ส่งเข้าร้านมากกว่าที่ครัวกลางมี ขาด ' + t2.short +
-                         ' — คิดต้นทุนจากราคาล่าสุดแทน' });
+        var ks = central + '|' + e.item;
+        owe[ks] = costQty_((owe[ks] || 0) + t2.short);
+        oweWarn[ks] = { when: e.t, loc: central, item: e.item, msg: 'ส่งเข้าร้านมากกว่าที่ครัวกลางมี' };
       }
       // ยกทั้งชั้นไปตั้งที่สาขา ราคาต่อหน่วยของแต่ละชั้นเท่าเดิมเป๊ะ
       t2.parts.forEach(function (pt) { put(e.loc, e.item, pt.qty, pt.cost); });
@@ -667,10 +680,12 @@ function costReplayRaw_(all) {
       // ทิ้งชั้นต้นทุนเดิมทั้งหมด แล้วตั้งใหม่ตามยอดที่สั่ง ไม่ลงบัญชีอะไรเลย
       // ใช้ตอนเริ่มระบบหรือรีเซ็ต ไม่ใช่การนับสต็อกปกติ
       box(e.loc, e.item).length = 0;
+      delete owe[e.loc + '|' + e.item]; delete oweWarn[e.loc + '|' + e.item];
       if (e.qty > 0) put(e.loc, e.item, e.qty, guessCost(e.loc, e.item));
 
     } else if (e.type === 'เช็คสต็อก') {
       // นับได้เท่าไหร่คือเท่านั้น ส่วนที่หายไประหว่างสองรอบนับคือของที่ใช้ไป
+      delete owe[e.loc + '|' + e.item]; delete oweWarn[e.loc + '|' + e.item];
       var have = total(e.loc, e.item);
       var diff = costQty_(have - e.qty);
       var base = isBranchBase(e);
@@ -705,6 +720,12 @@ function costReplayRaw_(all) {
     }
   });
 
+  // ส่ง/แพ็คไปแล้ว แต่ยังไม่ได้ลงของเข้ามาเติมจนถึงตอนนี้ — เตือน (ลงของเข้าทีหลังแล้วเตือนหายเอง)
+  Object.keys(oweWarn).forEach(function (k) {
+    var w = oweWarn[k];
+    warn.push({ when: w.when, loc: w.loc, item: w.item,
+                msg: w.msg + ' ขาด ' + owe[k] + ' — ยังไม่ได้ลงของเข้า · คิดต้นทุนจากราคาล่าสุดแทน' });
+  });
   log.sort(function (a, b) { return a.t - b.t; });
   return { layers: lay, used: used, sent: sent, sentBiz: sentBiz, moved: moved, warn: warn, log: log,
            lastCost: lastCost, buys: buys, sendLog: sendLog };
