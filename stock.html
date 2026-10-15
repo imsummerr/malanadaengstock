@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-15d';
+const PAGE_BUILD = '2026-10-15e';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-15d', 'stock-costing.gs': '2026-10-15c', 'line-intake.gs': '2026-10-15b',
-                     'stock-audit.gs': '2026-10-15a', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-15d', 'stock-costing.gs': '2026-10-15e', 'line-intake.gs': '2026-10-15b',
+                     'stock-audit.gs': '2026-10-15e', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -656,7 +656,7 @@ function viewMoney(v) {
       <table><tbody>${sales}
         <tr><td><b>รายได้รวม</b></td><td class="num"><b>${baht(p['รายได้'])}</b></td></tr>
         <tr><td>− ${isBk ? 'ต้นทุนเบเกอรี่ที่ขายไป' : 'ค่าใช้จ่ายวัตถุดิบ'}</td><td class="num">${baht(p['ค่าใช้จ่ายวัตถุดิบ'])}</td></tr>
-        <tr><td>− ของเสีย</td><td class="num">${baht(p['ของเสีย'])}</td></tr>
+        <tr><td>− ของเสีย</td><td class="num">${baht(p['ของเสีย'])}</td></tr>${lostRow(p['ของหาย'], isAll)}
         <tr><td><b>กำไรขั้นต้น</b></td><td class="num"><b>${baht(p['กำไรขั้นต้น'])}</b></td></tr>
         ${expenseRows(p, 'ex' + ci)}
         <tr><td><b>กำไรสุทธิ</b></td><td class="num ${p['กำไรสุทธิ'] < 0 ? 'low' : ''}">
@@ -777,6 +777,21 @@ function viewMoney(v) {
         <button class="key" onclick="MONEY=null;render()">🔄 โหลดใหม่</button>
       </div>${MONEY_AT ? `<p class="note" style="margin-top:6px">ตัวเลข ณ ${String(MONEY_AT.getHours()).padStart(2, '0')}:${String(MONEY_AT.getMinutes()).padStart(2, '0')} น.</p>` : ''}
     </div>${isBk ? '' : warn}${cards || '<div class="card"><div class="empty">ยังไม่มีข้อมูล</div></div>'}`;
+}
+
+/**
+ * ของหาย (15/10) — เงินที่ควรได้ตามของที่ออกจากร้าน แต่ไม่ได้ ไม่รู้ว่าของอะไร
+ * ไม่หักซ้ำ: รายได้ได้น้อยลงเท่านี้อยู่แล้ว · ทุนอยู่ในค่าใช้จ่ายวัตถุดิบ สาขาจ่ายครัวกลางเต็ม
+ */
+function lostRow(L, isAll) {
+  if (!L) return '';
+  const lost = Number(L['บาท']) || 0;
+  const split = isAll && (L['หม่าล่า'] || L['เบเกอรี่']) ? ` · หม่าล่า ${baht(L['หม่าล่า'])} · เบเกอรี่ ${baht(L['เบเกอรี่'])}` : '';
+  return `
+        <tr><td>${lost > 0 ? '⚠️ ' : ''}ของหาย <small style="color:var(--muted)">${esc(L['ตั้งแต่'])}–${esc(L['ถึง'])} ·
+            ควรได้ ${baht(L['ควรได้'])} ได้จริง ${baht(L['ได้จริง'])}${split}<br>
+            ไม่รู้ว่าของอะไร · ไม่ได้หักซ้ำ (รายได้น้อยลงเท่านี้แล้ว) · ทุนอยู่ในค่าวัตถุดิบ สาขาจ่ายครัวกลางเต็ม</small></td>
+            <td class="num ${lost > 0 ? 'low' : ''}">${lost > 0 ? baht(lost) : '0.00 ✅'}</td></tr>`;
 }
 
 /**

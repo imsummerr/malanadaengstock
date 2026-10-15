@@ -63,7 +63,7 @@ var CASH_CYCLE_DAYS = 30;
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-costing.gs'] = '2026-10-15c';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-costing.gs'] = '2026-10-15e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
@@ -1123,6 +1123,11 @@ function costSummary_() {
         }).sort(function (a, b) { return b.value - a.value; });
         pl[loc]['เงินหมุนเวียน'] = cashBook();
       }
+      // ของหาย (เงินที่ควรได้แต่ไม่ได้) — ขึ้นต่อจากของเสีย ไม่หักซ้ำ (ดู missingGoods_ ใน stock-audit.gs)
+      if (loc !== central && typeof missingGoods_ === 'function') {
+        try { pl[loc]['ของหาย'] = missingGoods_(loc, biz); }
+        catch (e) { Logger.log('missingGoods_ ' + loc + ': ' + e.message); }
+      }
       if (biz === 'เบเกอรี่') {
         pl[loc]['เงินสด'] = inc['เงินสด'] || 0;
         pl[loc]['เงินโอน'] = inc['เงินโอน'] || 0;
@@ -1191,6 +1196,16 @@ function costCombine_(a, b) {
       Object.keys(o).forEach(function (k) { tp[k] = costBaht_((tp[k] || 0) + num(o[k])); });
     });
     p['ตามประเภท'] = tp;
+    // ของหายรวมสองบัญชี — บวกเงินกันตรง ๆ ช่วงวันที่เอากว้างสุด
+    var lx = x['ของหาย'], ly = y['ของหาย'];
+    if (lx || ly) {
+      var both = [lx, ly].filter(Boolean);
+      p['ของหาย'] = { บาท: costBaht_(num((lx || {})['บาท']) + num((ly || {})['บาท'])),
+                      ควรได้: costBaht_(num((lx || {})['ควรได้']) + num((ly || {})['ควรได้'])),
+                      ได้จริง: costBaht_(num((lx || {})['ได้จริง']) + num((ly || {})['ได้จริง'])),
+                      ตั้งแต่: both[0]['ตั้งแต่'], ถึง: both[both.length - 1]['ถึง'],
+                      หม่าล่า: lx ? lx['บาท'] : 0, เบเกอรี่: ly ? ly['บาท'] : 0 };
+    }
     p['รายการค่าใช้จ่าย'] = (x['รายการค่าใช้จ่าย'] || []).concat(y['รายการค่าใช้จ่าย'] || [])
       .sort(function (m, n) { return n.t - m.t; });
     if (x['เงินหมุนเวียน'] || y['เงินหมุนเวียน']) {

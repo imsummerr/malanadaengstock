@@ -24,6 +24,9 @@
  * วิธีติดตั้ง: อ่าน STOCK-AUDIT-README.md ในโฟลเดอร์เดียวกัน
  ************************************************************/
 
+var GS_FILES = GS_FILES || {};
+GS_FILES['stock-audit.gs'] = '2026-10-15e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
 
@@ -871,6 +874,51 @@ function cashCountTimes_(loc) {
     seen[key] = 1; out.push(t);
   });
   return out.sort(function (a, b) { return b - a; });
+}
+
+/**
+ * ของหายสะสมของสาขา ตั้งแต่เริ่มนับ — เป็นเงิน (ราคาขาย) ไว้ขึ้นในบัญชีต่อจากของเสีย (15/10 เจ้าของ)
+ * ไม่รู้ว่าของอะไรหาย กี่ชิ้น รู้แค่เงินที่ควรได้ (ตามของที่ออกจากร้าน) กับที่ได้จริงไม่ตรงกัน
+ *   หม่าล่า: ทุกช่วงระหว่างรอบเช็คสต็อก — ของที่ออก (ยกมา + ของเข้า − ของเสีย − นับได้) ตีเป็นเงิน เทียบยอด POS
+ *            รวมทุกช่วง บวกลบหักกันเอง (รอบไหนนับผิดแล้วรอบหน้านับถูก จะหักล้างกัน) · ถึงรอบเช็คสต็อกล่าสุด
+ *   เบเกอรี่: ทุกวันที่กรอกหลังขาย — ขายไป × 10 เทียบเงินที่ได้
+ * ทุนของที่หายอยู่ในค่าใช้จ่ายวัตถุดิบอยู่แล้ว (ของออกจากชั้น = ใช้ไป) สาขาจ่ายครัวกลางเต็มเหมือนของที่ขาย
+ * กำไรก็ลดไปแล้วเพราะรายได้ได้น้อยกว่าที่ควร — ตัวนี้บอกให้เห็นเฉย ๆ ไม่หักซ้ำ
+ * คืน { บาท, ควรได้, ได้จริง, ตั้งแต่, ถึง } · ยังเทียบไม่ได้ (นับรอบเดียว) = null
+ */
+function missingGoods_(loc, biz) {
+  var dm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'd/M'); };
+  var should = 0, got = 0, from = 0, to = 0;
+  if (biz === 'เบเกอรี่') {
+    if (typeof bakeryMoneyRows_ !== 'function') return null;
+    var last = {};
+    bakeryMoneyRows_().forEach(function (r) {
+      if (r.loc !== loc) return;
+      if (typeof costBefore_ === 'function' && costBefore_(new Date(r.ms), r.loc)) return;
+      if (typeof BAKERY_START_DATE === 'string' && r.day < BAKERY_START_DATE) return;
+      if (!last[r.day] || r.ms >= last[r.day].ms) last[r.day] = r;
+    });
+    var days = Object.keys(last).sort();
+    if (!days.length) return null;
+    days.forEach(function (d) { should += last[d].sold * BAKERY_PRICE; got += last[d].money; });
+    from = last[days[0]].ms; to = last[days[days.length - 1]].ms;
+  } else {
+    var times = cashCountTimes_(loc).slice().reverse();          // เก่า → ใหม่
+    if (times.length < 2) return null;
+    var st = function (ms) { return auditStamp_(new Date(ms)); };
+    for (var i = 1; i < times.length; i++) {
+      var u = cashUsage_(loc, times[i]);
+      // ช่วงไม่ทับกัน — บิลที่ลงหลังรอบนับไม่เกินนาทีเดียวนับเป็นของช่วงก่อนหน้า
+      var sl = auditSales_(loc, st(times[i - 1] + (i > 1 ? 60000 : 0)), st(times[i] + 60000));
+      var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
+      var gap = u.value - (sl.gross - sl.untracked) - sl.dlvPieces * perStick;
+      should += sl.revenue + gap; got += sl.revenue;
+    }
+    from = times[0]; to = times[times.length - 1];
+  }
+  should = auditRound_(should); got = auditRound_(got);
+  return { บาท: auditRound_(Math.max(0, should - got)), ควรได้: should, ได้จริง: got,
+           ตั้งแต่: dm(from), ถึง: dm(to) };
 }
 
 /**

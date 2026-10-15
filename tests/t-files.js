@@ -6,15 +6,16 @@ const { eq, section, done } = makeCheck('รุ่นไฟล์ .gs — หน
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'stock.html'), 'utf8');
 const m = html.match(/const WANT_FILES = (\{[\s\S]*?\});/);
-const want = Function('return ' + m[1])();
+const sortK = o => o && Object.keys(o).sort().reduce((a, k) => (a[k] = o[k], a), {});
+const want = sortK(Function('return ' + m[1])());
 
 section('โค้ดใน repo = รุ่นที่หน้าเว็บรอ (แก้ไฟล์ไหนต้องเปลี่ยนรุ่นทั้งสองที่)');
 {
   const g = fresh();
-  const got = g.gsFileVersions_();
+  const got = sortK(g.gsFileVersions_());
   eq('ทุกไฟล์ตรงกัน', got, want);
   eq('BACKEND_VERSION ขึ้นต้นด้วยรุ่น pos-backend.gs', g.BACKEND_VERSION.split('·')[0].trim(), want['pos-backend.gs']);
-  eq('bootstrap ส่ง files ให้เจ้าของ', g.handleStockBootstrap_({ token: 't' }).data.files, want);
+  eq('bootstrap ส่ง files ให้เจ้าของ', sortK(g.handleStockBootstrap_({ token: 't' }).data.files), want);
   g.checkToken_ = () => ({ role: 'staff', branch: 'ตลาดทรัพย์พัฒนา', branches: ['ตลาดทรัพย์พัฒนา'], name: 'x' });
   eq('พนักงานไม่ได้ files', g.handleStockBootstrap_({ token: 't' }).data.files, undefined);
 }
