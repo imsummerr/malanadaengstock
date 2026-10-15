@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-15g';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-15h';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1075,14 +1075,17 @@ function cashCheck_(loc, day, opt) {
   var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
   var dlv = auditRound_(s.dlvPieces * perStick);
   var flt = cashProp_('CASH_FLOAT', 0);
-  var expected = auditRound_(u.value + s.untracked - dlv - s.discount - s.redeem -
-                             s.transfer + pre - old - sDay.expCash + flt);
+  // เงินสดควรมีตามของที่ออกจากร้าน — เหลือไว้ในรายละเอียด (เมนูดูย้อนหลัง)
+  var stockExpected = auditRound_(u.value + s.untracked - dlv - s.discount - s.redeem -
+                                  s.transfer + pre - old - sDay.expCash + flt);
+  // 15/10 เจ้าของ: เงินสดยึดตาม POS — บิลเงินสดของวันนั้น − ค่าใช้จ่ายเงินสด
+  // ของที่ออกไม่ตรงกับ POS บอกแยก (ของหาย / นับเกิน) ไม่เอามาตัดสินว่าเงินสดไม่ตรง
+  var posExpected = auditRound_(sDay.cashSales - sDay.expCash + flt);
+  var expected = posExpected;
   var noCash = cash.cash == null;
   var diff = noCash ? 0 : auditRound_(cash.cash - expected);
   var gap = cashProp_('CASH_GAP_BAHT', 0);
   var ok = Math.abs(diff) <= gap;
-  // ถ้าเชื่อตัวเลขใน POS — เอาไว้แยกว่า "เงินหาย" หรือ "ขายแล้วไม่ได้กด POS"
-  var posExpected = auditRound_(sDay.cashSales - sDay.expCash + flt);
   var hm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'HH:mm'); };
   var dd = Utilities.formatDate(new Date(dayStart), auditTz_(), 'd/M');
 
@@ -1095,10 +1098,12 @@ function cashCheck_(loc, day, opt) {
   var sold = function (x) { var it = findStockItem_(x.name); return it && Number(it.price) > 0; };
   var oversSold = u.overs.filter(sold).sort(function (a, b) { return b.qty - a.qty; });
   var S = [];
-  // กรอกเงินแล้ว = เงินสดเป็นตัวตัดสิน (เงินครบ = ไม่มีอะไรหาย แม้กด POS ไม่ครบ)
+  // ✅ = เงินสดตรง POS (หรือยังไม่แจ้ง) และของไม่หาย · POS มากกว่าของที่ออก = ยึด POS ไม่นับว่าผิด
+  var lost = u.sticks >= 0 && gap >= tol;
+  var good = (noCash || ok) && !lost;
   S.push(opt.part
-    ? '🌶️ หม่าล่า ' + ((noCash ? stockOk : ok) ? '✅' : '⚠️') + (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง'))
-    : ((noCash ? stockOk : ok) ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' ' + dd +
+    ? '🌶️ หม่าล่า ' + (good ? '✅' : '⚠️') + (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง'))
+    : (good ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' ' + dd +
       (noCash ? '' : ' — ' + (ok ? 'เงินสดตรง' : 'เงินสดไม่ตรง')));
   S.push('เทียบ ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
   S.push('');
@@ -1106,27 +1111,25 @@ function cashCheck_(loc, day, opt) {
   S.push('ได้จริง (POS ' + s.orders + ' บิล) ' + auditBaht_(s.revenue) + ' บาท' +
          (s.discount ? ' · ส่วนลด ' + auditBaht_(s.discount) : ''));
   if (stockOk) S.push('→ ตรงกัน');
-  else if (gap > 0 && !noCash && ok) S.push('ของออกมากกว่าที่กด POS ' + auditBaht_(gap) + ' บาท แต่เงินสดครบ — ขายแล้วไม่ได้กด POS');
-  else if (gap > 0) S.push('🔻 หาย ' + auditBaht_(gap) + ' บาท — ขายแล้วไม่ได้กด POS / ลงของเสียไม่ครบ / ของหาย');
+  else if (gap > 0 && !noCash && diff >= gap - tol) {
+    // เงินสดเกิน POS พอ ๆ กับของที่ออกเกิน = ขายได้เงินแล้วแต่ไม่ได้กด POS ของไม่ได้หาย
+    S.push('ของออกมากกว่าที่กด POS ' + auditBaht_(gap) + ' บาท แต่เงินสดเกินเท่ากัน — ขายแล้วไม่ได้กด POS');
+  }
+  else if (gap > 0) S.push('🔻 ของหาย ' + auditBaht_(gap) + ' บาท — ลงของเสียไม่ครบ / ขายไม่ได้กด POS / ของหาย');
   else {
-    S.push('🔺 POS มากกว่าของที่ออก ' + auditBaht_(-gap) + ' บาท — ลืมลงของเข้าร้าน หรือนับเกิน');
+    S.push('POS มากกว่าของที่ออก ' + auditBaht_(-gap) + ' บาท — ยึดตาม POS (นับสต็อกเกิน หรือลืมลงของเข้าร้าน)');
     if (oversSold.length) S.push('   นับได้เกินระบบ: ' + oversSold.slice(0, 4).map(function (x) {
       return x.name + ' ' + x.qty + ' ' + x.unit; }).join(', ') + (oversSold.length > 4 ? ' …' : ''));
-    // ลงของเข้าร้านตอนนี้ไม่ได้ — รอบนับนี้รวมของนั้นไปแล้ว ลงหลังเวลานับยอดจะเบิ้ล
-    S.push('   ส่งไปแล้วไม่ได้ลง? อย่าลงของเข้าร้านตอนนี้ (นับรวมไปแล้ว ยอดจะเบิ้ล) ต้องแก้ย้อนหลังในชีต');
   }
   if (u.wasteValue) S.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
   S.push('');
   if (noCash) {
-    S.push('เงินสดในลิ้นชักควรมี ' + auditBaht_(stockOk ? expected : posExpected) + ' บาท' +
+    S.push('เงินสดในลิ้นชักควรมี (ตาม POS) ' + auditBaht_(expected) + ' บาท' +
            (sDay.expCash ? ' (หักค่าใช้จ่ายเงินสด ' + auditBaht_(sDay.expCash) + ' แล้ว)' : ''));
     S.push('ยังไม่ได้แจ้งเงินสดคงเหลือ — พิมพ์ในไลน์ "เงินสดคงเหลือ 450" ใต้บรรทัดวันที่ แล้วระบบเทียบให้');
   } else {
-    S.push('เงินสดควรมี ' + auditBaht_(expected) + ' · นับได้ ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
-    if (!ok) S.push((diff < 0 ? '🔻 เงินสดขาด ' : '🔺 เงินสดเกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
-    if (!ok && !stockOk && Math.abs(posExpected - expected) >= tol) {
-      S.push('(ถ้าเชื่อ POS เงินสดควรมี ' + auditBaht_(posExpected) + ' บาท)');
-    }
+    S.push('เงินสดควรมี (ตาม POS) ' + auditBaht_(expected) + ' · นับได้ ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
+    S.push(ok ? '→ ตรงกัน' : (diff < 0 ? '🔻 เงินสดขาด ' : '🔺 เงินสดเกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
   }
   if (!opt.detail) {
     return cashSay_(loc, cash, noCash ? { expected: expected, diff: null, ok: null }
@@ -1155,12 +1158,12 @@ function cashCheck_(loc, day, opt) {
   if (old)        L.push('− เงินสดบิลของวันก่อน (อยู่ลิ้นชักวันก่อน)   ' + auditBaht_(old));
   if (sDay.expCash) L.push('− ค่าใช้จ่ายเงินสดวันที่ ' + dd + '   ' + auditBaht_(sDay.expCash));
   if (flt)        L.push('+ เงินทอนตั้งต้น   ' + auditBaht_(flt));
-  L.push('= เงินสดที่ควรมี   ' + auditBaht_(expected) + ' บาท');
-  if (!noCash) L.push('', 'นับได้จริง   ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
-  if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
+  L.push('= เงินสดที่ควรมีตามของที่ออก   ' + auditBaht_(stockExpected) + ' บาท');
   L.push('');
-  L.push('เทียบ POS: ขายเงินสดวันที่ ' + dd + ' ' + auditBaht_(sDay.cashSales) + ' บาท (ทั้งหมด ' + sDay.orders + ' บิล)' +
-         ' → ควรมี ' + auditBaht_(posExpected));
+  L.push('เงินสดยึดตาม POS: ขายเงินสดวันที่ ' + dd + ' ' + auditBaht_(sDay.cashSales) + ' บาท (ทั้งหมด ' + sDay.orders + ' บิล)' +
+         (sDay.expCash ? ' − ค่าใช้จ่ายเงินสด ' + auditBaht_(sDay.expCash) : '') + ' → ควรมี ' + auditBaht_(posExpected));
+  if (!noCash) L.push('นับได้จริง   ' + auditBaht_(cash.cash) + ' บาท (' + (cash.staff || '-') + ')');
+  if (!ok) L.push((diff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(diff)) + ' บาท');
   if (!ok || noCash) {
     if (u.sticks < 0) {
       L.push('👉 สต็อกเพิ่มขึ้นแทนที่จะลด — มีของเข้าร้านที่ยังไม่ได้ลง เลยเทียบเงินจากสต็อกไม่ได้');
