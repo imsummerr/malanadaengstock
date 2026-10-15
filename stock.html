@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-15h';
+const PAGE_BUILD = '2026-10-15i';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,7 +526,7 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-15d', 'stock-costing.gs': '2026-10-15e', 'line-intake.gs': '2026-10-15b',
+const WANT_FILES = { 'pos-backend.gs': '2026-10-15i', 'stock-costing.gs': '2026-10-15i', 'line-intake.gs': '2026-10-15b',
                      'stock-audit.gs': '2026-10-15h', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
@@ -720,7 +720,8 @@ function viewMoney(v) {
     const centralBook = inKitchen.length ? `
       <div class="loctitle" style="margin-top:14px">ของที่ใช้ในครัวกลาง</div>
       <table><tbody>
-        <tr><td>− ของที่ใช้ไปในครัวกลาง <small>นับแล้วหายไป = ค่าใช้จ่ายครัวกลาง</small></td>
+        <tr><td>− ของที่ใช้ไปในครัวกลาง <small>ของเสีย + นับแล้วหายไป = ค่าใช้จ่ายครัวกลาง ·
+            เจอของที่ลงของเสียไว้ → แท็บของเสีย กด ↩️ คืน</small></td>
             <td class="num">${baht(inKitchen.reduce((a, x) => a + x.value, 0))}</td></tr>
         ${inKitchen.map(x => `<tr><td><small>· ${esc(x.item)}${itemOf(x.item) ? ' ' + esc(fmtPack(x.qty, itemOf(x.item))) : ''}</small></td>
             <td class="num"><small>${baht(x.value)}</small></td></tr>`).join('')}
@@ -889,7 +890,7 @@ function viewMove(v, kind) {
 
   const locField = c.fixedLoc
     ? `<input id="f-loc" value="${esc(D.central)}" readonly style="background:var(--bg)">`
-    : `<select id="f-loc" onchange="fillItems(); recalc()">${locs.map(l =>
+    : `<select id="f-loc" onchange="fillItems(); recalc(); if (tab === 'waste') loadWasteList()">${locs.map(l =>
         `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
 
   v.innerHTML = `<div class="card">
@@ -940,11 +941,67 @@ function viewMove(v, kind) {
 
     <button class="key btn-red submit" id="f-btn" onclick="submitMove('${kind}')">${c.btn}</button>
     <p class="note" id="f-note-line"></p>
-  </div>`;
+  </div>${kind === 'waste' && isOwner() ? `
+  <div class="card">
+    <h2>↩️ คืนของเสีย</h2>
+    <p class="lead">ลงของเสียไปแล้วเจอของ หรือลงผิด — กดคืน ยอดกลับเข้าสต็อก และบัญชีไม่นับเป็นของเสีย
+       (ย้อนหลัง 14 วัน · ที่เลือกไว้ข้างบน)</p>
+    <div id="wu-list"></div>
+  </div>` : ''}`;
 
   fillItems();
   syncUnits();
   recalc();
+  if (kind === 'waste' && isOwner()) loadWasteList();
+}
+
+/* ── คืนของเสีย (15/10) — เจอของที่ลงของเสียไว้ · เจ้าของเท่านั้น ── */
+const WU = { loc: '', rows: null, arm: -1, busy: -1 };
+async function loadWasteList() {
+  const locEl = document.getElementById('f-loc');
+  const loc = locEl ? locEl.value : D.central;
+  Object.assign(WU, { loc, rows: null, arm: -1, busy: -1 });
+  renderWasteList();
+  try {
+    const r = await apiGet({ action: 'wasteList', location: loc });
+    if (WU.loc === loc) { WU.rows = r.data || []; renderWasteList(); }
+  } catch (e) {
+    const el = document.getElementById('wu-list');
+    if (el) el.innerHTML = /เวอร์ชันเก่า|ไม่รู้จัก action/.test(e.message)
+      ? '<p class="note">ต้องวาง pos-backend.gs รุ่นใหม่ แล้ว Deploy ก่อน ถึงจะคืนของเสียได้</p>'
+      : '<p class="note">❌ ' + esc(e.message) + '</p>';
+  }
+}
+function renderWasteList() {
+  const el = document.getElementById('wu-list');
+  if (!el) return;
+  if (!WU.rows) { el.innerHTML = '<div class="empty">กำลังโหลด…</div>'; return; }
+  if (!WU.rows.length) { el.innerHTML = '<div class="empty">ไม่มีของเสียที่ลงไว้ใน 14 วันที่ผ่านมา</div>'; return; }
+  const b = (label, js, red) => `<button class="key${red ? ' btn-red' : ''}" style="display:inline-block;width:auto;padding:4px 10px;margin:2px 0 0;font-size:13px"
+      onclick="${js}">${label}</button>`;
+  el.innerHTML = '<table><tbody>' + WU.rows.map((x, i) => `
+    <tr><td><small style="color:var(--muted)">${esc(x.when)}${x.reason ? ' · ' + esc(x.reason) : ''}${x.by ? ' · ' + esc(x.by) : ''}</small><br>
+        ${esc(x.item)} <b>${esc(x.text)}</b></td>
+      <td class="num" style="white-space:nowrap">${
+        WU.busy === i ? '⏳' :
+        WU.arm === i ? b('ยืนยันคืน', `wasteUndoGo(${i})`, true) + '<br>' + b('ยกเลิก', 'WU.arm=-1;renderWasteList()') :
+        b('↩️ คืน', `WU.arm=${i};renderWasteList()`)}</td></tr>`).join('') + '</tbody></table>';
+}
+async function wasteUndoGo(i) {
+  const x = WU.rows && WU.rows[i];
+  if (!x || WU.busy >= 0) return;
+  WU.busy = i; WU.arm = -1; renderWasteList();
+  try {
+    const r = await apiPost({ action: 'wasteUndo', location: WU.loc, row: x.row, item: x.item, t: x.t });
+    toast('↩️ ' + esc(r.message || 'คืนแล้ว'), 6000);
+    WU.rows.splice(i, 1);
+    refreshInBackground();
+  } catch (e) {
+    if (/เวอร์ชันเก่า|ไม่รู้จัก action/.test(e.message)) toastApiError(e.message);
+    else toast('❌ ' + esc(e.message), 8000);
+  } finally {
+    WU.busy = -1; renderWasteList();
+  }
 }
 
 /** เติมรายการสินค้าในช่องเลือก ตามสถานที่ที่เลือกอยู่ */

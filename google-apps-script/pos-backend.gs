@@ -20,12 +20,12 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-15d · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-15i · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 // รุ่นของแต่ละไฟล์ .gs — หน้าสต็อกเทียบกับรุ่นที่ควรเป็น แล้วบอกเจ้าของว่าไฟล์ไหนยังไม่ได้วางใหม่
 // (15/10 วางไฟล์แล้วยังเห็นของเก่า ไม่รู้ว่าไฟล์ไหนยังไม่เข้า) · แต่ละไฟล์จดรุ่นของตัวเองไว้ใน GS_FILES
 var GS_FILES = GS_FILES || {};
-GS_FILES['pos-backend.gs'] = '2026-10-15d';
+GS_FILES['pos-backend.gs'] = '2026-10-15i';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -233,6 +233,8 @@ function doPost(e) {
       case 'stockIn':     return json_(withLineBatch_(function () { return handleStockIn_(body); }));
       case 'stockToShop': return json_(withLineBatch_(function () { return handleStockToShop_(body); }));
       case 'stockWaste':  return json_(withLineBatch_(function () { return handleStockWaste_(body); }));
+      // เจอของที่ลงของเสียไว้ — คืนเข้าสต็อก (เจ้าของ)
+      case 'wasteUndo':   return json_(withLineBatch_(function () { return handleWasteUndo_(body); }));
       case 'stockCount':  return json_(handleStockCount_(body));
       case 'stockPack':   return json_(withLineBatch_(function () { return handleStockPack_(body); }));
       // เจ้าของกด "ลงครบแล้ว" ที่กล่องเตือน — ค่าใช้จ่ายของวันนั้นลงครบแล้ว (ไม่ได้ลงผ่านไลน์)
@@ -265,6 +267,7 @@ function doGet(e) {
     if (p.action === 'stockBootstrap') return json_(handleStockBootstrap_(p));
     if (p.action === 'costBoard')      return json_(handleCostBoard_(p));
     if (p.action === 'lateStatus')     return json_(handleLateStatus_(p));
+    if (p.action === 'wasteList')      return json_(handleWasteList_(p));
     return json_({ success: false, message: 'ไม่รู้จัก action: ' + p.action });
   } catch (err) {
     return json_({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
@@ -303,7 +306,7 @@ function handleVersion_() {
     files: gsFileVersions_(),
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone'],
+              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone', 'wasteList', 'wasteUndo'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -1219,6 +1222,8 @@ var SHEET_ITEMS    = 'รายการสินค้า';
 var SHEET_INCOMING = 'จำนวนของเข้า';
 var SHEET_COUNT    = 'เช็คสต็อกรายสัปดาห์';
 var SHEET_WASTE    = 'ของเสีย';
+/** ช่องจดว่าแถวนี้ยกเลิกแล้ว (เจอของคืน) — มีค่า = ไม่นับแถวนี้ ทั้งยอดคงเหลือและบัญชี */
+var MOVE_CANCEL_COL = 'ยกเลิก';
 var SHEET_PACK     = 'แพ็คของ';      // ครัวกลางเอาวัตถุดิบมาแพ็ค — ตัดของดิบ เพิ่มของแพ็ค
 
 var CENTRAL = 'ครัวกลาง';
@@ -1696,9 +1701,11 @@ function readMovesRaw_(sheetName) {
   var map = ensureCols_(sh, MOVE_COLS);
   var v = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
   var out = [];
+  var iCancel = map[MOVE_CANCEL_COL];             // ของเสียที่เจอคืนแล้ว (15/10) — เหมือนไม่เคยลง
   for (var i = 0; i < v.length; i++) {
     var name = String(v[i][map['รายการ']] || '').trim();
     if (!name) continue;
+    if (iCancel !== undefined && String(v[i][iCancel] || '').trim()) continue;
     out.push({
       when: v[i][map['วันที่เวลา']],
       loc:  String(v[i][map['สาขา']] || '').trim(),
@@ -2310,6 +2317,63 @@ function handleStockWaste_(body) {
 
   checkLowStock_([p.item.name], loc);   // ตัดของออกแล้วที่นั้นอาจตกต่ำกว่าจุดเตือน
   return { success: true, text: text, lineSent: line.sent, lineMsg: line.message };
+}
+
+/**
+ * คืนของเสีย (15/10 เจ้าของ: "ขอแบบคืนของหายได้ เพราะเพิ่งเจอ")
+ * ลงของเสียไปแล้วเจอของ / ลงผิด — จดช่อง "ยกเลิก" ในแถวนั้น ยอดคงเหลือกับบัญชีไม่นับแถวนั้นอีก
+ * เหมือนลบแถวในชีต แต่ยังเห็นประวัติว่าเคยลงและใครคืน · เจ้าของเท่านั้น (พนักงานลบของเสียไม่ได้)
+ */
+var WASTE_UNDO_DAYS = 14;
+function wasteRowsFor_(loc) {
+  var sh = sheet_(SHEET_WASTE);
+  if (!sh || sh.getLastRow() < 2) return { sh: sh, map: {}, rows: [] };
+  var map = ensureCols_(sh, MOVE_COLS.concat([MOVE_CANCEL_COL]));
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var since = Date.now() - WASTE_UNDO_DAYS * 86400000, out = [];
+  v.forEach(function (r, i) {
+    var when = r[map['วันที่เวลา']], t = when instanceof Date ? when.getTime() : new Date(when).getTime();
+    var item = String(r[map['รายการ']] || '').trim();
+    if (!item || !t || t < since || String(r[map['สาขา']] || '').trim() !== loc) return;
+    if (String(r[map[MOVE_CANCEL_COL]] || '').trim()) return;
+    var it = findStockItem_(item), qty = Number(r[map['จำนวน']]) || 0;
+    out.push({ row: i + 2, t: t, when: Utilities.formatDate(new Date(t), TZ, 'd/M HH:mm'), item: item, qty: qty,
+               text: it ? fmtPack_(qty, it) : qty + ' ' + String(r[map['หน่วย']] || ''),
+               reason: String(r[map['ประเภท']] || '').trim(), by: String(r[map['ผู้ตรวจ']] || '').trim() });
+  });
+  return { sh: sh, map: map, rows: out.sort(function (a, b) { return b.t - a.t; }) };
+}
+function handleWasteList_(p) {
+  var session = checkToken_(p.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (!isStockOwner_(session)) return { success: false, code: 403, message: 'คืนของเสียได้เฉพาะเจ้าของร้าน' };
+  var loc = String(p.location || '').trim();
+  return { success: true, data: wasteRowsFor_(loc).rows, days: WASTE_UNDO_DAYS };
+}
+function handleWasteUndo_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
+  if (!isStockOwner_(session)) return { success: false, code: 403, message: 'คืนของเสียได้เฉพาะเจ้าของร้าน' };
+  var loc = String(body.location || '').trim(), row = Number(body.row) || 0;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    cacheClear_();
+    var w = wasteRowsFor_(loc);
+    // หาแถวจากเลขแถว + ชื่อ + เวลา — มีคนลบ/แทรกแถวในชีตระหว่างนั้นก็ไม่คืนผิดแถว
+    var hit = w.rows.filter(function (x) {
+      return x.row === row && x.item === String(body.item || '') && Math.abs(x.t - Number(body.t)) < 1000;
+    })[0];
+    if (!hit) return { success: false, message: 'ไม่เจอแถวของเสียนี้แล้ว (คืนไปแล้ว หรือมีคนแก้ชีต) — โหลดหน้าใหม่' };
+    var now = new Date();
+    w.sh.getRange(hit.row, w.map[MOVE_CANCEL_COL] + 1)
+      .setValue('เจอคืน ' + Utilities.formatDate(now, TZ, 'd/M HH:mm') + ' · ' + session.name);
+    SpreadsheetApp.flush();
+    cacheClear_();
+    var line = stockNotify_(loc, '↩️ คืนเข้าสต็อก — ' + loc + '\n\n' + hit.item + '  ' + hit.text +
+      '\n(ลงของเสียไว้ ' + hit.when + (hit.reason ? ' · ' + hit.reason : '') + ')\nเจอแล้ว · โดย ' + session.name);
+    return { success: true, message: 'คืน ' + hit.item + ' ' + hit.text + ' เข้าสต็อกแล้ว', lineSent: line.sent };
+  } finally { lock.releaseLock(); }
 }
 
 /**

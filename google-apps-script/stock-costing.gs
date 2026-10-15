@@ -63,7 +63,7 @@ var CASH_CYCLE_DAYS = 30;
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-costing.gs'] = '2026-10-15e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-costing.gs'] = '2026-10-15i';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
@@ -444,10 +444,12 @@ function costEvents_(all) {
   if (shW && shW.getLastRow() > 1) {
     var mapW = ensureCols_(shW, MOVE_COLS);
     var vw = shW.getRange(2, 1, shW.getLastRow() - 1, shW.getLastColumn()).getValues();
+    var iCx = mapW[typeof MOVE_CANCEL_COL === 'string' ? MOVE_CANCEL_COL : 'ยกเลิก'];
     vw.forEach(function (r) {
       var item = String(r[mapW['รายการ']] || '').trim();
       var qty = costQty_(r[mapW['จำนวน']]);
       if (!item || !(qty > 0)) return;
+      if (iCx !== undefined && String(r[iCx] || '').trim()) return;     // เจอคืนแล้ว = ไม่นับ
       ev.push({ t: costTime_(r[mapW['วันที่เวลา']]), step: 4, type: 'ของเสีย',
                 loc: String(r[mapW['สาขา']] || '').trim(), item: item, qty: qty,
                 reason: String(r[mapW['ประเภท']] || '').trim() });
