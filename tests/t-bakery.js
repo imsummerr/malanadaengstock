@@ -5,8 +5,8 @@ const { eq, section, done } = makeCheck('เบเกอรี่ — นับ�
 
 const NOW = Date.now();
 const at = min => new Date(NOW - min * 60000);
-const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้'];
-const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] }));
+const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้', 'ไดฟุกุ สตอเบอร์รี่'];
+const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] === undefined ? 0 : qs[i] }));
 const staff = { role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' };
 
 function setup() {
@@ -26,9 +26,9 @@ eq('บราวนี่: แพ็ค = 25 ชิ้น · ชิ้นละ 
 eq('ยอดเก็บเป็นลูก/ชิ้น', [g.baseUnitOf_(dk), g.toBase_(1, 1, 5, dk), g.fmtPack_(125, dk)], ['ชิ้น', 125, '1 แพ็ค 1 ชุด 5 ชิ้น']);
 eq('มีทั้งครัวกลางและสาขา', dk.scope, '');
 eq('ต้นทุน ไดฟุกุ 6.5 · บราวนี่ 6', [g.bakeryCost_('ไดฟุกุ ชาเขียว'), g.bakeryCost_('บราวนี่ นูเทลล่า')], [6.5, 6]);
-eq('ครบ 6 รส', FL.every(n => g.findStockItem_(n)), true);
+eq('ครบ 7 รส (สตอเบอร์รี่ 15/10)', FL.every(n => g.findStockItem_(n)), true);
 eq('เช็คสต็อกปิดร้านสาขาไม่ต้องนับเบเกอรี่', g.countItemsAt_(SHOP).some(i => i.bakery), false);
-eq('ครัวกลางนับเบเกอรี่ด้วย', g.countItemsAt_(g.CENTRAL).filter(i => i.bakery).length, 6);
+eq('ครัวกลางนับเบเกอรี่ด้วย', g.countItemsAt_(g.CENTRAL).filter(i => i.bakery).length, 7);
 
 section('ครัวกลางรับเข้า → ส่งสาขา');
 push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(600), 'สาขา': g.CENTRAL, 'รายการ': 'ไดฟุกุ ครีมนม', 'จำนวน': 20, 'ประเภท': 'ของเข้าครัวกลาง' });
@@ -52,7 +52,7 @@ eq('แจ้งกลุ่มสาขา', /🍡 เบเกอรี่ก�
 eq('ไม่ถูกนับเป็นรอบปิดร้านหม่าล่า', g.cashCountTimes_(SHOP).length, 0);
 
 section('นับไม่ครบ / ไม่กรอกเงิน');
-eq('ขาดรส', g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([1, 0, 0, 0, 0]), money: { cash: 0, transfer: 0, thai: 0 } }).success, false);
+eq('ขาดรส', g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([1, 0, 0, 0, 0]).slice(0, 5), money: { cash: 0, transfer: 0, thai: 0 } }).success, false);
 eq('ไม่กรอกเงิน', g.handleBakeryCount_({ token: 't', round: 'หลังขาย', rows: rowsOf([1, 0, 0, 0, 0, 0]), money: { cash: 50 } }).success, false);
 
 section('หลังขาย — ขาย 11 + 5 = 16 ชิ้น = 160 · ได้ 150 → ขาด 10');

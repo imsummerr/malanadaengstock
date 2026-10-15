@@ -1751,16 +1751,31 @@ function bakeryLateBase_(loc, forDay, nowMs) {
   cnt.forEach(function (c) {
     if (c.note.indexOf('ก่อนขาย') === 0 && cashBizDay_(c.t) === forDay) start[c.item] = c;
   });
+  // รสที่ยังไม่เคยนับเลยจนถึงวันนั้น = รสใหม่ (ไดฟุกุสตอเบอร์รี่ 15/10) — วันนั้นยังไม่มี เริ่มที่ 0
+  // ของเข้าร้านระหว่างวันยังบวกให้ตามปกติ · ไม่งั้นลงย้อนหลังวันก่อนเพิ่มรสไม่ได้เลย
+  // (วันนั้นต้องมีรอบนับก่อนขายของรสอื่นอยู่แล้ว — ไม่ได้นับเลยทั้งวัน ยังลงย้อนหลังไม่ได้เหมือนเดิม)
+  var dayStart = BAKERY_ITEMS.filter(function (b) { return start[b[0]]; })
+    .reduce(function (a, b) { return Math.min(a, start[b[0]].t); }, Infinity);
+  var fresh = {};
+  if (dayStart < Infinity) BAKERY_ITEMS.forEach(function (b) {
+    if (start[b[0]]) return;
+    var ever = cnt.some(function (c) { return c.item === b[0] && cashBizDay_(c.t) <= forDay; });
+    if (!ever) { start[b[0]] = { item: b[0], qty: 0, t: dayStart, note: 'ก่อนขาย' }; fresh[b[0]] = true; }
+  });
   var missing = BAKERY_ITEMS.filter(function (b) { return !start[b[0]]; });
   if (missing.length) return { error: 'วันที่ ' + dm + ' ไม่ได้นับก่อนขาย — ลงย้อนหลังไม่ได้ (ไม่รู้ว่าวันนั้นเริ่มขายด้วยของเท่าไหร่)' };
   cnt.forEach(function (c) {
     var st = start[c.item];
     if (st && c.t > st.t && cashBizDay_(c.t) > forDay && !next[c.item]) next[c.item] = c;
   });
-  var hasNext = BAKERY_ITEMS.every(function (b) { return next[b[0]]; });
+  // รสใหม่ที่ยังไม่เคยเข้าร้านเลย ไม่ได้อยู่ในรอบนับเช้านี้ (นับก่อนเพิ่มรส) = 0 แน่นอน ไม่ต้องนับใหม่
+  var never = function (name) {
+    return !readMoves_(SHEET_INCOMING).some(function (m) { return m.loc === loc && m.item === name; });
+  };
+  var hasNext = BAKERY_ITEMS.every(function (b) { return next[b[0]] || (fresh[b[0]] && never(b[0])); });
   var sys = {}, counts = hasNext ? {} : null;
   BAKERY_ITEMS.forEach(function (b) {
-    var name = b[0], st = start[name], end = hasNext ? next[name].t : nowMs, q = st.qty;
+    var name = b[0], st = start[name], end = hasNext && next[name] ? next[name].t : nowMs, q = st.qty;
     readMoves_(SHEET_INCOMING).forEach(function (m) {
       var t = timeOf_(m.when);
       if (m.loc === loc && m.item === name && t > st.t && t <= end) q += Number(m.qty) || 0;
@@ -1770,7 +1785,7 @@ function bakeryLateBase_(loc, forDay, nowMs) {
       if (m.loc === loc && m.item === name && t > st.t && t <= end) q -= Number(m.qty) || 0;
     });
     sys[name] = Math.round(q * 1000) / 1000;
-    if (counts) counts[name] = next[name].qty;
+    if (counts) counts[name] = next[name] ? next[name].qty : 0;
   });
   return { sys: sys, counts: counts, dm: dm };
 }

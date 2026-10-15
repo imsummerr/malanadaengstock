@@ -5,8 +5,8 @@ const { eq, section, done } = makeCheck('เบเกอรี่ — ลืม�
 
 const NOW = Date.now(), H = 3600000;
 const at = h => new Date(NOW - h * H);
-const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้'];
-const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] }));
+const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้', 'ไดฟุกุ สตอเบอร์รี่'];
+const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] === undefined ? 0 : qs[i] }));
 const staff = { role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' };
 
 function setup() {
@@ -38,8 +38,8 @@ eq('เงินลงเป็นวันเมื่อวาน 23:59:59', [
 eq('ขาย 62 ชิ้น ควรได้ 620 ตรง', [row[col(g, 'ขาย(ชิ้น)')], row[col(g, 'ควรได้')], row[col(g, 'ผลเทียบ')]], [62, 620, 'ตรง']);
 eq('รายละเอียดบอกว่าลงย้อนหลัง', /ลงย้อนหลัง/.test(row[col(g, 'รายละเอียด')]), true);
 const cs = g.__env.SHEETS[g.SHEET_COUNT];
-eq('ลงยอดนับ 6 รส เป็นก่อนขายของวันนี้', cs.rows.slice(cBefore).map(x => x[cs.headers.indexOf('หมายเหตุ')].split(' · ')[0]),
-   new Array(6).fill('ก่อนขาย'));
+eq('ลงยอดนับครบทุกรส เป็นก่อนขายของวันนี้', cs.rows.slice(cBefore).map(x => x[cs.headers.indexOf('หมายเหตุ')].split(' · ')[0]),
+   new Array(FL.length).fill('ก่อนขาย'));
 eq('แจ้งไลน์บอกลงย้อนหลัง', /ลงย้อนหลัง ของวันที่/.test(g.__env.SENT.map(x => x.messages[0].text).join('\n')), true);
 
 // คืนนี้นับหลังขายตามปกติ — ตั้งต้นจากยอดเช้านี้ (ที่ลงย้อนหลังไว้) ขาย 5+10+2+5+2+3 = 27

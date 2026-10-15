@@ -5,8 +5,8 @@ const { eq, section, done } = makeCheck('เบเกอรี่ — ค่า�
 
 const NOW = Date.now(), H = 3600000;
 const at = h => new Date(NOW - h * H);
-const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้'];
-const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] }));
+const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้', 'ไดฟุกุ สตอเบอร์รี่'];
+const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] === undefined ? 0 : qs[i] }));
 const staff = { role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' };
 
 function setup(beforeH) {
