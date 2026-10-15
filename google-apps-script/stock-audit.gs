@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-15e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-15f';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -886,6 +886,8 @@ function cashCountTimes_(loc) {
  * กำไรก็ลดไปแล้วเพราะรายได้ได้น้อยกว่าที่ควร — ตัวนี้บอกให้เห็นเฉย ๆ ไม่หักซ้ำ
  * คืน { บาท, ควรได้, ได้จริง, ตั้งแต่, ถึง } · ยังเทียบไม่ได้ (นับรอบเดียว) = null
  */
+/** ของหายเริ่มนับวันไหน — 15/10 เจ้าของ: เอาตั้งแต่ 8/10 (7/10 ยังลองระบบ) */
+var MISSING_GOODS_FROM = '2026-10-08';
 function missingGoods_(loc, biz) {
   var dm = function (ms) { return Utilities.formatDate(new Date(ms), auditTz_(), 'd/M'); };
   var should = 0, got = 0, from = 0, to = 0;
@@ -896,14 +898,21 @@ function missingGoods_(loc, biz) {
       if (r.loc !== loc) return;
       if (typeof costBefore_ === 'function' && costBefore_(new Date(r.ms), r.loc)) return;
       if (typeof BAKERY_START_DATE === 'string' && r.day < BAKERY_START_DATE) return;
+      if (r.day < MISSING_GOODS_FROM) return;
       if (!last[r.day] || r.ms >= last[r.day].ms) last[r.day] = r;
     });
     var days = Object.keys(last).sort();
     if (!days.length) return null;
-    days.forEach(function (d) { should += last[d].sold * BAKERY_PRICE; got += last[d].money; });
+    // เงินที่ได้ = เงินสด + โอน + ไทยช่วยไทย + ค่าใช้จ่ายเบเกอรี่ที่หยิบเงินสดจากเงินขายไปจ่าย (เหมือนสรุปยอดรายวัน)
+    // 15/10: 13/10 "ขาด 60" คือค่าที่ที่จ่ายจากเงินขายเบเกอรี่ ไม่ใช่ของหาย
+    days.forEach(function (d) {
+      var r = last[d], bk = typeof dayExpenses_ === 'function' ? dayExpenses_(loc, d).bkCash : 0;
+      should += r.sold * BAKERY_PRICE; got += r.cash + r.transfer + r.thai + bk;
+    });
     from = last[days[0]].ms; to = last[days[days.length - 1]].ms;
   } else {
-    var times = cashCountTimes_(loc).slice().reverse();          // เก่า → ใหม่
+    var times = cashCountTimes_(loc).filter(function (t) { return cashBizDay_(t) >= MISSING_GOODS_FROM; })
+      .reverse();                                                  // เก่า → ใหม่ · รอบแรกตั้งแต่วันเริ่ม = ฐาน
     if (times.length < 2) return null;
     var st = function (ms) { return auditStamp_(new Date(ms)); };
     for (var i = 1; i < times.length; i++) {

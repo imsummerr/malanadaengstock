@@ -72,4 +72,22 @@ section('ส่งสาขาก่อนลงซื้อเข้าใน�
   eq('ส่งเกินที่ซื้อ ยังไม่ลงของเข้า → เตือนขาด 20', s2.warn.filter(w => w.item === S).map(w => /ขาด 20 — ยังไม่ได้ลงของเข้า/.test(w.msg)), [true]);
 }
 
+section('ของหายเบเกอรี่ — ค่าที่ที่จ่ายเงินสดจากเงินขายไม่ใช่ของหาย · นับตั้งแต่ 8/10');
+{
+  const g = fresh(), { push } = require('./fixture');
+  g.BAKERY_START_DATE = '2026-10-01';
+  g.bakerySheet_();
+  const BS = g.__env.SHEETS[g.SHEET_BAKERY];
+  const brow = (d, cash, sold) => BS.rows.push([d, '21:00:00', SHOP, 'x', cash, 0, 0, cash, sold, sold * 10, cash - sold * 10, '', '', 'b' + d]);
+  brow('2026-10-07', 50, 10);    // ก่อน 8/10 — ไม่นับ
+  brow('2026-10-13', 860, 92);   // ขาด 60 ตามยอดที่กรอก
+  g.__env.SHEETS[g.SHEET_EXPENSE] = g.__env.SHEETS[g.SHEET_EXPENSE] || { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
+  const EX = g.__env.SHEETS[g.SHEET_EXPENSE]; if (EX.headers.indexOf('ธุรกิจ') === -1) EX.headers.push('ธุรกิจ');
+  g.cacheClear_();
+  eq('ยังไม่ได้บอกว่าค่าที่เป็นของเบเกอรี่ = ของหาย 60', g.missingGoods_(SHOP, 'เบเกอรี่')['บาท'], 60);
+  push(g, g.SHEET_EXPENSE, { 'วันที่': '2026-10-13', 'เวลา': '20:35:06', 'สาขา': SHOP, 'ประเภท': 'ค่าที่', 'จำนวนเงิน': 60, 'วิธีจ่าย': 'เงินสด', 'ธุรกิจ': 'เบเกอรี่' });
+  const m = g.missingGoods_(SHOP, 'เบเกอรี่');
+  eq('ค่าที่เงินสดของเบเกอรี่ = จ่ายจากเงินขาย → ไม่หาย · ไม่นับ 7/10', [m['บาท'], m['ควรได้'], m['ได้จริง'], m['ตั้งแต่']], [0, 920, 920, '13/10']);
+}
+
 process.exit(done().fail ? 1 : 0);
