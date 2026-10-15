@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-15c';
+const PAGE_BUILD = '2026-10-15d';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -510,7 +510,7 @@ function render() {
     </div></div>`;
     return;
   }
-  if (tab === 'money')  return viewMoney(v);
+  if (tab === 'money')  { viewMoney(v); v.insertAdjacentHTML('afterbegin', filesBanner()); return; }
   if (tab === 'stock')  viewStock(v);
   if (tab === 'in')     viewMove(v, 'in');
   if (tab === 'pack')   viewPack(v);
@@ -519,6 +519,31 @@ function render() {
   if (tab === 'count')  viewCount(v);
   if (tab === 'bakery') viewBakery(v);
   v.insertAdjacentHTML('afterbegin', lateBanner());
+  v.insertAdjacentHTML('afterbegin', filesBanner());
+}
+
+/**
+ * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
+ * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
+ */
+const WANT_FILES = { 'pos-backend.gs': '2026-10-15d', 'stock-costing.gs': '2026-10-15c', 'line-intake.gs': '2026-10-15b',
+                     'stock-audit.gs': '2026-10-15a', 'line-expiry-alert.gs': '2026-10-13' };
+function staleFiles() {
+  if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
+    const ver = D.version ? String(D.version).split('·')[0].trim() : '';
+    return ver < WANT_FILES['pos-backend.gs'] ? ['pos-backend.gs'] : [];
+  }
+  return Object.keys(WANT_FILES).filter(f => String(D.files[f] || '') < WANT_FILES[f]);
+}
+function filesBanner() {
+  if (!isOwner()) return '';
+  const old = staleFiles();
+  if (!old.length) return '';
+  return `<div class="card"><div class="warnbox" style="margin:0">
+    <b>⚠️ หลังบ้านยังมีไฟล์รุ่นเก่า</b> — วางไฟล์ล่าสุดทับ: <b>${old.map(esc).join(', ')}</b><br>
+    แล้วกด Deploy → Manage deployments → ✏️ → <b>New version</b> (กดบันทึกอย่างเดียวยังไม่เข้า)
+    ${D.files ? '' : '<br><small>วาง pos-backend.gs แล้ว ระบบจะบอกไฟล์อื่นที่ยังเก่าให้ด้วย</small>'}
+  </div></div>`;
 }
 
 /**

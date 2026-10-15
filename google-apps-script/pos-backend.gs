@@ -20,7 +20,12 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-15b · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-15d · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+
+// รุ่นของแต่ละไฟล์ .gs — หน้าสต็อกเทียบกับรุ่นที่ควรเป็น แล้วบอกเจ้าของว่าไฟล์ไหนยังไม่ได้วางใหม่
+// (15/10 วางไฟล์แล้วยังเห็นของเก่า ไม่รู้ว่าไฟล์ไหนยังไม่เข้า) · แต่ละไฟล์จดรุ่นของตัวเองไว้ใน GS_FILES
+var GS_FILES = GS_FILES || {};
+GS_FILES['pos-backend.gs'] = '2026-10-15d';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -271,6 +276,22 @@ function doGet(e) {
  * เปิดในเบราว์เซอร์ได้เลยไม่ต้อง login — ไม่คืนข้อมูลการขายหรือรหัสผ่านใด ๆ
  * ใช้เช็คหลัง Deploy ว่าวางโค้ดใหม่ครบแล้วจริง
  */
+/**
+ * รุ่นของไฟล์ .gs ทุกไฟล์ที่วางอยู่จริง — ไฟล์ที่ยังไม่มี GS_FILES (วางก่อน 15/10)
+ * ส่องจากของที่มีเฉพาะในรุ่นล่าสุดของไฟล์นั้นแทน ไม่ต้องวางไฟล์ที่ไม่ได้เปลี่ยนใหม่
+ */
+function gsFileVersions_() {
+  var out = {};
+  Object.keys(GS_FILES).forEach(function (k) { out[k] = GS_FILES[k]; });
+  var has = function (fn, mark) { try { return String(fn).indexOf(mark) !== -1; } catch (e) { return false; } };
+  var probe = function (file, ok, ver) { if (!out[file]) out[file] = ok ? ver : ''; };
+  probe('stock-costing.gs', typeof costReplayRaw_ === 'function' && has(costReplayRaw_, 'oweWarn'), '2026-10-15c');
+  probe('line-intake.gs', typeof INTAKE_ALIAS === 'object' && !!INTAKE_ALIAS['อัลม่อน'], '2026-10-15b');
+  probe('stock-audit.gs', typeof bakeryLateBase_ === 'function' && has(bakeryLateBase_, 'fresh'), '2026-10-15a');
+  probe('line-expiry-alert.gs', typeof checkNewIncoming === 'function' && has(checkNewIncoming, 'dayEndMaybe_'), '2026-10-13');
+  return out;
+}
+
 function handleVersion_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheets = {};
@@ -279,6 +300,7 @@ function handleVersion_() {
   return {
     success: true,
     version: BACKEND_VERSION,
+    files: gsFileVersions_(),
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
               'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone'],
@@ -2634,6 +2656,7 @@ function handleStockBootstrap_(p) {
     // ส่งรุ่นของหลังบ้านไปด้วย หน้าเว็บจะได้โชว์ให้เห็นว่ากำลังคุยกับตัวไหนอยู่
     // เวลาเจอ "ทำไมไม่ขึ้น" จะได้แยกออกว่าเป็นเพราะยิงไป deployment เก่า
     version: BACKEND_VERSION,
+    files: owner ? gsFileVersions_() : undefined,     // เจ้าของเห็นว่าไฟล์ไหนยังไม่ได้วางใหม่
     role: session.role, stockRole: stockRoleOf_(session),
     name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock,

@@ -62,6 +62,9 @@ function centralCashFrom_() {
 var CASH_CYCLE_DAYS = 30;
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
+var GS_FILES = GS_FILES || {};
+GS_FILES['stock-costing.gs'] = '2026-10-15c';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
 function costQty_(n)  { return Math.round((Number(n) || 0) * 10000) / 10000; }
