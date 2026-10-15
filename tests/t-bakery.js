@@ -5,7 +5,7 @@ const { eq, section, done } = makeCheck('เบเกอรี่ — นับ�
 
 const NOW = Date.now();
 const at = min => new Date(NOW - min * 60000);
-const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้', 'ไดฟุกุ สตอเบอร์รี่'];
+const FL = ['ไดฟุกุ ครีมนม', 'ไดฟุกุ ช็อกโกแลต', 'ไดฟุกุ ชาเขียว', 'ไดฟุกุ โอริโอ้', 'บราวนี่ นูเทลล่า', 'บราวนี่ โอริโอ้', 'ไดฟุกุ สตอเบอร์รี่', 'บราวนี่ อัลม่อนสไลซ์'];
 const rowsOf = qs => FL.map((n, i) => ({ item: n, qty: qs[i] === undefined ? 0 : qs[i] }));
 const staff = { role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' };
 
@@ -26,9 +26,9 @@ eq('บราวนี่: แพ็ค = 25 ชิ้น · ชิ้นละ 
 eq('ยอดเก็บเป็นลูก/ชิ้น', [g.baseUnitOf_(dk), g.toBase_(1, 1, 5, dk), g.fmtPack_(125, dk)], ['ชิ้น', 125, '1 แพ็ค 1 ชุด 5 ชิ้น']);
 eq('มีทั้งครัวกลางและสาขา', dk.scope, '');
 eq('ต้นทุน ไดฟุกุ 6.5 · บราวนี่ 6', [g.bakeryCost_('ไดฟุกุ ชาเขียว'), g.bakeryCost_('บราวนี่ นูเทลล่า')], [6.5, 6]);
-eq('ครบ 7 รส (สตอเบอร์รี่ 15/10)', FL.every(n => g.findStockItem_(n)), true);
+eq('ครบ 8 รส (สตอเบอร์รี่ · อัลม่อนสไลซ์ 15/10)', FL.every(n => g.findStockItem_(n)), true);
 eq('เช็คสต็อกปิดร้านสาขาไม่ต้องนับเบเกอรี่', g.countItemsAt_(SHOP).some(i => i.bakery), false);
-eq('ครัวกลางนับเบเกอรี่ด้วย', g.countItemsAt_(g.CENTRAL).filter(i => i.bakery).length, 7);
+eq('ครัวกลางนับเบเกอรี่ด้วย', g.countItemsAt_(g.CENTRAL).filter(i => i.bakery).length, 8);
 
 section('ครัวกลางรับเข้า → ส่งสาขา');
 push(g, g.SHEET_INCOMING, { 'วันที่เวลา': at(600), 'สาขา': g.CENTRAL, 'รายการ': 'ไดฟุกุ ครีมนม', 'จำนวน': 20, 'ประเภท': 'ของเข้าครัวกลาง' });
