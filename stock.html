@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-15i';
+const PAGE_BUILD = '2026-10-16a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -535,8 +535,13 @@ function staleFiles() {
   }
   return Object.keys(WANT_FILES).filter(f => String(D.files[f] || '') < WANT_FILES[f]);
 }
-function filesBanner() {
-  if (!isOwner()) return '';
+// 16/10 วางไฟล์ครบแล้วป้ายยังขึ้น — ป้ายอ่านจากข้อมูลรอบก่อนที่จำไว้ในเครื่อง แล้วโหลดใหม่ตามหลังเสร็จ
+// หน้าบัญชีไม่วาดใหม่ ป้ายเลยค้าง · ตอนนี้เชื่อเฉพาะข้อมูลสดจากหลังบ้าน และอัปเดตป้ายทันทีที่โหลดเสร็จ
+let D_FRESH = false;
+function filesBanner() { return `<div id="files-banner">${filesBannerInner()}</div>`; }
+function syncFilesBanner() { const el = document.getElementById('files-banner'); if (el) el.innerHTML = filesBannerInner(); }
+function filesBannerInner() {
+  if (!isOwner() || !D_FRESH) return '';
   const old = staleFiles();
   if (!old.length) return '';
   return `<div class="card"><div class="warnbox" style="margin:0">
@@ -1884,6 +1889,7 @@ function refreshInBackground(after) {
   const before = itemSig(D);
   loadData().then(() => {
     if (tab === 'stock' || itemSig(D) !== before) render();
+    syncFilesBanner();
     if (after) after();
   }).catch(() => {});
 }
@@ -1892,6 +1898,7 @@ async function loadData() {
   const r = await apiGet({ action: 'stockBootstrap' });
   D = r.data;
   saveBootCache(D);
+  D_FRESH = true;
   // เซิร์ฟเวอร์เป็นตัวตัดสินว่าคนนี้ทำที่ไหนได้บ้าง ยึดค่าที่ส่งกลับมาเป็นหลัก
   if (D.branches && D.branches.length) {
     auth.branches = D.branches.slice();
@@ -1918,6 +1925,7 @@ async function showApp() {
   const cached = readBootCache();
   if (cached) {
     D = cached;
+    D_FRESH = false;
     render();
     refreshInBackground();
     return;
