@@ -69,7 +69,7 @@ section('ส่งจำนวนเพิ่มไม่ใส่ราคา �
   const g2 = fresh();
   send(g2, 'วุ้นเส้นเกาหลี 1 โล 64', 'a1');
   send(g2, 'เต้าหู้หลอด 12 หลอด', 'a2'); g2.cacheClear_();
-  eq('ไม่มีค่าซื้อค้าง = ไม่ผูกกับของอื่น', g2.costReplay_().layers[g2.CENTRAL]['เต้าหู้หลอด (ดิบ)'].map(x => x.cost), [0]);
+  eq('ไม่มีค่าซื้อค้าง = ไม่ผูกกับของอื่น', g2.costReplay_().layers[g2.CENTRAL]['เต้าหู้หลอด'].map(x => x.cost), [0]);
 }
 
 process.exit(done().fail ? 1 : 0);

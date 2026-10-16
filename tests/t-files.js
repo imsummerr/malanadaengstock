@@ -27,6 +27,8 @@ section('ไฟล์เก่าที่ยังไม่มี GS_FILES — 
   eq('stock-costing ล่าสุด (มี oweWarn) ยังรู้ว่าเป็น 15c', g.gsFileVersions_()['stock-costing.gs'], '2026-10-15c');
   g.costReplayRaw_ = function () { return {}; };
   eq('stock-costing เก่า (ไม่มี oweWarn) = ว่าง → หน้าเว็บขึ้นเตือน', g.gsFileVersions_()['stock-costing.gs'], '');
+  delete g.GS_FILES['line-intake.gs'];          // 16/10 ไฟล์นี้จดรุ่นเองแล้ว — ลบออกเพื่อจำลองไฟล์ 15b ที่ยังไม่จด
+  eq('line-intake 15b (มีอัลม่อน ยังไม่จดรุ่น) ส่องได้ว่า 15b', g.gsFileVersions_()['line-intake.gs'], '2026-10-15b');
   delete g.INTAKE_ALIAS['อัลม่อน'];
   eq('line-intake เก่า (ไม่มีอัลม่อน) = ว่าง', g.gsFileVersions_()['line-intake.gs'], '');
 }

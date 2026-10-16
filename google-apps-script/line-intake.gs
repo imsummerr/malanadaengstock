@@ -22,6 +22,9 @@
  * วิธีติดตั้ง: อ่าน LINE-INTAKE-README.md ในโฟลเดอร์เดียวกัน
  ************************************************************/
 
+var GS_FILES = GS_FILES || {};
+GS_FILES['line-intake.gs'] = '2026-10-16a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+
 // ══════════════════════════════════════════════════════════════
 //  ตั้งค่า
 // ══════════════════════════════════════════════════════════════
@@ -1324,7 +1327,8 @@ function intakeStockQty_(item, counts, gram, perBag) {
   }
 
   // บอก "ถุงละ N" มาเองกับของที่ยกถุงแล้วนับย่อยได้ — ใช้ตามที่บอก (ถุงนี้อาจไม่เท่าปกติ)
-  if (perBag > 0 && item.kind === 'วัตถุดิบ' && item.perPack > 1 && counts && counts.length &&
+  // ของพร้อมส่ง (เต้าหู้หลอด 16/10) ก็ซื้อยกถุงเหมือนกัน บางถุงมี 10 หลอด
+  if (perBag > 0 && (item.kind === 'วัตถุดิบ' || item.ready) && item.perPack > 1 && counts && counts.length &&
       intakeNorm_(counts[0].unit) === intakeNorm_(item.packUnit)) {
     return { base: counts[0].n * perBag, packs: counts[0].n, per: perBag,
              unitNote: counts[0].n + ' ' + item.packUnit + ' × ' + perBag + ' ' + item.subUnit };
