@@ -199,7 +199,7 @@ section('กะหล่ำ ของแถม ไม่คิดเงิน');
   eq('ราคา 0', k.price, 0);
   eq('เป็นของแถม', k.free, true);
   eq('สาขานับเป็น กก.', k.subUnit, 'กก.');
-  eq('ของดิบชั่งเป็น กก.', gk.findStockItem_('กะหล่ำ (ดิบ)').subUnit, 'กก.');
+  eq('16/10 ไม่มีของดิบ — ซื้อมาส่งสาขาไว้แถม', [gk.findStockItem_('กะหล่ำ (ดิบ)'), k.ready, k.subUnit], [null, true, 'กก.']);
   const u = gk.auditUsage_([{ item: k, counted: 1, sys: 3, diff: -2 },
                             { item: gk.findStockItem_('ดอลลี่'), counted: 5, sys: 8, diff: -3 }]);
   eq('กะหล่ำไม่นับเป็นชิ้นที่ออกจากชั้น', u.piece.used, 3);

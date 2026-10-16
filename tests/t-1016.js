@@ -1,7 +1,7 @@
 process.env.TZ = 'Asia/Bangkok';
 const { makeCheck } = require('./harness');
 const { fresh, push, SHOP } = require('./fixture');
-const { eq, section, done } = makeCheck('16/10 — หมูพันเลือกหมูสามชั้นสไลซ์ได้ · เต้าหู้หลอดไม่มีของดิบ');
+const { eq, section, done } = makeCheck('16/10 — หมูพันเลือกหมูสามชั้นสไลซ์ได้ · เต้าหู้หลอด/กะหล่ำไม่มีของดิบ');
 
 section('หมูพันเห็ดเข็ม / สาหร่าย / ชิเมจิ ใช้หมูสามชั้นสไลซ์พันได้');
 {
@@ -55,6 +55,27 @@ section('ของดิบเดิมในประวัติ ("เต้�
   g.fixItemList(); g.cacheClear_();
   const b = g.stockBalances_()[g.CENTRAL];
   eq('12 หลอดย้ายมาเป็นเต้าหู้หลอด', [b['เต้าหู้หลอด'], b['เต้าหู้หลอด (ดิบ)'] || 0], [12, 0]);
+}
+
+section('กะหล่ำไม่มีของดิบ — ซื้อเป็นโล ส่งสาขาไว้แถม');
+{
+  const g = fresh();
+  const K = 'กะหล่ำ';
+  const ctx = id => ({ location: 'ครัวกลาง', who: 'S.', msgId: id, isGroup: true });
+  const send = (text, id) => g.intakeSaveAndSummarize_(g.intakeParseText_(text), ctx(id), 'ข้อความ', id, []);
+  const bal = (loc) => { g.cacheClear_(); return Math.round((g.stockBalances_()[loc][K] || 0) * 1000) / 1000; };
+  const it = g.findStockItem_(K);
+  eq('ของพร้อมส่ง · กก. · ของแถม ราคา 0 · ไม่มีของดิบ', [it.ready, it.subUnit, it.free, it.price, it.raws.length, g.findStockItem_(K + ' (ดิบ)')],
+     [true, 'กก.', true, 0, 0, null]);
+  send('กะหล่ำ 4โล 109 บาท', 'k1');
+  eq('ไลน์ "4โล" เข้าครัวกลางเป็นกะหล่ำ 4 กก.', bal(g.CENTRAL), 4);
+  send('กะหล่ำปลี 2500 กรัม 70', 'k2');
+  eq('พิมพ์เป็นกรัมก็แปลงเป็น กก.', bal(g.CENTRAL), 6.5);
+  const r = g.handleStockToShop_({ token: 't', item: K, location: SHOP, packs: 0, rem: 1.5 });
+  eq('ส่งสาขา 1.5 กก. ได้เลย ไม่ต้องแพ็ค', [r.success, bal(g.CENTRAL), bal(SHOP)], [true, 5, 1.5]);
+  push(g, g.SHEET_INCOMING, { 'วันที่เวลา': new Date(Date.now() - 30 * 3600000), 'สาขา': g.CENTRAL, 'รายการ': 'กะหล่ำ (ดิบ)', 'จำนวน': 3, 'ประเภท': 'ของเข้าครัวกลาง' });
+  g.fixItemList(); g.cacheClear_();
+  eq('ประวัติ "กะหล่ำ (ดิบ)" รวมเข้ากะหล่ำตอน fixItemList', [bal(g.CENTRAL), g.stockBalances_()[g.CENTRAL]['กะหล่ำ (ดิบ)'] || 0], [8, 0]);
 }
 
 process.exit(done().fail ? 1 : 0);
