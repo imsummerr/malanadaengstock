@@ -49,7 +49,12 @@ var COST_MALA_ONLY_TYPES = { 'ค่าไม้เสียบ': true };
  *   เงินเข้า: สาขาคืนค่าของ · สาขาส่งกำไรสิ้นเดือน · เจ้าของใส่ทุน (ถอนออก = ติดลบ)
  * เริ่มนับตั้งแต่วันตั้งยอดครัวกลาง (8/10) — เปลี่ยนได้ที่ Script Property CENTRAL_CASH_FROM
  * เงินทุน/ถอนเงิน ลงชีต COST_SHEET_CASH เอง หรือพิมพ์ในไลน์กลุ่มครัวกลาง "ใส่ทุน 5000" / "ถอนเงิน 2000"
+ * ยอดยกมา (17/10) — ของที่ครัวกลางมี + สาขาค้างอยู่แล้วตอนเริ่มนับเงิน ซื้อมาก่อนเริ่มนับ
+ *   ไม่มีเงินออกให้เห็น ทุนหมุนเวียนเลยเริ่มที่มูลค่าของพวกนั้นแทนที่จะเป็น 0
+ *   เจ้าของ: "ให้มันเริ่มต้นเหมือนเบเกอรี่" → ลงแถว รายการ "ยอดยกมา" เป็นเลขติดลบ (เงินที่จ่ายไปแล้ว)
+ *   ทุนหมุนเวียนเริ่มที่ 0 แล้วขยับตามของเสีย/ของหายจริงหลังจากนั้น
  */
+var COST_CASH_OPENING = 'ยอดยกมา';
 var COST_SHEET_CASH = 'บัญชี_เงินครัวกลาง';
 var COST_CASH_COLS = ['วันที่', 'รายการ', 'จำนวนเงิน', 'ธุรกิจ', 'หมายเหตุ'];
 var CENTRAL_CASH_FROM = '2026-10-08';
@@ -63,7 +68,7 @@ var CASH_CYCLE_DAYS = 30;
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-costing.gs'] = '2026-10-15i';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-costing.gs'] = '2026-10-17a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
@@ -880,16 +885,21 @@ function costOutgo_(biz, from) {
 }
 
 /** เงินทุนที่เจ้าของใส่/ถอน (ชีต COST_SHEET_CASH) — ถอนออกเป็นเลขติดลบ · ไม่บอกธุรกิจ = หม่าล่า */
-function costCapital_(biz) {
+function costCapital_(biz, opening) {
   var sh = sheet_(COST_SHEET_CASH), sum = 0;
   if (!sh || sh.getLastRow() < 2) return 0;
   var map = ensureCols_(sh, COST_CASH_COLS);
   sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues().forEach(function (r) {
     if (biz && costBizCell_(r[map['ธุรกิจ']]) !== biz) return;
+    // แถวยอดยกมาแยกบรรทัดของมัน ไม่ใช่เงินทุนที่ใส่
+    if ((String(r[map['รายการ']] || '').trim() === COST_CASH_OPENING) !== !!opening) return;
     sum += Number(String(r[map['จำนวนเงิน']]).replace(/,/g, '')) || 0;
   });
   return costBaht_(sum);
 }
+
+/** ยอดยกมา (บวก = มูลค่าของ/หนี้สาขาที่มีอยู่ก่อนเริ่มนับเงิน) — ในชีตลงเป็นเลขติดลบ */
+function costOpening_(biz) { return costBaht_(-costCapital_(biz, true)); }
 
 /** ของที่ซื้อมาลองสูตร (ไม่เข้าสต็อก) ของครัวกลาง — เงินออกจากครัวกลางจริง */
 function costRndSpend_(biz, from) {
@@ -1008,6 +1018,7 @@ function costSummary_() {
       var c = {
         ตั้งแต่: from ? Utilities.formatDate(new Date(from), costTz_(), 'd/M/yyyy') : '',
         เงินทุน: costCapital_(biz),
+        ยอดยกมา: costOpening_(biz),
         ซื้อของ: buy,
         ลองสูตร: costRndSpend_(biz, from),
         ค่าใช้จ่าย: ((costOutgo_(biz, from)[central] || {})['รวม']) || 0,
@@ -1016,7 +1027,8 @@ function costSummary_() {
         ของในครัวกลาง: (stock[central] || { total: 0 }).total,
         สาขาค้างจ่าย: costBaht_(Object.keys(owed).reduce(function (a, l) { return a + Math.max(0, owed[l]['ค้างชำระ']); }, 0))
       };
-      c['คงเหลือ'] = costBaht_(c['เงินทุน'] + c['รับคืนค่าของ'] + c['รับกำไร'] - c['ซื้อของ'] - c['ลองสูตร'] - c['ค่าใช้จ่าย']);
+      c['คงเหลือ'] = costBaht_(c['เงินทุน'] + c['รับคืนค่าของ'] + c['รับกำไร'] - c['ยอดยกมา'] -
+                              c['ซื้อของ'] - c['ลองสูตร'] - c['ค่าใช้จ่าย']);
       c['ทุนหมุนเวียน'] = costBaht_(c['คงเหลือ'] + c['ของในครัวกลาง'] + c['สาขาค้างจ่าย']);
       var since = Math.max(from, now - CASH_CYCLE_DAYS * 86400000);
       var days = Math.max(1, (now - since) / 86400000);
@@ -1212,7 +1224,7 @@ function costCombine_(a, b) {
       .sort(function (m, n) { return n.t - m.t; });
     if (x['เงินหมุนเวียน'] || y['เงินหมุนเวียน']) {
       var cx = x['เงินหมุนเวียน'] || {}, cy = y['เงินหมุนเวียน'] || {}, cb = { ตั้งแต่: cx['ตั้งแต่'] || cy['ตั้งแต่'] };
-      ['เงินทุน', 'ซื้อของ', 'ลองสูตร', 'ค่าใช้จ่าย', 'รับคืนค่าของ', 'รับกำไร', 'คงเหลือ', 'ของในครัวกลาง',
+      ['เงินทุน', 'ยอดยกมา', 'ซื้อของ', 'ลองสูตร', 'ค่าใช้จ่าย', 'รับคืนค่าของ', 'รับกำไร', 'คงเหลือ', 'ของในครัวกลาง',
        'สาขาค้างจ่าย', 'ทุนหมุนเวียน', 'ส่งของต่อวัน'].forEach(function (k) { cb[k] = costBaht_(num(cx[k]) + num(cy[k])); });
       p['เงินหมุนเวียน'] = costCycleDays_(cb);
     }
@@ -1604,6 +1616,7 @@ function centralCashText_(sum) {
   var f = function (n) { return costBaht_(n).toLocaleString(); };
   var L = ['💵 เงินหมุนเวียนครัวกลาง (ตั้งแต่ ' + c['ตั้งแต่'] + ')'];
   if (c['เงินทุน']) L.push('+ เงินทุน ' + f(c['เงินทุน']));
+  if (c['ยอดยกมา']) L.push('− ยอดยกมา (ของที่มีก่อนเริ่มนับ) ' + f(c['ยอดยกมา']));
   L.push('+ สาขาคืนค่าของ ' + f(c['รับคืนค่าของ']) + (c['รับกำไร'] ? ' · ส่งกำไร ' + f(c['รับกำไร']) : ''));
   L.push('− ซื้อของ ' + f(c['ซื้อของ'] + c['ลองสูตร']) + (c['ค่าใช้จ่าย'] ? ' · ค่าใช้จ่าย ' + f(c['ค่าใช้จ่าย']) : ''));
   L.push('= เงินคงเหลือ ' + f(c['คงเหลือ']) + ' บาท');
