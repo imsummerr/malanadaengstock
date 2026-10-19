@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-17b';
+const PAGE_BUILD = '2026-10-19a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -544,9 +544,13 @@ function filesBannerInner() {
   if (!isOwner() || !D_FRESH) return '';
   const old = staleFiles();
   if (!old.length) return '';
+  // 19/10 วางแล้วป้ายยังขึ้น — บอกรุ่นที่หลังบ้านใช้อยู่จริงกับรุ่นที่ต้องเป็น จะได้รู้ว่าวางไฟล์รอบไหนไป
+  const ver = f => D.files ? (D.files[f] || 'เก่ากว่า 15/10') : 'ไม่รู้';
+  const rows = old.map(f => `<li><b>${esc(f)}</b> — หลังบ้านใช้รุ่น <b>${esc(ver(f))}</b> · ต้องเป็น <b>${esc(WANT_FILES[f])}</b></li>`).join('');
   return `<div class="card"><div class="warnbox" style="margin:0">
-    <b>⚠️ หลังบ้านยังมีไฟล์รุ่นเก่า</b> — วางไฟล์ล่าสุดทับ: <b>${old.map(esc).join(', ')}</b><br>
-    แล้วกด Deploy → Manage deployments → ✏️ → <b>New version</b> (กดบันทึกอย่างเดียวยังไม่เข้า)
+    <b>⚠️ หลังบ้านยังมีไฟล์รุ่นเก่า</b> — วางไฟล์ล่าสุดทับ:<ul style="margin:6px 0 6px 18px;padding:0">${rows}</ul>
+    แล้วกด Deploy → Manage deployments → ✏️ → <b>New version</b> (กดบันทึกอย่างเดียวยังไม่เข้า)<br>
+    <small>เช็คในไฟล์: กด Ctrl+F หา <code>GS_FILES['</code> ต้องเห็นรุ่นตามนี้ · ถ้ามีไฟล์ชื่อซ้ำ/สำเนา ให้ลบไฟล์เก่าทิ้ง</small>
     ${D.files ? '' : '<br><small>วาง pos-backend.gs แล้ว ระบบจะบอกไฟล์อื่นที่ยังเก่าให้ด้วย</small>'}
   </div></div>`;
 }
