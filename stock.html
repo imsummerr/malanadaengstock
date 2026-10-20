@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-20a';
+const PAGE_BUILD = '2026-10-20b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -527,7 +527,7 @@ function render() {
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
 const WANT_FILES = { 'pos-backend.gs': '2026-10-16c', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-15h', 'line-expiry-alert.gs': '2026-10-13' };
+                     'stock-audit.gs': '2026-10-20a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';

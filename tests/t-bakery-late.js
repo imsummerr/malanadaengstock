@@ -66,8 +66,7 @@ section('กันลงผิด');
 g = setup();
 eq('วันนี้ไม่ใช่ย้อนหลัง', /วันก่อนหน้า/.test(g.handleBakeryCount_({ token: 't', round: 'หลังขาย', forDay: g.cashBizDay_(NOW),
   rows: rowsOf([1, 1, 1, 1, 1, 1]), money: { cash: 0, transfer: 0, thai: 0 } }).message), true);
-eq('วันที่ไม่ได้นับก่อนขาย ลงไม่ได้', /ไม่ได้นับก่อนขาย/.test(g.handleBakeryCount_({ token: 't', round: 'หลังขาย',
-  forDay: g.cashBizDay_(NOW - 48 * H), rows: rowsOf([1, 1, 1, 1, 1, 1]), money: { cash: 0, transfer: 0, thai: 0 } }).message), true);
+// 20/10: วันที่ไม่ได้นับก่อนขาย ลงย้อนหลังได้แล้ว (เริ่มจากยอดในระบบตอนเริ่มวัน) — ดู t-1020.js
 eq('วันนี้ยังไม่นับ แล้วปล่อยว่าง = ต้องนับก่อน', /วันนี้ยังไม่ได้นับ/.test(g.handleBakeryCount_({ token: 't', round: 'หลังขาย',
   forDay: yday, rows: [], money: { cash: 0, transfer: 0, thai: 0 } }).message), true);
 eq('หลังขายปกติยังต้องนับครบ', /ต้องนับให้ครบ/.test(g.handleBakeryCount_({ token: 't', round: 'หลังขาย',

@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-15h';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-20a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1300,15 +1300,19 @@ function lateStatus_(loc, nowMs) {
     });
     var paid = {};
     bakeryMoneyRows_().forEach(function (r) { if (r.loc === loc) paid[r.day] = true; });
-    var days = Object.keys(before).filter(function (d) {
-      return !paid[d] && d >= cashBizDay_(now - BAKERY_LATE_DAYS * 86400000);
-    }).sort();
+    var cutoff = cashBizDay_(now - BAKERY_LATE_DAYS * 86400000);
+    var days = Object.keys(before).filter(function (d) { return !paid[d] && d >= cutoff; });
+    // 20/10: ตั้งแต่ 13/10 นับแค่หลังขาย ไม่ได้นับก่อนขาย — วันขายล่าสุดที่ร้านเปิด (มีบิล) และมีเบเกอรี่อยู่ที่สาขา
+    // ถือว่าเบเกอรี่ออกขาย · เดิมเตือนเฉพาะวันที่นับก่อนขาย เลยไม่เตือนวันที่ไม่ได้นับเลยทั้งวัน (19/10)
+    var ps = cashPrevSalesDay_(loc, today);
+    if (ps && !paid[ps] && ps >= cutoff && days.indexOf(ps) === -1 && bakeryShopDay_(loc, ps, true)) days.push(ps);
+    days.sort();
     if (days.length) {
       var day = days[days.length - 1], counted = false;
       readMoves_(SHEET_COUNT).forEach(function (m) {
         if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT) return;
         var t = timeOf_(m.when);
-        if (t && t > before[day] && t <= now && cashBizDay_(t) > day) counted = true;
+        if (t && t > (before[day] || cashDayStart_(day)) && t <= now && cashBizDay_(t) > day) counted = true;
       });
       out.bakery = { day: day, dm: dmOf(day), counted: counted };
     }
@@ -1364,8 +1368,8 @@ function expDoneHas_(loc, day) {
   return false;
 }
 
-/** เบเกอรี่วันนั้น — ออกขายไหม (นับก่อนขาย) · นับหลังขาย/กรอกเงินแล้วหรือยัง (แถวล่าสุด) */
-function bakeryDayState_(loc, day) {
+/** เบเกอรี่วันนั้น — ออกขายไหม (นับก่อนขาย / ร้านเปิดและมีเบเกอรี่ที่สาขา) · นับหลังขาย/กรอกเงินแล้วหรือยัง (แถวล่าสุด) */
+function bakeryDayState_(loc, day, shopOpen) {
   var out = false, row = null;
   readMoves_(SHEET_COUNT).forEach(function (m) {
     if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT) return;
@@ -1376,7 +1380,41 @@ function bakeryDayState_(loc, day) {
     if (r.loc === loc && r.day === day && (!row || r.ms >= row.ms)) row = r;
   });
   if (row) out = true;
+  // 20/10: นับแค่หลังขายแล้ว (ไม่ได้นับก่อนขาย) — ร้านเปิดวันนั้น + มีเบเกอรี่อยู่ที่สาขา = ออกขาย ต้องนับหลังขาย
+  if (!out && shopOpen && bakeryShopDay_(loc, day, false)) out = true;
   return { out: out, row: row };
+}
+
+/** ยอดเบเกอรี่รสนี้ในระบบ ณ เวลา T — รอบนับล่าสุดก่อน T + ของเข้า − ของเสีย (ไม่เคยนับ = เริ่มจาก 0) */
+function bakeryQtyAt_(loc, name, T) {
+  var base = null;
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    if (m.loc !== loc || m.kind !== KIND_BAKERY_COUNT || m.item !== name) return;
+    var t = timeOf_(m.when);
+    if (t && t <= T && (!base || t >= base.t)) base = { t: t, qty: Number(m.qty) || 0 };
+  });
+  var q = base ? base.qty : 0, from = base ? base.t : -Infinity;
+  readMoves_(SHEET_INCOMING).forEach(function (m) {
+    var t = timeOf_(m.when);
+    if (m.loc === loc && m.item === name && t > from && t <= T) q += Number(m.qty) || 0;
+  });
+  readMoves_(SHEET_WASTE).forEach(function (m) {
+    var t = timeOf_(m.when);
+    if (m.loc === loc && m.item === name && t > from && t <= T) q -= Number(m.qty) || 0;
+  });
+  return Math.round(q * 1000) / 1000;
+}
+
+/** วันนั้นเบเกอรี่ออกขายไหม (ไม่ได้นับก่อนขาย) — หลังวันเริ่มขายเบเกอรี่ + มีเบเกอรี่อยู่ที่สาขาตอนเริ่มวัน (+ ร้านเปิด ถ้า checkOpen) */
+function bakeryShopDay_(loc, day, checkOpen) {
+  if (typeof BAKERY_START_DATE === 'string' && day < BAKERY_START_DATE) return false;
+  var start = cashDayStart_(day);
+  var onHand = BAKERY_ITEMS.reduce(function (a, b) { return a + Math.max(0, bakeryQtyAt_(loc, b[0], start)); }, 0);
+  if (!(onHand > 0)) return false;
+  if (!checkOpen) return true;
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  var bills = auditSales_(loc, st(start - 1000), st(start + 86400000 - 1000));
+  return (bills.orders + bills.dlvOrders) > 0;
 }
 
 /** ค่าใช้จ่ายของวันทำการนั้น — รวม / เงินสด · แยกเบเกอรี่ (เงินสดเบเกอรี่ = หยิบจากเงินขายเบเกอรี่) */
@@ -1411,7 +1449,7 @@ function dayStatus_(loc, day) {
   var bills = auditSales_(loc, st(start - 1000), st(start + 86400000 - 1000));
   var malaSold = (bills.orders + bills.dlvOrders) > 0;
   var cc = malaSold ? cashCloseCount_(loc, day) : { countMs: 0, prevMs: 0 };
-  var bk = bakeryDayState_(loc, day);
+  var bk = bakeryDayState_(loc, day, malaSold);
   var exp = expDoneHas_(loc, day);
   var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
   var need = [];
@@ -1827,8 +1865,15 @@ function bakeryLateBase_(loc, forDay, nowMs) {
     var ever = cnt.some(function (c) { return c.item === b[0] && cashBizDay_(c.t) <= forDay; });
     if (!ever) { start[b[0]] = { item: b[0], qty: 0, t: dayStart, note: 'ก่อนขาย' }; fresh[b[0]] = true; }
   });
-  var missing = BAKERY_ITEMS.filter(function (b) { return !start[b[0]]; });
-  if (missing.length) return { error: 'วันที่ ' + dm + ' ไม่ได้นับก่อนขาย — ลงย้อนหลังไม่ได้ (ไม่รู้ว่าวันนั้นเริ่มขายด้วยของเท่าไหร่)' };
+  // 20/10: ไม่ได้นับก่อนขาย (นับแค่หลังขายตั้งแต่ 13/10) — เริ่มจากยอดในระบบตอนเริ่มวันนั้น
+  // (รอบนับล่าสุดก่อนหน้า + ของเข้า − ของเสีย) แบบเดียวกับนับหลังขายปกติ
+  var t0 = dayStart < Infinity ? dayStart : cashDayStart_(forDay);
+  BAKERY_ITEMS.forEach(function (b) {
+    if (start[b[0]]) return;
+    var ever = cnt.some(function (c) { return c.item === b[0] && c.t <= t0; });
+    start[b[0]] = { item: b[0], qty: bakeryQtyAt_(loc, b[0], t0), t: t0, note: 'ก่อนขาย' };
+    if (!ever) fresh[b[0]] = true;
+  });
   cnt.forEach(function (c) {
     var st = start[c.item];
     if (st && c.t > st.t && cashBizDay_(c.t) > forDay && !next[c.item]) next[c.item] = c;
