@@ -34,11 +34,11 @@ s = st(g);
 // 13/10: เงินสดคงเหลือแจ้งในไลน์ ไม่ใช่งานพนักงาน — นับแล้วไม่เตือนต่อ
 eq('นับแล้ว ไม่เตือน (เงินไม่ต้องกรอกหน้า POS)', s.mala, null);
 
-section('หม่าล่า: ขายบิลแรกของวันนี้แล้ว = สายไป ไม่เตือน');
+section('หม่าล่า: ขายบิลแรกของวันนี้แล้ว — 22/10 ยังเตือน ให้เลือกตอนนับว่าเป็นปิดร้านของเมื่อวาน');
 g = setup();
 push(g, g.SHEET_ORDERS, { 'วันที่': ymd(at(1)), 'เวลา': hms(at(1)), 'สาขา': SHOP, 'ยอดรวม': 50, 'ส่วนลด': 0,
   'ยอดสุทธิ': 50, 'รวมไม้': 5, 'วิธีชำระเงิน': 'เงินสด' });
-eq('ไม่เตือนหม่าล่า', st(g).mala, null);
+eq('ยังเตือน · บอกว่าวันนี้ขายไปแล้ว (ต้องเลือก)', [st(g).mala.count, st(g).mala.afterBill], [true, true]);
 
 section('หม่าล่า: เมื่อวานนับปิดร้าน + กรอกเงินครบ ไม่เตือน');
 g = setup();
@@ -66,7 +66,7 @@ g.checkToken_ = () => ({ role: 'staff', branch: SHOP, branches: [SHOP], name: '�
 eq('POS ถาม lateStatus', g.handleLateStatus_({ token: 't' }).data.mala.cash, true);
 const boot = g.handleStockBootstrap_({ token: 't' }).data;
 eq('หน้าสต็อกได้ late ของสาขา', boot.late[SHOP].mala.count, true);
-eq('ไม่มีตัวเลขเงิน/ยอดขาย', Object.keys(boot.late[SHOP].mala).sort(), ['cash', 'count', 'day', 'dm', 'today']);
+eq('ไม่มีตัวเลขเงิน/ยอดขาย', Object.keys(boot.late[SHOP].mala).sort(), ['afterBill', 'cash', 'count', 'day', 'dm', 'today']);
 eq('เตือนแจ้งค่าใช้จ่ายของวันขายก่อน (ไม่มีตัวเลข)', Object.keys(boot.late[SHOP].exp || {}).sort(), ['day', 'dm']);
 
 process.exit(done().fail ? 1 : 0);

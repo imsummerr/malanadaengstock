@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-20a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-22a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1015,23 +1015,57 @@ function cashStampMs_(stamp) {
  * วันนั้นไม่มีบิลเลย = ใช้รอบนับล่าสุดของวันนั้น
  * คืน { countMs, prevMs, lastBill } — countMs 0 = ยังไม่ได้นับปิดร้าน
  */
+/**
+ * 22/10 เจ้าของ: ลืมเช็คสต็อกปิดร้านวันก่อน แล้ววันนี้ขายไปแล้ว — ให้เลือกได้ว่ารอบที่นับเป็น "ปิดร้านวันที่ X"
+ * (แบบเดียวกับเบเกอรี่ลงย้อนหลัง) · แถวนับจดไว้ในหมายเหตุ "ปิดร้าน d/M/yyyy (ลงย้อนหลัง) · …"
+ * รอบนั้นเป็นรอบปิดร้านของวัน X — ช่วงเทียบของ X = นับก่อนหน้า → รอบนี้ (รวมบิลวันนี้ก่อนนับ เทียบกับของที่ออกในช่วงเดียวกัน)
+ * วันนี้เริ่มเทียบต่อจากรอบนี้ · ไม่เอารอบที่จดเป็นของวันอื่นมาเป็นปิดร้านของวันนี้
+ */
+var CLOSE_TAG_RE = /^ปิดร้าน (\d{1,2})\/(\d{1,2})\/(\d{4})/;
+function closeTagNote_(day) {
+  var p = String(day).split('-');
+  return 'ปิดร้าน ' + Number(p[2]) + '/' + Number(p[1]) + '/' + p[0] + ' (ลงย้อนหลัง)';
+}
+function closeTagDay_(note) {
+  var m = String(note || '').match(CLOSE_TAG_RE);
+  return m ? m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2) : '';
+}
+/** รอบนับที่จดว่าเป็นปิดร้านของวันไหน — นาที → วัน */
+function closeTags_(loc) {
+  var out = {};
+  readMoves_(SHEET_COUNT).forEach(function (m) {
+    if (m.loc !== loc || m.kind !== 'เช็คสต็อก') return;
+    var d = closeTagDay_(m.note), t = d && auditTime_(m.when);
+    if (t) out[Math.round(t / 60000)] = d;
+  });
+  return out;
+}
+
 function cashCloseCount_(loc, day) {
   var times = cashCountTimes_(loc);                      // ใหม่ → เก่า
   var start = cashDayStart_(day), end = start + 24 * 3600000;
   var bills = auditSales_(loc, auditStamp_(new Date(start)), auditStamp_(new Date(end - 1000)));
   var lastBill = cashStampMs_(bills.lastStamp);
-  var pick = -1;
+  var pick = -1, tags = closeTags_(loc);
+  var tagOf = function (t) { return tags[Math.round(t / 60000)] || ''; };
+  // เลือกไว้ตอนนับว่าเป็นปิดร้านของวันนี้ (ลงย้อนหลัง) — ใช้รอบนั้นเลย
+  for (var k = 0; k < times.length; k++) {
+    if (tagOf(times[k]) === day) return { countMs: times[k], prevMs: times[k + 1] || 0, lastBill: lastBill, tagged: true };
+  }
+  var merged = 0;
   if (lastBill) {
     for (var i = times.length - 1; i >= 0; i--) {         // เก่า → ใหม่ หาอันแรกหลังบิลสุดท้าย
       if (times[i] < lastBill - 60000) continue;
-      // ระหว่างบิลสุดท้ายกับรอบนับนี้ต้องไม่มีบิลใหม่ (ของวันถัดไป)
-      if (times[i] > end && auditSales_(loc, bills.lastStamp, auditStamp_(new Date(times[i]))).orders) break;
+      if (tagOf(times[i])) continue;                      // จดเป็นปิดร้านของอีกวัน
+      // ลืมนับปิดร้าน แล้ววันถัดไปขายก่อนนับ = รวมไปเทียบกับรอบนับถัดไปแล้ว (ไม่ต้องรออีก)
+      // (ระหว่างบิลสุดท้ายกับรอบนับนี้ต้องไม่มีบิลใหม่ของวันถัดไป ถึงจะเป็นรอบปิดร้านของวันนี้)
+      if (times[i] > end && auditSales_(loc, bills.lastStamp, auditStamp_(new Date(times[i]))).orders) { merged = times[i]; break; }
       pick = i; break;
     }
   } else {
-    for (var j = 0; j < times.length; j++) if (cashBizDay_(times[j]) === day) { pick = j; break; }
+    for (var j = 0; j < times.length; j++) if (cashBizDay_(times[j]) === day && !tagOf(times[j])) { pick = j; break; }
   }
-  if (pick < 0) return { countMs: 0, prevMs: 0, lastBill: lastBill };
+  if (pick < 0) return { countMs: 0, prevMs: 0, lastBill: lastBill, mergedMs: merged };
   return { countMs: times[pick], prevMs: times[pick + 1] || 0, lastBill: lastBill };
 }
 
@@ -1275,11 +1309,14 @@ function lateStatus_(loc, nowMs) {
   try {
     var start = cashDayStart_(today);
     var openToday = auditSales_(loc, auditStamp_(new Date(start - 1000)), auditStamp_(new Date(now))).orders > 0;
-    var prev = openToday ? '' : cashPrevSalesDay_(loc, today);
+    // 22/10: วันนี้ขายไปแล้วก็ยังเตือน (เดิมหายตอนขายบิลแรก) — ตอนนับให้เลือกว่าเป็นปิดร้านของวันนั้น (afterBill)
+    // หายเมื่อนับปิดร้านของวันนั้นแล้ว หรือมีรอบนับหลังจากนั้นที่เลือกเป็นของวันนี้ (รวมไปเทียบรอบนั้นแล้ว)
+    var prev = cashPrevSalesDay_(loc, today);
     if (prev && !(typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(prev)), loc))) {
-      var count = !cashCloseCount_(loc, prev).countMs, cash = !cashRowsForDay_(loc, prev).length;
+      var pc = cashCloseCount_(loc, prev);
+      var count = !pc.countMs && !pc.mergedMs, cash = !cashRowsForDay_(loc, prev).length;
       // เงินสดคงเหลือแจ้งในไลน์ (13/10) ไม่ใช่งานพนักงานแล้ว — เตือนเฉพาะลืมเช็คสต็อก (cash บอกไว้เฉย ๆ)
-      if (count) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash, today: dmOf(today) };
+      if (count) out.mala = { day: prev, dm: dmOf(prev), count: count, cash: cash, today: dmOf(today), afterBill: openToday };
     }
   } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
   // 13/10: วันขายล่าสุดก่อนวันนี้ ยังไม่แจ้งค่าใช้จ่ายในไลน์ — สรุปยอดของวันนั้นรอข้อนี้ (เตือนเจ้าของ ไม่มีตัวเลข)
@@ -1453,7 +1490,7 @@ function dayStatus_(loc, day) {
   var exp = expDoneHas_(loc, day);
   var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
   var need = [];
-  if (malaSold && !cc.countMs) need.push('เช็คสต็อกปิดร้านหม่าล่า');
+  if (malaSold && !cc.countMs && !cc.mergedMs) need.push('เช็คสต็อกปิดร้านหม่าล่า');
   if (bk.out && !bk.row) need.push('นับเบเกอรี่หลังขาย');
   if (!exp) need.push('แจ้งค่าใช้จ่ายของวันที่ ' + dm + ' ในไลน์');
   var any = malaSold || bk.out;
@@ -1469,7 +1506,9 @@ function daySummaryText_(loc, day, st) {
     var c = null;
     try { c = cashCheck_(loc, day, { silent: true, noCashOk: true, part: true }); }
     catch (e) { Logger.log('daySummary cashCheck_: ' + e.message); }
-    L.push('', c && c.text ? c.text : '🌶️ หม่าล่า — ยังเทียบไม่ได้ (ไม่มีรอบเช็คสต็อกก่อนหน้า)');
+    L.push('', c && c.text ? c.text : st.cc.mergedMs
+      ? '🌶️ หม่าล่า — ไม่ได้นับปิดร้านวันที่ ' + st.dm + ' · รวมไปเทียบกับรอบนับ ' + auditShort_(new Date(st.cc.mergedMs)) + ' แล้ว'
+      : '🌶️ หม่าล่า — ยังเทียบไม่ได้ (ไม่มีรอบเช็คสต็อกก่อนหน้า)');
   }
   var ex = dayExpenses_(loc, day);
   if (st.bk.out && st.bk.row) {
@@ -1519,6 +1558,8 @@ function daySummaryAfter_(loc, day, opt) {
 
 /** รอบนับนี้ปิดยอดของวันไหน — วันนี้ (นับหลังบิลสุดท้าย) / วันขายก่อนหน้า (นับเช้าก่อนบิลแรก) / '' นับกลางวัน */
 function closeDayOfCount_(loc, ms) {
+  var tagged = closeTags_(loc)[Math.round(ms / 60000)];
+  if (tagged) return tagged;
   var day = cashBizDay_(ms);
   var near = function (d) { var c = cashCloseCount_(loc, d); return c.countMs && Math.abs(c.countMs - ms) <= 5 * 60000; };
   var pd = cashPrevSalesDay_(loc, day);

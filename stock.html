@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-20b';
+const PAGE_BUILD = '2026-10-22a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-16c', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-20a', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-22a', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
+                     'stock-audit.gs': '2026-10-22a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -566,7 +566,11 @@ function lateBanner() {
     const s = L[loc] || {}, rows = [];
     const btn = (label, js) => ` <button class="key" style="display:inline-block;width:auto;padding:4px 10px;margin:4px 0 0;font-size:13px"
         onclick="${js}">${label}</button>`;
-    if (s.mala && s.mala.count) rows.push(`📋 <b>เช็คสต็อกของวันที่ ${s.mala.dm}</b> ก่อนขายวันที่ ${s.mala.today || 'วันนี้'}
+    if (s.mala && s.mala.count) rows.push(s.mala.afterBill
+      // 22/10: วันนี้ขายไปแล้วก็ลงย้อนหลังได้ — ตอนนับเลือกว่าเป็นปิดร้านของวันนั้น (เหมือนเบเกอรี่)
+      ? `📋 <b>เช็คสต็อกย้อนหลังของวันที่ ${s.mala.dm}</b> — วันนี้ขายไปแล้ว ตอนนับเลือก "ปิดร้าน ${s.mala.dm} (ลืมนับ)"` +
+        btn('ไปนับ', `C_FOR='late';C_FOR_LOC='${esc(loc)}';go('count')`)
+      : `📋 <b>เช็คสต็อกของวันที่ ${s.mala.dm}</b> ก่อนขายวันที่ ${s.mala.today || 'วันนี้'}
         — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${s.mala.dm}` + btn('ไปนับ', "go('count')"));
     // ค่าใช้จ่าย + เงินสดคงเหลือ เจ้าของร้านแจ้งในไลน์ — พนักงานไม่ต้องเห็น
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
@@ -1639,8 +1643,9 @@ function viewCount(v) {
     <p class="lead">ต้องนับให้ครบทุกรายการ ยอดที่นับได้จะกลายเป็นยอดตั้งต้นใหม่</p>
 
     <label class="fld">สถานที่</label>
-    <select id="c-loc" onchange="fillCountRows()">${locs.map(l =>
-      `<option${l === auth.branch ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <select id="c-loc" onchange="C_FOR='';fillCountRows()">${locs.map(l =>
+      `<option${l === (C_FOR_LOC || auth.branch) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <div id="c-for"></div>
 
     <div class="progress"><div id="c-bar"></div></div>
     <p class="note" id="c-prog">กำลังโหลดรายการ…</p>
@@ -1675,9 +1680,39 @@ function viewCount(v) {
 let CROWS = [];
 let CDONE = 0;
 
+/* 22/10 ลืมเช็คสต็อกปิดร้านวันก่อน แล้ววันนี้ขายไปแล้ว — เลือกว่ารอบนี้เป็นของวันไหน (เหมือนเบเกอรี่)
+   'late' = ปิดร้านของวันที่ลืม · 'today' = ของวันนี้ (วันที่ลืมรวมไปเทียบกับรอบนี้) · '' = ยังไม่เลือก */
+let C_FOR = '', C_FOR_LOC = '';
+function countLate() {
+  const el = document.getElementById('c-loc');
+  const loc = el ? el.value : auth.branch;
+  const m = D.late && D.late[loc] && D.late[loc].mala;
+  return m && m.count ? m : null;
+}
+function paintCountFor() {
+  const box = document.getElementById('c-for');
+  if (!box) return;
+  const m = countLate();
+  if (!m) { box.innerHTML = ''; return; }
+  if (!m.afterBill) {
+    box.innerHTML = `<div class="warnbox" style="margin:10px 0 0">ลืมเช็คสต็อกปิดร้านของวันที่ ${esc(m.dm)} —
+      นับตอนนี้ (ก่อนขายบิลแรก) ระบบใช้เป็นยอดปิดร้านของ ${esc(m.dm)}</div>`;
+    return;
+  }
+  const b = (on, label) => `<button class="key" style="flex:1;${C_FOR === on ? '' : 'opacity:.45'}"
+      onclick="C_FOR='${on}';paintCountFor();paintProgress()">${label}</button>`;
+  box.innerHTML = `<label class="fld">นับรอบนี้เป็นของวันไหน</label>
+    <div style="display:flex;gap:8px">${b('today', 'วันนี้ ' + esc(m.today || ''))}${b('late', 'ปิดร้าน ' + esc(m.dm) + ' (ลืมนับ)')}</div>
+    <p class="note">${C_FOR === 'late'
+      ? `ยอดที่นับตอนนี้ = ยอดปิดร้านของ ${esc(m.dm)} · ที่ขายไปวันนี้ก่อนนับ ระบบเทียบกับบิลวันนี้ในช่วงเดียวกันให้`
+      : C_FOR === 'today' ? `นับของวันนี้ตามปกติ — ${esc(m.dm)} จะรวมไปเทียบกับรอบนี้ (ไม่ได้แยกยอดของ ${esc(m.dm)})`
+      : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>`;
+}
+
 function fillCountRows() {
   const box = document.getElementById('c-rows');
   if (!box) return;
+  paintCountFor();
   const list = countItems();
   const locEl = document.getElementById('c-loc');
   const pc = piecesAt(locEl ? locEl.value : D.central);
@@ -1820,9 +1855,10 @@ function paintCountBar() {
   // ปิดปุ่มไว้จนกว่าจะนับครบ กดไม่ได้เลย ไม่ใช่กดแล้วค่อยเด้งเตือน
   const btn = document.getElementById('c-btn');
   if (btn) {
-    btn.disabled = total === 0 || left > 0;
+    const lm = countLate(), pick = lm && lm.afterBill && !C_FOR;
+    btn.disabled = total === 0 || left > 0 || pick;
     btn.textContent = total === 0 ? 'ไม่มีสินค้าให้นับ'
-                    : left > 0 ? `ยังขาดอีก ${left} รายการ` : 'บันทึกผลนับ';
+                    : left > 0 ? `ยังขาดอีก ${left} รายการ` : pick ? 'เลือกก่อนว่านับของวันไหน' : 'บันทึกผลนับ';
   }
 }
 
@@ -1845,7 +1881,11 @@ async function submitCount() {
   btn.innerHTML = '<span class="spinner-sm"></span> กำลังบันทึก...';
   try {
     const cl = document.getElementById('c-loc').value;
-    const r = await apiPost({ action: 'stockCount', location: cl, rows });
+    const lm0 = countLate();
+    if (lm0 && lm0.afterBill && !C_FOR) throw new Error('เลือกก่อนว่ารอบนี้เป็นของวันไหน');
+    const forDay = lm0 && lm0.afterBill && C_FOR === 'late' ? lm0.day : '';
+    const r = await apiPost({ action: 'stockCount', location: cl, rows, forDay });
+    C_FOR = ''; C_FOR_LOC = '';
     // นับปิดร้านย้อนหลังแล้ว (ก่อนบิลแรก) — เอาเตือนนับออก เหลือเตือนเงินถ้ายังไม่กรอก
     const lm = D.late && D.late[cl] && D.late[cl].mala;
     if (lm) { lm.count = false; if (!lm.cash) D.late[cl].mala = null; }
