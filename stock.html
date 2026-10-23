@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-23c';
+const PAGE_BUILD = '2026-10-23d';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-23c', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-23b', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-23d', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
+                     'stock-audit.gs': '2026-10-23c', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -1679,6 +1679,14 @@ function viewCount(v) {
       <p class="note">ใส่ยอดทั้งวัน (รวมที่กดใน POS ด้วย ไม่รวมเดลิเวอรี่) · เงินสดใส่ที่เหลือในลิ้นชักจริง —
         หยิบไปจ่ายค่าอะไร เจ้าของร้านแจ้งในไลน์ ระบบบวกกลับให้ · กรอกแล้วระบบใช้ยอดนี้แทน POS ของวันนั้น · วันที่ใช้ POS ปล่อยว่าง</p>
     </div>
+    <div id="c-dlv" style="margin-top:14px">
+      <h2 style="font-size:16px">🛵 เดลิเวอรี่<span id="cd-day">วันนี้</span> <small style="font-weight:400">— กรอกเฉพาะวันที่ไม่ได้ใช้ POS</small></h2>
+      <div id="cd-list"></div>
+      <button class="key" id="cd-add" style="width:100%;padding:11px;margin-top:8px;background:var(--bg);color:var(--ink)"
+        onclick="dlvAdd()">+ เพิ่มออเดอร์เดลิเวอรี่</button>
+      <p class="note">ใส่ทีละออเดอร์ เหมือนกดใน POS · ยอดเงินใส่ตามที่แอปแจ้ง (ไม่รู้ปล่อยว่าง ระบบคิดจากราคาเมนู) ·
+        วันที่ใช้ POS ลงเดลิเวอรี่ใน POS ไปแล้ว ไม่ต้องใส่ซ้ำ</p>
+    </div>
     <button class="key btn-red submit" id="c-btn" onclick="submitCount()" disabled>บันทึกผลนับ</button>
     <p class="note">นับเฉพาะที่มีของ แล้วกด "ใส่ 0 ให้ที่ยังไม่ได้นับ" ทีเดียวจบ</p>
   </div>`;
@@ -1717,9 +1725,63 @@ function paintCountMoney() {
   const mb = document.getElementById('c-money');
   if (!mb) return;
   const el = document.getElementById('c-loc');
-  mb.style.display = (el ? el.value : auth.branch) === D.central ? 'none' : '';
-  const m = countLate(), lbl = document.getElementById('cm-day');
-  if (lbl) lbl.textContent = m && (!m.afterBill || C_FOR === 'late') ? 'ของวันที่ ' + m.dm : 'วันนี้';
+  const hide = (el ? el.value : auth.branch) === D.central ? 'none' : '';
+  mb.style.display = hide;
+  const m = countLate(), day = m && (!m.afterBill || C_FOR === 'late') ? 'ของวันที่ ' + m.dm : 'วันนี้';
+  const lbl = document.getElementById('cm-day');
+  if (lbl) lbl.textContent = day;
+  const db = document.getElementById('c-dlv'), dl = document.getElementById('cd-day');
+  if (db) db.style.display = hide;
+  if (dl) dl.textContent = day;
+  paintCountDlv();
+}
+
+/* 23/10 เดลิเวอรี่ (วันที่ไม่ได้ใช้ POS) — กรอกทีละออเดอร์ เมนูเดียวกับหน้าเดลิเวอรี่ใน POS */
+const DLV_MENU = ['อุด้ง', 'หม่าล่าหน้าแดง', 'หม่าล่าทะเล', 'หม่าล่ารวม'];
+let C_DLV = [];
+function dlvApps() {
+  return D.deliveryApps && D.deliveryApps.length ? D.deliveryApps : ['Grab', 'LINE MAN', 'ShopeeFood', 'foodpanda', 'อื่น ๆ'];
+}
+function dlvAdd() {
+  const last = C_DLV[C_DLV.length - 1];
+  C_DLV.push({ platform: last ? last.platform : dlvApps()[0], amount: '', qty: {}, addons: '' });
+  paintCountDlv();
+}
+function dlvDel(i) { C_DLV.splice(i, 1); paintCountDlv(); }
+function dlvNum(v) { const n = parseInt(String(v).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? '' : Math.min(n, 999); }
+function paintCountDlv() {
+  const box = document.getElementById('cd-list');
+  if (!box) return;
+  const row = (label, input) => `<div style="display:flex;align-items:center;gap:10px;margin:6px 0">
+      <span style="flex:1">${label}</span>${input}</div>`;
+  const num = (key, val, unit) => `<input type="number" inputmode="numeric" min="0" step="1" placeholder="0"
+      value="${val === '' || val === undefined ? '' : val}" style="width:90px;text-align:right"
+      oninput="${key}">` + `<span class="note" style="width:28px;margin:0">${unit}</span>`;
+  box.innerHTML = C_DLV.map((o, i) => `<div style="border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <b style="flex:1">ออเดอร์ที่ ${i + 1}</b>
+      <button class="key" style="padding:6px 12px;background:var(--red-soft);color:var(--red-dark)" onclick="dlvDel(${i})">ลบ</button>
+    </div>
+    <select onchange="C_DLV[${i}].platform=this.value">${dlvApps().map(a =>
+      `<option${a === o.platform ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select>
+    ${row('ยอดเงินที่แอปแจ้ง', `<input type="number" inputmode="decimal" min="0" placeholder="–" value="${esc(o.amount)}"
+      style="width:90px;text-align:right" oninput="C_DLV[${i}].amount=this.value.trim()"><span class="note" style="width:28px;margin:0">บาท</span>`)}
+    ${DLV_MENU.map(n => row(esc(n), num(`C_DLV[${i}].qty['${n}']=dlvNum(this.value)`, o.qty[n], 'ที่'))).join('')}
+    ${row('ของเพิ่ม', num(`C_DLV[${i}].addons=dlvNum(this.value)`, o.addons, 'อย่าง'))}
+  </div>`).join('');
+}
+/* ส่งไปหลังบ้าน — ออเดอร์ที่ว่างทั้งหมดไม่ส่ง · ใส่ยอดเงินแต่ไม่ใส่จำนวน = เตือนก่อนส่ง */
+function dlvPayload() {
+  const out = [];
+  for (let i = 0; i < C_DLV.length; i++) {
+    const o = C_DLV[i];
+    const items = DLV_MENU.filter(n => Number(o.qty[n]) > 0).map(n => ({ name: n, qty: Number(o.qty[n]) }));
+    const addons = Number(o.addons) || 0, amount = Number(o.amount) || 0;
+    if (!items.length && !addons && !(amount > 0)) continue;
+    if (!items.length && !addons) throw new Error('เดลิเวอรี่ออเดอร์ที่ ' + (i + 1) + ' ยังไม่ได้ใส่จำนวน');
+    out.push({ platform: o.platform, amount, items, addonCount: addons });
+  }
+  return out;
 }
 function paintCountFor() {
   paintCountMoney();
@@ -1924,8 +1986,11 @@ async function submitCount() {
     const mv = k => { const x = document.getElementById('cm-' + k); return x ? x.value.trim() : ''; };
     const money = cl !== D.central && (mv('cash') || mv('transfer') || mv('thai'))
       ? { cash: mv('cash'), transfer: mv('transfer'), thai: mv('thai') } : null;
-    const r = await apiPost(Object.assign({ action: 'stockCount', location: cl, rows, forDay }, money ? { money } : {}));
+    const delivery = cl !== D.central ? dlvPayload() : [];
+    const r = await apiPost(Object.assign({ action: 'stockCount', location: cl, rows, forDay },
+                                          money ? { money } : {}, delivery.length ? { delivery } : {}));
     ['cash', 'transfer', 'thai'].forEach(k => { const x = document.getElementById('cm-' + k); if (x) x.value = ''; });
+    C_DLV = []; paintCountDlv();
     C_FOR = ''; C_FOR_LOC = '';
     // นับปิดร้านย้อนหลังแล้ว (ก่อนบิลแรก) — เอาเตือนนับออก เหลือเตือนเงินถ้ายังไม่กรอก
     const lm = D.late && D.late[cl] && D.late[cl].mala;

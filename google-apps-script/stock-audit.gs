@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-23b';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-23c';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1144,6 +1144,7 @@ function cashCheck_(loc, day, opt) {
            ' · โอน ' + auditBaht_(mm.transfer) + ' · ไทยช่วยไทย ' + auditBaht_(mm.thai) + ')');
     if (mm.exp) M.push('+ จ่ายค่าใช้จ่ายเงินสดจากเงินขาย ' + auditBaht_(mm.exp) + ' บาท');
     if (s.orders) M.push('(ใน POS กดไว้ ' + s.orders + ' บิล ' + auditBaht_(s.revenue) + ' บาท — ใช้ยอดที่กรอกแทน)');
+    if (s.dlvOrders) M.push('(เดลิเวอรี่ ' + s.dlvOrders + ' ออเดอร์ — ไม่รวมในยอดนี้ หักของที่ออกไปกับเดลิเวอรี่ให้แล้ว)');
     M.push(mok ? '→ ตรงกัน' : (mdiff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(mdiff)) + ' บาท');
     if (u.wasteValue) M.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
     // ไม่เขียนผลทับแถวเงินสดในลิ้นชัก (POS_ปิดร้าน) — คนละเรื่องกับยอดที่กรอกตอนนับ

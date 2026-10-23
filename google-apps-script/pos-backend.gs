@@ -20,12 +20,12 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-23c · เช็คสต็อกกรอกเงินได้ (วันที่ไม่ได้ใช้ POS) · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-23d · เช็คสต็อกกรอกเดลิเวอรี่ได้ · เช็คสต็อกกรอกเงินได้ (วันที่ไม่ได้ใช้ POS) · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 // รุ่นของแต่ละไฟล์ .gs — หน้าสต็อกเทียบกับรุ่นที่ควรเป็น แล้วบอกเจ้าของว่าไฟล์ไหนยังไม่ได้วางใหม่
 // (15/10 วางไฟล์แล้วยังเห็นของเก่า ไม่รู้ว่าไฟล์ไหนยังไม่เข้า) · แต่ละไฟล์จดรุ่นของตัวเองไว้ใน GS_FILES
 var GS_FILES = GS_FILES || {};
-GS_FILES['pos-backend.gs'] = '2026-10-23c';
+GS_FILES['pos-backend.gs'] = '2026-10-23d';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -589,6 +589,34 @@ function handleOrder_(body) {
  * บันทึกออเดอร์เดลิเวอรี่ — ไม่มีการคิดเงินหน้าร้าน
  * (เงินเข้าทางแพลตฟอร์ม จึงเก็บแยกชีตไม่ให้ปนกับยอดขายหน้าร้าน)
  */
+/**
+ * เดลิเวอรี่ที่กรอกตอนเช็คสต็อก (23/10 — วันที่ไม่ได้ใช้ POS) → ชีตเดลิเวอรี่ แบบเดียวกับที่กดใน POS
+ * เวลาในแถว = ตอนนับ · ปิดยอดวันก่อน (นับเช้าวันรุ่งขึ้น / ลงย้อนหลัง) = ท้ายวันนั้น
+ * (อยู่ในช่วงเทียบของรอบนับนี้เหมือนกัน และนับเป็นของวันที่ถูก) · คืนจำนวนออเดอร์ที่ลง
+ */
+function countDeliverySave_(loc, day, list, who, now) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DELIVERY);
+  if (!sheet || !list.length) return 0;
+  var at = now;
+  if (day && typeof cashDayStart_ === 'function') {
+    var end = cashDayStart_(day) + 24 * 3600000 - 1000;
+    if (end < now.getTime()) at = new Date(end);
+  }
+  var dateStr = Utilities.formatDate(at, TZ, 'yyyy-MM-dd'), timeStr = Utilities.formatDate(at, TZ, 'HH:mm:ss');
+  list.forEach(function (d, i) {
+    var total = d.items.reduce(function (a, x) { return a + x.qty; }, 0);
+    sheet.appendRow([
+      dateStr, timeStr, nextOrderNo_(sheet, dateStr, 'D'), loc, who || '',
+      d.items.map(function (x) { return x.name + ' x' + x.qty; }).concat(d.addons ? ['ของเพิ่ม x' + d.addons] : []).join(' · '),
+      total, d.addons, JSON.stringify(d.items), 'CNT' + now.getTime() + '-' + i, d.platform,
+      d.amount > 0 ? d.amount : ''
+    ]);
+  });
+  SpreadsheetApp.flush();
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  return list.length;
+}
+
 function handleDelivery_(body) {
   var session = checkToken_(body.token);
   if (!session) return { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' };
@@ -2508,6 +2536,24 @@ function handleStockCount_(body) {
     if (typeof malaMoneySave_ !== 'function') return { success: false, message: 'หลังบ้านยังไม่ได้วาง stock-audit.gs รุ่นใหม่ — กรอกเงินตอนนับยังไม่ได้' };
     money = { cash: Number(mb.cash) || 0, transfer: Number(mb.transfer) || 0, thai: Number(mb.thai) || 0 };
   }
+  // 23/10: เดลิเวอรี่ของวันนั้น (วันที่ไม่ได้ใช้ POS) — ลงชีตเดลิเวอรี่แบบเดียวกับที่กดใน POS
+  var dlv = [];
+  if (loc !== CENTRAL && body.delivery && body.delivery.length) {
+    for (var di = 0; di < body.delivery.length; di++) {
+      // ชื่อตัวแปรห้ามซ้ำกับข้างบน (items/rows) — var ทับของทั้งฟังก์ชัน รายการนับจะหายหมด
+      var dOrd = body.delivery[di] || {};
+      var dItems = (dOrd.items || []).map(function (x) { return { name: String(x.name || '').trim(), qty: Math.max(0, Math.floor(Number(x.qty) || 0)) }; })
+        .filter(function (x) { return x.name && x.qty > 0; });
+      var dAdd = Math.max(0, Math.floor(Number(dOrd.addonCount) || 0));
+      var dAmt = Number(dOrd.amount) || 0;
+      if (!dItems.length && !dAdd && !(dAmt > 0)) continue;                 // แถวว่าง ข้ามไป
+      if (!dItems.length && !dAdd) return { success: false, message: 'เดลิเวอรี่ออเดอร์ที่ ' + (di + 1) + ' ยังไม่ได้ใส่จำนวน' };
+      if (dAmt < 0) return { success: false, message: 'ยอดเงินเดลิเวอรี่ต้องเป็น 0 ขึ้นไป' };
+      var dPf = String(dOrd.platform || '').trim();
+      if (DELIVERY_PLATFORMS.indexOf(dPf) === -1) dPf = 'อื่น ๆ';
+      dlv.push({ platform: dPf, amount: dAmt, items: dItems, addons: dAdd });
+    }
+  }
 
   var sh = sheet_(SHEET_COUNT);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_COUNT + '"' };
@@ -2574,6 +2620,8 @@ function handleStockCount_(body) {
                (typeof cashBizDay_ === 'function' ? cashBizDay_(now.getTime()) : Utilities.formatDate(now, TZ, 'yyyy-MM-dd'));
     moneySaved = malaMoneySave_(loc, mday, money, session.name, now.getTime());
   }
+  var dlvSaved = dlv.length ? countDeliverySave_(loc, forDay || (typeof closeDayOfCount_ === 'function' && closeDayOfCount_(loc, now.getTime())) || '',
+                                                dlv, session.name, now) : 0;
 
   var msg = isBase
     ? '📋 ตั้งยอดตั้งต้น — ' + loc + '\n\n' +
@@ -2590,6 +2638,7 @@ function handleStockCount_(body) {
       ' — ' + loc + '\n' +
       (moneySaved ? '💵 กรอกเงินที่ได้ของวันที่ ' + Number(moneySaved.day.slice(8, 10)) + '/' + Number(moneySaved.day.slice(5, 7)) +
                     ' (ไม่ได้ใช้ POS) — ใช้ยอดนี้แทน POS\n' : '') +
+      (dlvSaved ? '🛵 ลงเดลิเวอรี่ ' + dlvSaved + ' ออเดอร์\n' : '') +
       'นับครบ ' + items.length + ' รายการ โดย ' + session.name + ' · ' + Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm') +
       (refill.length ? '\n\n🔔 ต้องเติม\n' + refill.join('\n') : '')
     : '📋 เช็คสต็อกรายสัปดาห์ — ' + loc + '\n\n' +
@@ -2753,6 +2802,7 @@ function handleStockBootstrap_(p) {
     // เวลาเจอ "ทำไมไม่ขึ้น" จะได้แยกออกว่าเป็นเพราะยิงไป deployment เก่า
     version: BACKEND_VERSION,
     files: owner ? gsFileVersions_() : undefined,     // เจ้าของเห็นว่าไฟล์ไหนยังไม่ได้วางใหม่
+    deliveryApps: DELIVERY_PLATFORMS,                 // แอปเดลิเวอรี่ — เช็คสต็อกกรอกเดลิเวอรี่ (วันที่ไม่ได้ใช้ POS)
     role: session.role, stockRole: stockRoleOf_(session),
     name: session.name, branch: session.branch, branches: sessionLocs_(session),
     central: CENTRAL, locations: locations, items: items, stock: stock,
