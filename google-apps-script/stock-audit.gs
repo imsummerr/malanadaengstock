@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-23e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-24a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1026,7 +1026,8 @@ function cashStampMs_(stamp) {
 var CLOSE_TAG_RE = /^ปิดร้าน (\d{1,2})\/(\d{1,2})\/(\d{4})/;
 function closeTagNote_(day) {
   var p = String(day).split('-');
-  return 'ปิดร้าน ' + Number(p[2]) + '/' + Number(p[1]) + '/' + p[0] + ' (ลงย้อนหลัง)';
+  // 24/10: เลือก "วันนี้" ตอนที่มีวันค้าง ก็จดวันไว้ (ไม่ใช่ลงย้อนหลัง)
+  return 'ปิดร้าน ' + Number(p[2]) + '/' + Number(p[1]) + '/' + p[0] + (day < cashBizDay_(Date.now()) ? ' (ลงย้อนหลัง)' : '');
 }
 function closeTagDay_(note) {
   var m = String(note || '').match(CLOSE_TAG_RE);
@@ -1368,7 +1369,11 @@ function lateStatus_(loc, nowMs) {
     //   นับตอนนี้ได้แค่วันล่าสุดที่ค้าง (count) · วันก่อนหน้าที่ขายแล้ว รวมไปเทียบกับรอบนับถัดไป
     var md = malaLateDays_(loc, now);
     if (md.length) {
-      out.malaDays = md.map(function (x) { return { day: x.day, dm: dmOf(x.day), sold: x.sold, count: !!x.count }; });
+      out.malaDays = md.map(function (x) {
+        var o = { day: x.day, dm: dmOf(x.day), sold: x.sold, count: !!x.count };
+        if (x.ifClosed) o.ifClosed = x.ifClosed.map(dmOf);
+        return o;
+      });
       var c = md[md.length - 1];
       if (c.count) {
         // เงินสดคงเหลือแจ้งในไลน์ (13/10) ไม่ใช่งานพนักงานแล้ว — เตือนเฉพาะลืมเช็คสต็อก (cash บอกไว้เฉย ๆ)
@@ -1381,6 +1386,8 @@ function lateStatus_(loc, nowMs) {
         (out.malaMerged = out.malaMerged || []).push({ day: x.day, dm: dmOf(x.day), into: into, intoDm: dmOf(into) });
       });
     }
+    var mt = malaTodayStatus_(loc, now);
+    if (mt) out.malaToday = { day: mt.day, dm: dmOf(mt.day), sold: mt.sold, night: mt.night };
   } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
   // 13/10: วันขายล่าสุดก่อนวันนี้ ยังไม่แจ้งค่าใช้จ่ายในไลน์ — สรุปยอดของวันนั้นรอข้อนี้ (เตือนเจ้าของ ไม่มีตัวเลข)
   try {
@@ -1521,14 +1528,14 @@ function malaLateDays_(loc, nowMs) {
   var out = [];
   for (var k = MALA_LATE_DAYS; k >= 1; k--) {
     var start = cashDayStart_(today) - k * 86400000, end = start + 86400000, day = cashBizDay_(start);
-    if (closed[day] || before0(day)) continue;
+    if (before0(day)) continue;
     var s = auditSales_(loc, st(start - 1000), st(end - 1000));
-    if (s.orders + s.dlvOrders > 0 || paid[day]) {
+    if (s.orders + s.dlvOrders > 0 || paid[day]) {                       // มีขาย = กดหยุดร้านไว้ก็ไม่นับ
       var pc = cashCloseCount_(loc, day);
       if (pc.countMs || pc.mergedMs) continue;
       out.push({ day: day, sold: true, start: start });
     } else {
-      if (day < MALA_LATE_FROM) continue;
+      if (closed[day] || day < MALA_LATE_FROM) continue;
       if (!times.some(function (t) { return t < start; })) continue;      // ก่อนเริ่มนับสต็อกครั้งแรก
       // นับระหว่างวันนั้น / จดเป็นปิดร้านของวันนั้น = เปิดร้าน นับแล้ว
       if (times.some(function (t) { return (t >= start && t < end && !tagOf(t)) || tagOf(t) === day; })) continue;
@@ -1537,12 +1544,34 @@ function malaLateDays_(loc, nowMs) {
   }
   var last = out[out.length - 1];
   if (last) last.count = last.sold || !times.some(function (t) { return t >= last.start; });
+  // 24/10: วันขายที่หลังจากนั้นมีแต่วันไม่มีบิล — ถ้าวันพวกนั้นหยุดร้าน (กดหยุดร้านก่อน) ก็ยังนับเป็นปิดร้านของวันนี้ได้
+  out.forEach(function (x, i) {
+    var after = out.slice(i + 1);
+    if (x.sold && !x.count && after.length && after.every(function (y) { return !y.sold; })) {
+      x.ifClosed = after.map(function (y) { return y.day; });
+    }
+  });
   out.forEach(function (x) { delete x.start; });
   return out;
 }
 
+/**
+ * 24/10 เจ้าของ: "23/10 ก็ยังไม่ได้นับ ทำไมไม่เห็นขึ้น" — วันทำการตัดตี 4 หลังเที่ยงคืนยังเป็นวันนี้ ไม่อยู่ในวันค้าง
+ * วันนี้ยังไม่ได้นับปิดร้าน → { day, sold, night } (ไม่มีตัวเลข) · หยุดร้าน / นับไปแล้ว = null
+ *   night = เลยเที่ยงคืนแล้ว (วันที่ในปฏิทินเปลี่ยน แต่ยังนับเป็นของวันนี้ได้ถึงตี 4)
+ */
+function malaTodayStatus_(loc, nowMs) {
+  var now = nowMs || Date.now(), today = cashBizDay_(now), start = cashDayStart_(today);
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  var s = auditSales_(loc, st(start - 1000), st(now));
+  var sold = s.orders + s.dlvOrders > 0 || !!malaMoneyFor_(loc, today);
+  if (!sold && shopClosedDays_(loc)[today]) return null;
+  if (cashCloseCount_(loc, today).countMs) return null;
+  return { day: today, sold: sold, night: Utilities.formatDate(new Date(now), auditTz_(), 'yyyy-MM-dd') !== today };
+}
+
 /** ตรวจคำขอที่ทำกับวันที่ค้าง (หยุดร้าน / ลงเงินย้อนหลัง) — คืน { session, loc, day, dm, md } หรือ { fail } */
-function malaLateReq_(body) {
+function malaLateReq_(body, allowToday) {
   var session = checkToken_(body.token);
   if (!session) return { fail: { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' } };
   var loc = String(body.location || '').trim(), day = String(body.day || '').trim();
@@ -1553,6 +1582,11 @@ function malaLateReq_(body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { fail: { success: false, message: 'วันที่ไม่ถูกต้อง' } };
   var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
   var md = malaLateDays_(loc).filter(function (x) { return x.day === day; })[0];
+  // 24/10: วันนี้ (ยังไม่ได้ขาย ไม่ได้นับ) กดหยุดร้านได้
+  if (!md && allowToday && day === cashBizDay_(Date.now())) {
+    var mt = malaTodayStatus_(loc);
+    if (mt) md = { day: day, sold: mt.sold, today: true };
+  }
   if (!md) return { fail: { success: false, message: 'วันที่ ' + dm + ' ไม่ได้ค้างแล้ว (นับ/ลงไปแล้ว หรือเกิน ' + MALA_LATE_DAYS + ' วัน) — รีเฟรชหน้า' } };
   if (md.sold) return { fail: { success: false, message: 'วันที่ ' + dm + ' มีขายแล้ว (มีบิลใน POS / กรอกเงินไว้แล้ว)' } };
   return { session: session, loc: loc, day: day, dm: dm, md: md };
@@ -1564,7 +1598,7 @@ function handleShopClosed_(body) {
   lock.waitLock(20000);
   var q;
   try {
-    q = malaLateReq_(body);
+    q = malaLateReq_(body, true);
     if (q.fail) return q.fail;
     // เบเกอรี่นับก่อนขาย / ลงเงินเบเกอรี่วันนั้น = เปิดร้าน
     if (bakeryDayState_(q.loc, q.day, false).out) {

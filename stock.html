@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-23e';
+const PAGE_BUILD = '2026-10-24a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-23e', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-23e', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-24a', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
+                     'stock-audit.gs': '2026-10-24a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -567,23 +567,34 @@ function lateBanner() {
     const btn = (label, js) => ` <button class="key" style="display:inline-block;width:auto;padding:4px 10px;margin:4px 0 0;font-size:13px"
         onclick="${js}">${label}</button>`;
     // 23/10e: ทุกวันที่ยังไม่ได้เช็คสต็อก (เหมือนเบเกอรี่) — นับได้แค่วันล่าสุด · วันที่ไม่มีบิลให้เลือกหยุดร้าน/ขาย
-    malaDaysOf(loc).forEach(x => {
+    const mdays = malaDaysOf(loc), t = s.malaToday;
+    mdays.forEach(x => {
       if (x.count && s.mala) {
-        rows.push(s.mala.afterBill
+        rows.push(s.mala.afterBill || t
           // 22/10: วันนี้ขายไปแล้วก็ลงย้อนหลังได้ — ตอนนับเลือกว่าเป็นปิดร้านของวันนั้น (เหมือนเบเกอรี่)
-          ? `📋 <b>เช็คสต็อกย้อนหลังของวันที่ ${esc(x.dm)}</b> — วันนี้ขายไปแล้ว ตอนนับเลือก "ปิดร้าน ${esc(x.dm)} (ลืมนับ)"` +
-            btn('ไปนับ', `C_FOR='late';C_FOR_LOC='${esc(loc)}';go('count')`)
+          // 24/10: วันนี้ยังไม่ได้นับ (อาจขายไม่ได้ใช้ POS) — ให้เลือกทุกครั้ง
+          ? `📋 <b>เช็คสต็อกย้อนหลังของวันที่ ${esc(x.dm)}</b> — ตอนนับเลือก "ปิดร้าน ${esc(x.dm)} (ลืมนับ)"` +
+            (t ? ` (ยังไม่ได้ขายวันนี้) หรือ "${esc(t.dm)} (วันนี้)" (ขายวันนี้ไปแล้ว)` : ' (วันนี้ขายไปแล้ว)') +
+            btn('ไปนับ', `C_FOR='';C_FOR_LOC='${esc(loc)}';go('count')`)
           : `📋 <b>เช็คสต็อกของวันที่ ${esc(x.dm)}</b> ก่อนขายวันที่ ${esc(s.mala.today || 'วันนี้')}
             — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${esc(x.dm)}` + btn('ไปนับ', `C_FOR_LOC='${esc(loc)}';go('count')`));
         if (x.sold === false) rows.push(`<small>${esc(x.dm)} ไม่มีบิลใน POS — ถ้าขาย ตอนนับกรอกเงินที่ได้ด้วย · ถ้าหยุดร้าน กด</small>` + closedUi(loc, x));
       } else if (x.sold) {
-        rows.push(`📋 <b>${esc(x.dm)}</b> ขายแล้วไม่ได้นับปิดร้าน — นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว ของบนชั้นเปลี่ยนแล้ว)
-          · ระบบรวมไปเทียบกับรอบนับถัดไปให้`);
+        rows.push(`📋 <b>${esc(x.dm)}</b> ขายแล้วไม่ได้นับปิดร้าน — ` + (x.ifClosed
+          ? `ถ้า ${esc(x.ifClosed.join(', '))} หยุดร้าน กดหยุดร้านก่อน แล้วนับเป็นของ ${esc(x.dm)} ได้ · ถ้าขาย ระบบรวม ${esc(x.dm)} ไปเทียบกับรอบนับถัดไป`
+          : `นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว ของบนชั้นเปลี่ยนแล้ว) · ระบบรวมไปเทียบกับรอบนับถัดไปให้`));
       } else {
         rows.push(`📋 <b>${esc(x.dm)}</b> ไม่มีบิลใน POS ไม่ได้นับ — หยุดร้าน หรือขายแต่ไม่ได้ใช้ POS?` + closedUi(loc, x) +
           btn('ขาย — กรอกเงิน', `lmOpen('${esc(loc)}','${esc(x.day)}','${esc(x.dm)}')`));
       }
     });
+    // 24/10: วันนี้ยังไม่ได้นับ — ขึ้นด้วยตอนมีวันค้าง / เลยเที่ยงคืนแล้ว (วันทำการตัดตี 4 ยังเป็นของวันนี้)
+    if (t && (mdays.length || t.night)) {
+      rows.push(`📋 <b>${esc(t.dm)} (วันนี้)</b> ยังไม่ได้เช็คสต็อกปิดร้าน` +
+        (t.night ? ` — เลยเที่ยงคืนแล้ว ยังนับเป็นของ ${esc(t.dm)} ได้ถึงตี 4` : '') +
+        (t.sold === false ? ` · ไม่มีบิลใน POS — ถ้าไม่ได้ขาย กด` + closedUi(loc, t) : '') +
+        (s.mala && s.mala.count ? '' : btn('ไปนับ', `C_FOR_LOC='${esc(loc)}';go('count')`)));
+    }
     // ค่าใช้จ่าย + เงินสดคงเหลือ เจ้าของร้านแจ้งในไลน์ — พนักงานไม่ต้องเห็น
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
         — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้` + expDoneUi(loc, s.exp, btn));
@@ -1730,13 +1741,33 @@ function countLate() {
   const m = D.late && D.late[loc] && D.late[loc].mala;
   return m && m.count ? m : null;
 }
+/* 24/10 วันนี้ยังไม่ได้นับปิดร้าน (หลังบ้านบอก) — วันทำการตัดตี 4 หลังเที่ยงคืนยังเป็นวันนี้ */
+function countToday() {
+  const el = document.getElementById('c-loc');
+  const s = (D.late || {})[el ? el.value : auth.branch] || {};
+  return s.malaToday || null;
+}
+/* มีวันค้างที่นับได้ + วันนี้ยังไม่ได้นับ (ไม่ได้หยุด) — ต้องเลือกว่ารอบนี้เป็นของวันไหน
+   (วันที่ไม่ได้ใช้ POS ไม่มีบิลให้ดู เดาเองไม่ได้ว่าวันนี้ขายไปแล้วหรือยัง) · หลังบ้านรุ่นเก่า = เลือกเฉพาะตอนวันนี้มีบิล */
+function countMustPick() { const m = countLate(); return !!m && (!!countToday() || !!m.afterBill); }
+/* รอบนี้ปิดยอดของวันไหน — '' = ปกติ (ของวันนี้ ไม่ต้องจด) */
+function countForDay() {
+  const m = countLate();
+  if (!m) return '';
+  if (!countMustPick()) return m.day;               // วันนี้หยุด/ยังไม่ขาย = รอบนี้เป็นของวันที่ค้าง
+  if (C_FOR === 'late') return m.day;
+  if (C_FOR === 'today') { const t = countToday(); return t ? t.day : ''; }
+  return '';
+}
 function paintCountMoney() {
   const mb = document.getElementById('c-money');
   if (!mb) return;
   const el = document.getElementById('c-loc');
   const hide = (el ? el.value : auth.branch) === D.central ? 'none' : '';
   mb.style.display = hide;
-  const m = countLate(), day = m && (!m.afterBill || C_FOR === 'late') ? 'ของวันที่ ' + m.dm : 'วันนี้';
+  const m = countLate(), t = countToday(), fd = countForDay();
+  const day = m && fd === m.day ? 'ของวันที่ ' + m.dm : t && fd === t.day ? 'ของวันที่ ' + t.dm
+            : countMustPick() ? ' (เลือกวันด้านบนก่อน)' : 'วันนี้';
   const lbl = document.getElementById('cm-day');
   if (lbl) lbl.textContent = day;
   const db = document.getElementById('c-dlv'), dl = document.getElementById('cd-day');
@@ -1892,30 +1923,44 @@ function paintCountFor() {
   paintCountMoney();
   const box = document.getElementById('c-for');
   if (!box) return;
-  const m = countLate();
+  const m = countLate(), t = countToday();
   const el = document.getElementById('c-loc'), loc = el ? el.value : auth.branch;
   // 23/10e: ทุกวันที่ยังไม่ได้เช็คสต็อก — วันก่อนหน้า (นับย้อนหลังไม่ได้แล้ว) บอกไว้ / ไม่มีบิลให้เลือกหยุดร้านหรือขาย
-  const prev = malaDaysOf(loc).filter(x => !x.count).map(x => x.sold
-    ? `<p class="note">📋 <b>${esc(x.dm)}</b> ขายแล้วไม่ได้นับปิดร้าน — นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว) · รวมไปเทียบกับรอบนับถัดไป</p>`
+  const days = malaDaysOf(loc);
+  const prev = days.filter(x => !x.count).map(x => x.sold
+    ? `<p class="note">📋 <b>${esc(x.dm)}</b> ขายแล้วไม่ได้นับปิดร้าน — ` + (x.ifClosed
+        ? `ถ้า ${esc(x.ifClosed.join(', '))} หยุดร้าน กดหยุดร้านก่อน แล้วนับเป็นของ ${esc(x.dm)} ได้ · ถ้าขาย ${esc(x.dm)} รวมไปเทียบกับรอบนับถัดไป</p>`
+        : `นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว) · รวมไปเทียบกับรอบนับถัดไป</p>`)
     : `<p class="note">📋 <b>${esc(x.dm)}</b> ไม่มีบิลใน POS ไม่ได้นับ — หยุดร้าน หรือขายแต่ไม่ได้ใช้ POS?` +
       closedUi(loc, x) + smallBtn('ขาย — กรอกเงิน', `lmOpen('${esc(loc)}','${esc(x.day)}','${esc(x.dm)}')`) + '</p>');
+  // 24/10: วันนี้ยังไม่ได้นับ — ขึ้นด้วยตอนมีวันค้าง / เลยเที่ยงคืนแล้ว (ยังเป็นของวันนี้ถึงตี 4)
+  if (t && (days.length || t.night)) prev.push(`<p class="note">📋 <b>${esc(t.dm)} (วันนี้)</b> ยังไม่ได้เช็คสต็อกปิดร้าน` +
+    (t.night ? ` — เลยเที่ยงคืนแล้ว ยังนับเป็นของ ${esc(t.dm)} ได้ถึงตี 4` : '') +
+    (t.sold === false ? ` · ไม่มีบิลใน POS — ถ้าไม่ได้ขาย กด` + closedUi(loc, t) : '') + '</p>');
   let html = (prev.length ? '<label class="fld">ยังไม่ได้เช็คสต็อก</label>' + prev.join('') : '') + lmForm(loc);
   if (m) {
     // ไม่มีบิลใน POS — นับเป็นปิดร้านของวันนั้น = ขาย ต้องกรอกเงินด้วย · หยุดร้านกดปุ่มแทน
     const unk = m.sold === false ? `<p class="note">${esc(m.dm)} ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ด้านล่างด้วย · ถ้าหยุดร้าน กด` +
       closedUi(loc, m) + '</p>' : '';
-    if (!m.afterBill) {
+    if (!countMustPick()) {
       html += `<div class="warnbox" style="margin:10px 0 0">ลืมเช็คสต็อกปิดร้านของวันที่ ${esc(m.dm)} —
         นับตอนนี้ (ก่อนขายบิลแรก) ระบบใช้เป็นยอดปิดร้านของ ${esc(m.dm)}</div>` + unk;
     } else {
       const b = (on, label) => `<button class="key" style="flex:1;${C_FOR === on ? '' : 'opacity:.45'}"
           onclick="C_FOR='${on}';paintCountFor();paintProgress()">${label}</button>`;
+      const tdm = t ? t.dm : (m.today || '');
+      const unkT = t && t.sold === false ? `<p class="note">${esc(t.dm)} ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ด้านล่างด้วย ·
+        ถ้าไม่ได้ขาย เลือก "ปิดร้าน ${esc(m.dm)}" แล้วกดหยุดร้านของ ${esc(t.dm)}</p>` : '';
       html += `<label class="fld">นับรอบนี้เป็นของวันไหน</label>
-        <div style="display:flex;gap:8px">${b('today', 'วันนี้ ' + esc(m.today || ''))}${b('late', 'ปิดร้าน ' + esc(m.dm) + ' (ลืมนับ)')}</div>
+        <div style="display:flex;gap:8px">${b('late', 'ปิดร้าน ' + esc(m.dm) + ' (ลืมนับ)')}${b('today', esc(tdm) + ' (วันนี้)')}</div>
         <p class="note">${C_FOR === 'late'
-          ? `ยอดที่นับตอนนี้ = ยอดปิดร้านของ ${esc(m.dm)} · ที่ขายไปวันนี้ก่อนนับ ระบบเทียบกับบิลวันนี้ในช่วงเดียวกันให้`
-          : C_FOR === 'today' ? `นับของวันนี้ตามปกติ — ${esc(m.dm)} จะรวมไปเทียบกับรอบนี้ (ไม่ได้แยกยอดของ ${esc(m.dm)})`
-          : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>` + (C_FOR === 'late' ? unk : '');
+          ? `ยอดที่นับตอนนี้ = ยอดปิดร้านของ ${esc(m.dm)}` +
+            (m.afterBill ? ' · ที่ขายไปวันนี้ก่อนนับ ระบบเทียบกับบิลวันนี้ในช่วงเดียวกันให้' : '') +
+            (t && t.sold === false ? ` · ${esc(t.dm)} ไม่ได้ขาย อย่าลืมกดหยุดร้านของ ${esc(t.dm)}` : '')
+          : C_FOR === 'today' ? `นับเป็นปิดร้านของ ${esc(tdm)} — ${esc(m.dm)} รวมไปเทียบกับรอบนี้ (ไม่ได้แยกยอดของ ${esc(m.dm)})`
+          : t ? `ยังไม่ได้ขายวันนี้ / วันนี้หยุด → ปิดร้าน ${esc(m.dm)} · ขายวันนี้ไปแล้ว (มีบิล หรือขายไม่ได้ใช้ POS) → ${esc(t.dm)}`
+          : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>` +
+        (C_FOR === 'late' ? unk : C_FOR === 'today' ? unkT : '');
     }
   }
   box.innerHTML = html;
@@ -2068,7 +2113,7 @@ function paintCountBar() {
   // ปิดปุ่มไว้จนกว่าจะนับครบ กดไม่ได้เลย ไม่ใช่กดแล้วค่อยเด้งเตือน
   const btn = document.getElementById('c-btn');
   if (btn) {
-    const lm = countLate(), pick = lm && lm.afterBill && !C_FOR;
+    const pick = countMustPick() && !C_FOR;
     btn.disabled = total === 0 || left > 0 || pick;
     btn.textContent = total === 0 ? 'ไม่มีสินค้าให้นับ'
                     : left > 0 ? `ยังขาดอีก ${left} รายการ` : pick ? 'เลือกก่อนว่านับของวันไหน' : 'บันทึกผลนับ';
@@ -2095,16 +2140,17 @@ async function submitCount() {
   try {
     const cl = document.getElementById('c-loc').value;
     const lm0 = countLate();
-    if (lm0 && lm0.afterBill && !C_FOR) throw new Error('เลือกก่อนว่ารอบนี้เป็นของวันไหน');
-    // 23/10e: ก่อนบิลแรกก็ส่งวันไป (วันที่ไม่มีบิลใน POS หลังบ้านเดาเองไม่ได้)
-    const forDay = lm0 && (!lm0.afterBill || C_FOR === 'late') ? lm0.day : '';
+    if (countMustPick() && !C_FOR) throw new Error('เลือกก่อนว่ารอบนี้เป็นของวันไหน');
+    // 23/10e: ก่อนบิลแรกก็ส่งวันไป (วันที่ไม่มีบิลใน POS หลังบ้านเดาเองไม่ได้) · 24/10 เลือกวันนี้ก็จดวันไว้
+    const forDay = countForDay(), t0 = countToday();
+    const unk = forDay && (lm0 && forDay === lm0.day ? lm0 : t0 && forDay === t0.day ? t0 : null);
     // เงินที่ได้ (วันที่ไม่ได้ใช้ POS) — ว่างทั้งหมด = ไม่ส่ง
     const mv = k => { const x = document.getElementById('cm-' + k); return x ? x.value.trim() : ''; };
     const money = cl !== D.central && (mv('cash') || mv('transfer') || mv('thai'))
       ? { cash: mv('cash'), transfer: mv('transfer'), thai: mv('thai') } : null;
     const delivery = cl !== D.central ? dlvPayload('c') : [];
-    if (forDay && lm0.sold === false && !money && !delivery.length) {
-      throw new Error('วันที่ ' + lm0.dm + ' ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ด้วย · ถ้าหยุดร้าน กดปุ่ม "หยุดร้าน" แทน');
+    if (unk && unk.sold === false && !money && !delivery.length) {
+      throw new Error('วันที่ ' + unk.dm + ' ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ด้วย · ถ้าหยุดร้าน กดปุ่ม "หยุดร้าน" แทน');
     }
     const r = await apiPost(Object.assign({ action: 'stockCount', location: cl, rows, forDay },
                                           money ? { money } : {}, delivery.length ? { delivery } : {}));
@@ -2117,6 +2163,7 @@ async function submitCount() {
     if (ls) {
       ls.mala = null; ls.malaMerged = null;
       if (ls.malaDays) ls.malaDays = ls.malaDays.filter(x => !x.sold && !x.count);
+      if (ls.malaToday && (!forDay || forDay === ls.malaToday.day)) ls.malaToday = null;
     }
     toast('บันทึกแล้ว ✅ นับครบ ' + r.counted + ' รายการ<br>' +
           '<span style="opacity:.8;font-size:12.5px">' +
