@@ -2157,8 +2157,14 @@ function showLate() {
   const m = LATE && LATE.mala, b = LATE && LATE.bakery;
   const rows = [];
   // เงินสดคงเหลือ เจ้าของแจ้งในไลน์แล้ว (13/10) — ไม่เตือนพนักงานให้กรอกในหน้า POS
-  if (m && m.count) rows.push('📋 <b>เช็คสต็อกของวันที่ ' + m.dm + ' ก่อนขายวันที่ ' + (m.today || 'วันนี้') + '</b> — นับในระบบสต็อก แท็บเช็คสต็อก');
-  if (m && m.count) rows.push('<span style="font-size:12.5px">ทำก่อนขายบิลแรกของวันนี้ ระบบจะลงเป็นของ ' + m.dm + ' ให้เอง</span>');
+  if (m && m.count) rows.push('📋 <b>เช็คสต็อกของวันที่ ' + m.dm + '</b> — นับในระบบสต็อก แท็บเช็คสต็อก');
+  if (m && m.count) rows.push('<span style="font-size:12.5px">' + (m.afterBill
+    ? 'วันนี้ขายไปแล้ว — ตอนนับเลือก "ปิดร้าน ' + m.dm + ' (ลืมนับ)"'
+    : 'ทำก่อนขายบิลแรกของวันนี้ ระบบจะลงเป็นของ ' + m.dm + ' ให้เอง') + '</span>');
+  // 23/10e: วันอื่นที่ยังไม่ได้เช็คสต็อก (ไม่มีบิล = เลือกหยุดร้าน/ขาย ในระบบสต็อก)
+  const other = ((LATE && LATE.malaDays) || []).filter(x => !x.count);
+  if (other.length) rows.push('📋 ยังไม่ได้เช็คสต็อกของวันที่ ' + other.map(x => x.dm).join(', ') +
+    ' — ดูในระบบสต็อก (วันที่หยุดร้าน กดหยุดร้านได้ในนั้น)');
   if (b) rows.push('🍡 <b>เบเกอรี่ยังไม่ได้นับหลังขายของ ' + b.dm + '</b> — ระบบสต็อก แท็บเบเกอรี่ → หลังขาย → ' + b.dm + ' (ลืมนับ)');
   const bar = document.getElementById('late-bar');
   bar.innerHTML = rows.length ? '⏰ <b>ลืมลงของวันก่อน</b><br>' + rows.join('<br>') : '';

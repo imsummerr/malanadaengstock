@@ -66,7 +66,7 @@ g.checkToken_ = () => ({ role: 'staff', branch: SHOP, branches: [SHOP], name: '�
 eq('POS ถาม lateStatus', g.handleLateStatus_({ token: 't' }).data.mala.cash, true);
 const boot = g.handleStockBootstrap_({ token: 't' }).data;
 eq('หน้าสต็อกได้ late ของสาขา', boot.late[SHOP].mala.count, true);
-eq('ไม่มีตัวเลขเงิน/ยอดขาย', Object.keys(boot.late[SHOP].mala).sort(), ['afterBill', 'cash', 'count', 'day', 'dm', 'today']);
+eq('ไม่มีตัวเลขเงิน/ยอดขาย', Object.keys(boot.late[SHOP].mala).sort(), ['afterBill', 'cash', 'count', 'day', 'dm', 'sold', 'today']);
 eq('เตือนแจ้งค่าใช้จ่ายของวันขายก่อน (ไม่มีตัวเลข)', Object.keys(boot.late[SHOP].exp || {}).sort(), ['day', 'dm']);
 
 process.exit(done().fail ? 1 : 0);

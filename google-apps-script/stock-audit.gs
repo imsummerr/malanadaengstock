@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-23c';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-23e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -1058,7 +1058,11 @@ function cashCloseCount_(loc, day) {
   if (lastBill) {
     for (var i = times.length - 1; i >= 0; i--) {         // เก่า → ใหม่ หาอันแรกหลังบิลสุดท้าย
       if (times[i] < lastBill - 60000) continue;
-      if (tagOf(times[i])) continue;                      // จดเป็นปิดร้านของอีกวัน
+      if (tagOf(times[i])) {                              // จดเป็นปิดร้านของอีกวัน
+        // 23/10: จดเป็นปิดร้านของวันหลังจากนี้ (วันนี้ลืมนับ) = วันนี้รวมไปเทียบกับรอบนั้นแล้ว
+        if (tagOf(times[i]) > day) { merged = times[i]; break; }
+        continue;
+      }
       // ลืมนับปิดร้าน แล้ววันถัดไปขายก่อนนับ = รวมไปเทียบกับรอบนับถัดไปแล้ว (ไม่ต้องรออีก)
       // (ระหว่างบิลสุดท้ายกับรอบนับนี้ต้องไม่มีบิลใหม่ของวันถัดไป ถึงจะเป็นรอบปิดร้านของวันนี้)
       if (times[i] > end && auditSales_(loc, bills.lastStamp, auditStamp_(new Date(times[i]))).orders) { merged = times[i]; break; }
@@ -1066,6 +1070,13 @@ function cashCloseCount_(loc, day) {
     }
   } else {
     for (var j = 0; j < times.length; j++) if (cashBizDay_(times[j]) === day && !tagOf(times[j])) { pick = j; break; }
+    // 23/10: ไม่ได้ใช้ POS · ลงเงินย้อนหลัง (ไม่ได้นับวันนั้น) = รวมไปเทียบกับรอบนับถัดไป
+    if (pick < 0 && typeof malaMoneyFor_ === 'function' && malaMoneyRows_().some(function (r) { return r.loc === loc && r.day === day; })) {
+      for (var q = times.length - 1; q >= 0; q--) {
+        var tg = tagOf(times[q]);
+        if (times[q] >= end && !(tg && tg < day)) { merged = times[q]; break; }
+      }
+    }
   }
   if (pick < 0) return { countMs: 0, prevMs: 0, lastBill: lastBill, mergedMs: merged };
   return { countMs: times[pick], prevMs: times[pick + 1] || 0, lastBill: lastBill };
@@ -1131,19 +1142,36 @@ function cashCheck_(loc, day, opt) {
   var gap = auditRound_(u.value - (s.gross - s.untracked) - dlv);
   var should = auditRound_(s.revenue + gap), tol = 10;
   // 23/10: กรอกเงินตอนเช็คสต็อก (ไม่ได้ใช้ POS / ใช้ไม่ครบ) — ได้จริง = เงินที่กรอก เทียบกับของที่ออก
-  var mm = malaMoneyFor_(loc, day);
-  if (mm && !opt.detail) {
-    var mdiff = auditRound_(mm.total - should), mok = Math.abs(mdiff) < tol && u.sticks >= 0;
+  // 23/10e: วันก่อนหน้าที่ไม่ได้นับ (รวมมาเทียบกับรอบนี้) กรอกเงินไว้ ก็รวมเข้ามา · วันที่ไม่ได้กรอกใช้บิล POS
+  var wm = malaWindowMoney_(loc, day, prevMs, countMs);
+  if (wm && !opt.detail) {
+    var otherOrders = s.orders - wm.posOrders, otherRev = auditRound_(s.revenue - wm.posRevenue);
+    var gotAll = auditRound_(wm.total + otherRev);
+    var mdiff = auditRound_(gotAll - should), mok = Math.abs(mdiff) < tol && u.sticks >= 0;
+    var dmI = function (d) { return Number(d.slice(8, 10)) + '/' + Number(d.slice(5, 7)); };
+    var split = function (m) {
+      return 'เงินสด ' + auditBaht_(m.cash) + ' · โอน ' + auditBaht_(m.transfer) + ' · ไทยช่วยไทย ' + auditBaht_(m.thai);
+    };
     var M = [];
     M.push(opt.part ? '🌶️ หม่าล่า ' + (mok ? '✅' : '⚠️')
                     : (mok ? '✅ ' : '⚠️ ') + 'ปิดร้าน ' + loc + ' ' + Utilities.formatDate(new Date(dayStart), auditTz_(), 'd/M'));
     M.push('เทียบ ' + auditShort_(new Date(prevMs)) + ' → ' + auditShort_(new Date(countMs)));
     M.push('');
     M.push('ควรได้ (ตามของที่ขายออกไป) ' + auditBaht_(should) + ' บาท');
-    M.push('ได้จริง (กรอกตอนเช็คสต็อก) ' + auditBaht_(mm.total) + ' บาท (เงินสด ' + auditBaht_(mm.cash) +
-           ' · โอน ' + auditBaht_(mm.transfer) + ' · ไทยช่วยไทย ' + auditBaht_(mm.thai) + ')');
-    if (mm.exp) M.push('+ จ่ายค่าใช้จ่ายเงินสดจากเงินขาย ' + auditBaht_(mm.exp) + ' บาท');
-    if (s.orders) M.push('(ใน POS กดไว้ ' + s.orders + ' บิล ' + auditBaht_(s.revenue) + ' บาท — ใช้ยอดที่กรอกแทน)');
+    if (wm.days.length === 1 && wm.days[0].day === day && !otherOrders) {
+      var mm = wm.days[0].m;
+      M.push('ได้จริง (กรอกตอนเช็คสต็อก) ' + auditBaht_(mm.total) + ' บาท (' + split(mm) + ')');
+      if (mm.exp) M.push('+ จ่ายค่าใช้จ่ายเงินสดจากเงินขาย ' + auditBaht_(mm.exp) + ' บาท');
+      if (wm.posOrders) M.push('(ใน POS กดไว้ ' + wm.posOrders + ' บิล ' + auditBaht_(wm.posRevenue) + ' บาท — ใช้ยอดที่กรอกแทน)');
+    } else {
+      M.push('ได้จริง ' + auditBaht_(gotAll) + ' บาท');
+      wm.days.forEach(function (x) {
+        M.push('• ' + dmI(x.day) + ' กรอกเอง ' + auditBaht_(x.m.total) + ' (' + split(x.m) +
+               (x.m.exp ? ' · จ่ายค่าใช้จ่ายเงินสด ' + auditBaht_(x.m.exp) : '') + ')' +
+               (x.posOrders ? ' — ใน POS กดไว้ ' + x.posOrders + ' บิล ใช้ยอดที่กรอกแทน' : ''));
+      });
+      if (otherOrders) M.push('• POS วันอื่นในช่วงนี้ ' + otherOrders + ' บิล ' + auditBaht_(otherRev) + ' บาท');
+    }
     if (s.dlvOrders) M.push('(เดลิเวอรี่ ' + s.dlvOrders + ' ออเดอร์ — ไม่รวมในยอดนี้ หักของที่ออกไปกับเดลิเวอรี่ให้แล้ว)');
     M.push(mok ? '→ ตรงกัน' : (mdiff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(mdiff)) + ' บาท');
     if (u.wasteValue) M.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
@@ -1335,22 +1363,24 @@ function lateStatus_(loc, nowMs) {
   try {
     var start = cashDayStart_(today);
     var openToday = auditSales_(loc, auditStamp_(new Date(start - 1000)), auditStamp_(new Date(now))).orders > 0;
-    // 22/10: วันนี้ขายไปแล้วก็ยังเตือน (เดิมหายตอนขายบิลแรก) — ตอนนับให้เลือกว่าเป็นปิดร้านของวันนั้น (afterBill)
-    // หายเมื่อนับปิดร้านของวันนั้นแล้ว หรือมีรอบนับหลังจากนั้นที่เลือกเป็นของวันนี้ (รวมไปเทียบรอบนั้นแล้ว)
-    // 23/10: ลืมหลายวัน — ทุกวันที่ยังไม่ได้นับขึ้นให้เห็นหมด · นับตอนนี้ได้แค่วันขายล่าสุด
-    //   วันก่อนหน้านั้น (วันขายถัดไปขายต่อไปแล้ว) นับย้อนหลังไม่ได้ ของบนชั้นเปลี่ยนไปแล้ว → รวมไปเทียบกับปิดร้านวันถัดไป
-    sd.forEach(function (x, i) {
-      var pc = cashCloseCount_(loc, x.day);
-      if (pc.countMs || pc.mergedMs) return;
-      if (i === sd.length - 1) {
-        var cash = !cashRowsForDay_(loc, x.day).length;
+    // 22/10: วันนี้ขายไปแล้วก็ยังเตือน — ตอนนับให้เลือกว่าเป็นปิดร้านของวันนั้น (afterBill)
+    // 23/10e: ทุกวันที่ยังไม่ได้เช็คสต็อกขึ้นหมด รวมวันที่ไม่มีบิล (ให้เลือก หยุดร้าน / ขายแต่ไม่ได้ใช้ POS)
+    //   นับตอนนี้ได้แค่วันล่าสุดที่ค้าง (count) · วันก่อนหน้าที่ขายแล้ว รวมไปเทียบกับรอบนับถัดไป
+    var md = malaLateDays_(loc, now);
+    if (md.length) {
+      out.malaDays = md.map(function (x) { return { day: x.day, dm: dmOf(x.day), sold: x.sold, count: !!x.count }; });
+      var c = md[md.length - 1];
+      if (c.count) {
         // เงินสดคงเหลือแจ้งในไลน์ (13/10) ไม่ใช่งานพนักงานแล้ว — เตือนเฉพาะลืมเช็คสต็อก (cash บอกไว้เฉย ๆ)
-        out.mala = { day: x.day, dm: dmOf(x.day), count: true, cash: cash, today: dmOf(today), afterBill: openToday };
-      } else {
-        var into = sd[i + 1].day;
-        (out.malaMerged = out.malaMerged || []).push({ day: x.day, dm: dmOf(x.day), into: into, intoDm: dmOf(into) });
+        out.mala = { day: c.day, dm: dmOf(c.day), count: true, cash: !cashRowsForDay_(loc, c.day).length,
+                     today: dmOf(today), afterBill: openToday, sold: c.sold };
       }
-    });
+      // หน้าเว็บ/POS รุ่นก่อนหน้าดู malaMerged
+      md.filter(function (x) { return x.sold && !x.count; }).forEach(function (x) {
+        var nx = md.filter(function (y) { return y.day > x.day && y.sold; })[0], into = nx ? nx.day : today;
+        (out.malaMerged = out.malaMerged || []).push({ day: x.day, dm: dmOf(x.day), into: into, intoDm: dmOf(into) });
+      });
+    }
   } catch (e) { Logger.log('lateStatus mala: ' + e.message); }
   // 13/10: วันขายล่าสุดก่อนวันนี้ ยังไม่แจ้งค่าใช้จ่ายในไลน์ — สรุปยอดของวันนั้นรอข้อนี้ (เตือนเจ้าของ ไม่มีตัวเลข)
   try {
@@ -1431,6 +1461,188 @@ function bakeryLateDays_(loc, nowMs, sd) {
     }
     out.push({ day: d, counted: counted });
   });
+  return out;
+}
+
+/* ═══════════════════ หยุดร้าน · หม่าล่าที่ยังไม่ได้เช็คสต็อก (23/10e) ═══════════════════
+ *
+ * เจ้าของ 23/10: หม่าล่าให้เหมือนเบเกอรี่ — วันไหนยังไม่ได้เช็คสต็อกให้ขึ้นทุกวัน และมีให้กด "หยุดร้าน"
+ *   19/10 นับเย็น · 20/10 ขายลืมนับ → 21/10 ขึ้นว่ายังไม่ได้ลงของ 20/10 · 21/10 ก็ลืม → 22/10 ขึ้นของ 21/10 ด้วย
+ *   หยุดร้าน = วันนั้นไม่ได้ขาย ไม่ต้องนับ/สรุป · 19/10 นับ → 20/10 หยุด → 21/10 ขาย
+ *   ของหายของ 21/10 เทียบจากเช็คสต็อกล่าสุด (19/10) เอง (ระหว่างหยุดของไม่ได้ออก)
+ *   วันที่ไม่มีบิลใน POS ระบบไม่รู้ว่าหยุดหรือขายแต่ไม่ได้ใช้ POS — ถามจนกว่าจะเลือก
+ *     หยุดร้าน → ชีต "หยุดร้าน" (แจ้งกลุ่มไลน์สาขาทุกครั้ง เจ้าของรู้ว่าใครกด)
+ *     ขาย → วันล่าสุดนับได้ (กรอกเงินด้วย) · วันก่อนหน้านับไม่ได้แล้ว กรอกแค่เงิน รวมไปเทียบกับรอบนับถัดไป
+ */
+var SHEET_SHOP_CLOSED = 'หยุดร้าน';
+var SHOP_CLOSED_HEADERS = ['วันที่', 'สาขา', 'บันทึกเมื่อ', 'ผู้บันทึก'];
+var MALA_LATE_DAYS = 7;
+var MALA_LATE_FROM = '2026-10-20';      // วันที่ไม่มีบิล ถามตั้งแต่วันนี้ (ก่อนหน้านี้ยังไม่มีปุ่มหยุดร้าน)
+
+function shopClosedSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_SHOP_CLOSED);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_SHOP_CLOSED);
+    sh.appendRow(SHOP_CLOSED_HEADERS);
+    sh.getRange(1, 1, 1, SHOP_CLOSED_HEADERS.length)
+      .setFontWeight('bold').setBackground('#f1f5f9').setFontColor('#334155');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+/** วันที่กดหยุดร้านไว้ — { 'yyyy-MM-dd': true } (กดผิด ลบแถวในชีต "หยุดร้าน" ได้) */
+function shopClosedDays_(loc) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SHOP_CLOSED), out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) {
+    var d = (typeof normDate_ === 'function') ? normDate_(r[0]) : String(r[0]).slice(0, 10);
+    var same = (typeof sameBranch_ === 'function') ? sameBranch_(r[1], loc) : String(r[1]).trim() === loc;
+    if (same && /^\d{4}-\d{2}-\d{2}$/.test(d)) out[d] = true;
+  });
+  return out;
+}
+
+/**
+ * หม่าล่าที่ยังไม่ได้เช็คสต็อก (ย้อน 7 วัน ก่อนวันนี้) — เก่า → ใหม่ · { day, sold, count }
+ *   sold  = มีบิล/เดลิเวอรี่/เงินที่กรอก แต่ยังไม่มีรอบนับปิดร้าน และยังไม่ได้รวมไปกับรอบนับหลังจากนั้น
+ *   !sold = ไม่มีบิล ไม่ได้นับ ยังไม่ได้กดหยุดร้าน (ตั้งแต่ MALA_LATE_FROM และหลังนับครั้งแรก · มีรอบนับหลังจากนั้นแล้วก็ยังถาม)
+ *   count = นับตอนนี้เป็นปิดร้านของวันนั้นได้ — วันล่าสุดที่ค้าง และยังไม่มีรอบนับหลังจากวันนั้น
+ *           วันก่อนหน้า (มีวันขายต่อไปแล้ว) นับย้อนหลังไม่ได้ ของบนชั้นเปลี่ยนไปแล้ว → รวมไปเทียบกับรอบนับถัดไป
+ */
+function malaLateDays_(loc, nowMs) {
+  var now = nowMs || Date.now(), today = cashBizDay_(now);
+  var closed = shopClosedDays_(loc), times = cashCountTimes_(loc), tags = closeTags_(loc);
+  var tagOf = function (t) { return tags[Math.round(t / 60000)] || ''; };
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  var before0 = function (d) { return typeof costBefore_ === 'function' && costBefore_(new Date(cashDayStart_(d)), loc); };
+  var paid = {};
+  malaMoneyRows_().forEach(function (r) { if (r.loc === loc) paid[r.day] = true; });
+  var out = [];
+  for (var k = MALA_LATE_DAYS; k >= 1; k--) {
+    var start = cashDayStart_(today) - k * 86400000, end = start + 86400000, day = cashBizDay_(start);
+    if (closed[day] || before0(day)) continue;
+    var s = auditSales_(loc, st(start - 1000), st(end - 1000));
+    if (s.orders + s.dlvOrders > 0 || paid[day]) {
+      var pc = cashCloseCount_(loc, day);
+      if (pc.countMs || pc.mergedMs) continue;
+      out.push({ day: day, sold: true, start: start });
+    } else {
+      if (day < MALA_LATE_FROM) continue;
+      if (!times.some(function (t) { return t < start; })) continue;      // ก่อนเริ่มนับสต็อกครั้งแรก
+      // นับระหว่างวันนั้น / จดเป็นปิดร้านของวันนั้น = เปิดร้าน นับแล้ว
+      if (times.some(function (t) { return (t >= start && t < end && !tagOf(t)) || tagOf(t) === day; })) continue;
+      out.push({ day: day, sold: false, start: start });
+    }
+  }
+  var last = out[out.length - 1];
+  if (last) last.count = last.sold || !times.some(function (t) { return t >= last.start; });
+  out.forEach(function (x) { delete x.start; });
+  return out;
+}
+
+/** ตรวจคำขอที่ทำกับวันที่ค้าง (หยุดร้าน / ลงเงินย้อนหลัง) — คืน { session, loc, day, dm, md } หรือ { fail } */
+function malaLateReq_(body) {
+  var session = checkToken_(body.token);
+  if (!session) return { fail: { success: false, code: 401, message: 'Session หมดอายุ กรุณา Login ใหม่' } };
+  var loc = String(body.location || '').trim(), day = String(body.day || '').trim();
+  if (!loc || loc === auditCentral_()) return { fail: { success: false, message: 'เลือกสาขา' } };
+  if (typeof stockCanUseLoc_ === 'function' && !stockCanUseLoc_(session, loc)) {
+    return { fail: { success: false, code: 403, message: 'ลงได้เฉพาะสาขาของตัวเอง' } };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { fail: { success: false, message: 'วันที่ไม่ถูกต้อง' } };
+  var dm = Number(day.slice(8, 10)) + '/' + Number(day.slice(5, 7));
+  var md = malaLateDays_(loc).filter(function (x) { return x.day === day; })[0];
+  if (!md) return { fail: { success: false, message: 'วันที่ ' + dm + ' ไม่ได้ค้างแล้ว (นับ/ลงไปแล้ว หรือเกิน ' + MALA_LATE_DAYS + ' วัน) — รีเฟรชหน้า' } };
+  if (md.sold) return { fail: { success: false, message: 'วันที่ ' + dm + ' มีขายแล้ว (มีบิลใน POS / กรอกเงินไว้แล้ว)' } };
+  return { session: session, loc: loc, day: day, dm: dm, md: md };
+}
+
+/** POST action=shopClosed — วันที่ค้าง (ไม่มีบิล) กดว่าหยุดร้าน */
+function handleShopClosed_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  var q;
+  try {
+    q = malaLateReq_(body);
+    if (q.fail) return q.fail;
+    // เบเกอรี่นับก่อนขาย / ลงเงินเบเกอรี่วันนั้น = เปิดร้าน
+    if (bakeryDayState_(q.loc, q.day, false).out) {
+      return { success: false, message: 'วันที่ ' + q.dm + ' มีนับ/ลงเงินเบเกอรี่ไว้ — ร้านเปิด กดหยุดร้านไม่ได้' };
+    }
+    shopClosedSheet_().appendRow([q.day, q.loc, auditStamp_(new Date()), q.session.name || '']);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  try {
+    if (typeof stockNotify_ === 'function') stockNotify_(q.loc, '🔒 ' + q.loc + ' — วันที่ ' + q.dm + ' หยุดร้าน (ไม่ได้ขาย)\n' +
+      'กดโดย ' + (q.session.name || '-') + ' · ' + auditShort_(new Date()) + '\n' +
+      'ไม่ต้องนับ/สรุปยอดวันนั้น · เช็คสต็อกรอบถัดไปเทียบต่อจากรอบนับล่าสุดก่อนหยุด');
+  } catch (e) { Logger.log('shopClosed notify: ' + e.message); }
+  return { success: true, message: 'บันทึกแล้ว — วันที่ ' + q.dm + ' หยุดร้าน', late: lateStatus_(q.loc) };
+}
+
+/**
+ * POST action=malaLateMoney — วันที่ค้าง (ไม่มีบิล) ขายแต่ไม่ได้ใช้ POS และนับย้อนหลังไม่ได้แล้ว
+ * กรอกแค่เงิน (+ เดลิเวอรี่) ของวันนั้น → ของรวมไปเทียบกับรอบนับถัดไป (เงินวันนั้นรวมในยอดที่ได้จริงของรอบนั้น)
+ * รอบนับถัดไปนับไปแล้ว = สรุปยอดของรอบนั้นใหม่ให้
+ */
+function handleMalaLateMoney_(body) {
+  if (typeof countMoneyParse_ !== 'function') return { success: false, message: 'หลังบ้านยังไม่ได้วาง pos-backend.gs รุ่นใหม่' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  var q, nd = 0, now = new Date();
+  try {
+    q = malaLateReq_(body);
+    if (q.fail) return q.fail;
+    var mp = countMoneyParse_(body.money);
+    if (mp.error) return { success: false, message: mp.error };
+    var dp = countDeliveryParse_(body.delivery);
+    if (dp.error) return { success: false, message: dp.error };
+    if (!mp.money && !dp.list.length) return { success: false, message: 'กรอกเงินที่ได้ของวันที่ ' + q.dm + ' ก่อน' };
+    if (mp.money) malaMoneySave_(q.loc, q.day, mp.money, q.session.name, 0, 'ลงย้อนหลัง (ไม่ได้นับวันนั้น)');
+    if (dp.list.length) nd = countDeliverySave_(q.loc, q.day, dp.list, q.session.name, now);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  if (typeof cacheClear_ === 'function') cacheClear_();
+  try {
+    if (typeof stockNotify_ === 'function') stockNotify_(q.loc, '💵 ลงเงินขายย้อนหลัง — ' + q.loc + ' วันที่ ' + q.dm + '\n' +
+      '(ไม่ได้ใช้ POS · ไม่ได้นับสต็อกวันนั้น — ของรวมไปเทียบกับรอบนับถัดไป)\n' +
+      (nd ? '🛵 เดลิเวอรี่ ' + nd + ' ออเดอร์\n' : '') +
+      'โดย ' + (q.session.name || '-') + ' · ' + auditShort_(now));
+  } catch (e) { Logger.log('malaLateMoney notify: ' + e.message); }
+  // รอบนับที่รวมวันนี้ไปเทียบ นับไปแล้ว — สรุปยอดของรอบนั้นใหม่ (เงินวันนี้เข้าไปด้วยแล้ว)
+  try {
+    var cc = cashCloseCount_(q.loc, q.day), into = cc.mergedMs ? closeDayOfCount_(q.loc, cc.mergedMs) : '';
+    if (into) daySummaryAfter_(q.loc, into, { source: 'lateMoney' });
+  } catch (e) { Logger.log('malaLateMoney summary: ' + e.message); }
+  return { success: true, message: 'บันทึกเงินของวันที่ ' + q.dm + ' แล้ว — รวมไปเทียบกับรอบนับถัดไป', late: lateStatus_(q.loc) };
+}
+
+/**
+ * 23/10e: เงินที่กรอกเองของทุกวันในช่วงเทียบนี้ — วันปิดยอด + วันก่อนหน้าที่ไม่ได้นับ (รวมมาเทียบกับรอบนี้)
+ * วันที่กรอก = ใช้ยอดที่กรอกแทนบิล POS ของวันนั้น · ไม่มีวันไหนกรอก = null (ใช้ POS ตามเดิม)
+ * คืน { days: [{ day, m, posOrders, posRevenue }], total, posOrders, posRevenue } (pos* = บิลของวันที่กรอกเงิน)
+ */
+function malaWindowMoney_(loc, day, prevMs, countMs) {
+  var st = function (ms) { return auditStamp_(new Date(ms)); };
+  var first = cashBizDay_(prevMs), seen = {};
+  malaMoneyRows_().forEach(function (r) { if (r.loc === loc && r.day >= first && r.day <= day) seen[r.day] = true; });
+  var out = { days: [], total: 0, posOrders: 0, posRevenue: 0 };
+  Object.keys(seen).sort().forEach(function (d) {
+    if (d !== day && cashCloseCount_(loc, d).mergedMs !== countMs) return;
+    var mm = malaMoneyFor_(loc, d), start = cashDayStart_(d);
+    var a = Math.max(prevMs, start), b = Math.min(countMs + 60000, start + 86400000 - 1000);
+    var sp = b > a ? auditSales_(loc, st(a), st(b)) : { orders: 0, revenue: 0 };
+    out.days.push({ day: d, m: mm, posOrders: sp.orders, posRevenue: sp.revenue });
+    out.total += mm.total; out.posOrders += sp.orders; out.posRevenue += sp.revenue;
+  });
+  if (!out.days.length) return null;
+  out.total = auditRound_(out.total); out.posRevenue = auditRound_(out.posRevenue);
   return out;
 }
 
@@ -1901,11 +2113,11 @@ function malaMoneyAtCount_(loc, countMs) {
   return r ? malaMoneyFor_(loc, r.day) : null;
 }
 /** บันทึกเงินขายหม่าล่าของวันขาย day (มากับเช็คสต็อก) */
-function malaMoneySave_(loc, day, m, who, countMs) {
+function malaMoneySave_(loc, day, m, who, countMs, note) {
   var sh = malaMoneySheet_(), now = new Date();
   var c = num_(m.cash), t = num_(m.transfer), h = num_(m.thai);
   sh.appendRow([day, Utilities.formatDate(now, auditTz_(), 'HH:mm:ss'), loc, who || '', c, t, h,
-                auditRound_(c + t + h), countMs ? new Date(countMs) : '', 'กรอกตอนเช็คสต็อก']);
+                auditRound_(c + t + h), countMs ? new Date(countMs) : '', note || 'กรอกตอนเช็คสต็อก']);
   SpreadsheetApp.flush();
   return { day: day, cash: c, transfer: t, thai: h, total: auditRound_(c + t + h) };
 }

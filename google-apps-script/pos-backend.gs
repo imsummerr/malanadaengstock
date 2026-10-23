@@ -20,12 +20,12 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-23d · เช็คสต็อกกรอกเดลิเวอรี่ได้ · เช็คสต็อกกรอกเงินได้ (วันที่ไม่ได้ใช้ POS) · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-23e · ลืมเช็คสต็อกหม่าล่าขึ้นทุกวัน + ปุ่มหยุดร้าน · เช็คสต็อกกรอกเดลิเวอรี่ได้ · เช็คสต็อกกรอกเงินได้ (วันที่ไม่ได้ใช้ POS) · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 // รุ่นของแต่ละไฟล์ .gs — หน้าสต็อกเทียบกับรุ่นที่ควรเป็น แล้วบอกเจ้าของว่าไฟล์ไหนยังไม่ได้วางใหม่
 // (15/10 วางไฟล์แล้วยังเห็นของเก่า ไม่รู้ว่าไฟล์ไหนยังไม่เข้า) · แต่ละไฟล์จดรุ่นของตัวเองไว้ใน GS_FILES
 var GS_FILES = GS_FILES || {};
-GS_FILES['pos-backend.gs'] = '2026-10-23d';
+GS_FILES['pos-backend.gs'] = '2026-10-23e';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -243,6 +243,15 @@ function doPost(e) {
           return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
         }
         return json_(withLineBatch_(function () { return handleExpDone_(body); }));
+      // 23/10e: วันที่ค้าง (ไม่มีบิล) — หยุดร้าน / ขายแต่ไม่ได้ใช้ POS ลงเงินย้อนหลัง
+      case 'shopClosed':
+      case 'malaLateMoney':
+        if (typeof handleShopClosed_ !== 'function') {
+          return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
+        }
+        return json_(withLineBatch_(function () {
+          return body.action === 'shopClosed' ? handleShopClosed_(body) : handleMalaLateMoney_(body);
+        }));
       case 'bakeryCount':
         if (typeof handleBakeryCount_ !== 'function') {
           return json_({ success: false, message: 'ยังไม่ได้ใส่ stock-audit.gs รุ่นใหม่ แล้ว Deploy' });
@@ -306,7 +315,8 @@ function handleVersion_() {
     files: gsFileVersions_(),
     actions: ['login', 'logout', 'posOrder', 'posDelivery', 'posBills', 'posExpense', 'posCashClose',
               'posStats', 'history', 'stockIn', 'stockToShop', 'stockWaste', 'stockCount',
-              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone', 'wasteList', 'wasteUndo'],
+              'stockPack', 'stockBootstrap', 'bakeryCount', 'lateStatus', 'expDone', 'wasteList', 'wasteUndo',
+              'shopClosed', 'malaLateMoney'],
     expenseTypes: EXPENSE_TYPES,
     extras: EXTRAS.map(function (x) { return x.name + ' ' + x.price + '฿'; }),
     sheets: sheets,
@@ -589,6 +599,36 @@ function handleOrder_(body) {
  * บันทึกออเดอร์เดลิเวอรี่ — ไม่มีการคิดเงินหน้าร้าน
  * (เงินเข้าทางแพลตฟอร์ม จึงเก็บแยกชีตไม่ให้ปนกับยอดขายหน้าร้าน)
  */
+/** เงินที่ได้ที่กรอกตอนเช็คสต็อก / ลงย้อนหลัง — กรอกช่องไหนแล้ว ช่องที่เหลือว่าง = 0 · ว่างทั้งหมด = money null */
+function countMoneyParse_(mb) {
+  mb = mb || {};
+  var filled = ['cash', 'transfer', 'thai'].filter(function (k) { return String(mb[k] == null ? '' : mb[k]).trim() !== ''; });
+  if (!filled.length) return { money: null };
+  if (filled.some(function (k) { return isNaN(Number(mb[k])) || Number(mb[k]) < 0; })) return { error: 'เงินที่กรอกต้องเป็นตัวเลข 0 ขึ้นไป' };
+  if (typeof malaMoneySave_ !== 'function') return { error: 'หลังบ้านยังไม่ได้วาง stock-audit.gs รุ่นใหม่ — กรอกเงินตอนนับยังไม่ได้' };
+  return { money: { cash: Number(mb.cash) || 0, transfer: Number(mb.transfer) || 0, thai: Number(mb.thai) || 0 } };
+}
+
+/** เดลิเวอรี่ที่กรอกตอนเช็คสต็อก — ออเดอร์ว่างข้าม · ใส่ยอดเงินแต่ไม่ใส่จำนวน = error · แอปที่ไม่รู้จัก = อื่น ๆ */
+function countDeliveryParse_(list) {
+  var out = [];
+  (list || []).forEach(function (d, di) {
+    if (out.error) return;
+    d = d || {};
+    var items = (d.items || []).map(function (x) { return { name: String(x.name || '').trim(), qty: Math.max(0, Math.floor(Number(x.qty) || 0)) }; })
+      .filter(function (x) { return x.name && x.qty > 0; });
+    var addons = Math.max(0, Math.floor(Number(d.addonCount) || 0));
+    var amt = Number(d.amount) || 0;
+    if (!items.length && !addons && !(amt > 0)) return;                    // แถวว่าง ข้ามไป
+    if (!items.length && !addons) { out.error = 'เดลิเวอรี่ออเดอร์ที่ ' + (di + 1) + ' ยังไม่ได้ใส่จำนวน'; return; }
+    if (amt < 0) { out.error = 'ยอดเงินเดลิเวอรี่ต้องเป็น 0 ขึ้นไป'; return; }
+    var pf = String(d.platform || '').trim();
+    if (DELIVERY_PLATFORMS.indexOf(pf) === -1) pf = 'อื่น ๆ';
+    out.push({ platform: pf, amount: amt, items: items, addons: addons });
+  });
+  return out.error ? { error: out.error } : { list: out };
+}
+
 /**
  * เดลิเวอรี่ที่กรอกตอนเช็คสต็อก (23/10 — วันที่ไม่ได้ใช้ POS) → ชีตเดลิเวอรี่ แบบเดียวกับที่กดใน POS
  * เวลาในแถว = ตอนนับ · ปิดยอดวันก่อน (นับเช้าวันรุ่งขึ้น / ลงย้อนหลัง) = ท้ายวันนั้น
@@ -2527,32 +2567,15 @@ function handleStockCount_(body) {
                                       missing.slice(0, 5).join(', ') + (missing.length > 5 ? ' …' : '') };
   }
 
-  // 23/10: เงินที่ได้ (วันที่ไม่ได้ใช้ POS) — ไม่บังคับ · กรอกช่องไหนแล้ว ช่องที่เหลือว่าง = 0
-  var money = null, mb = body.money || {};
-  var filled = ['cash', 'transfer', 'thai'].filter(function (k) { return String(mb[k] == null ? '' : mb[k]).trim() !== ''; });
-  if (filled.length && loc !== CENTRAL) {
-    var bad = filled.filter(function (k) { return isNaN(Number(mb[k])) || Number(mb[k]) < 0; });
-    if (bad.length) return { success: false, message: 'เงินที่กรอกต้องเป็นตัวเลข 0 ขึ้นไป' };
-    if (typeof malaMoneySave_ !== 'function') return { success: false, message: 'หลังบ้านยังไม่ได้วาง stock-audit.gs รุ่นใหม่ — กรอกเงินตอนนับยังไม่ได้' };
-    money = { cash: Number(mb.cash) || 0, transfer: Number(mb.transfer) || 0, thai: Number(mb.thai) || 0 };
-  }
-  // 23/10: เดลิเวอรี่ของวันนั้น (วันที่ไม่ได้ใช้ POS) — ลงชีตเดลิเวอรี่แบบเดียวกับที่กดใน POS
-  var dlv = [];
-  if (loc !== CENTRAL && body.delivery && body.delivery.length) {
-    for (var di = 0; di < body.delivery.length; di++) {
-      // ชื่อตัวแปรห้ามซ้ำกับข้างบน (items/rows) — var ทับของทั้งฟังก์ชัน รายการนับจะหายหมด
-      var dOrd = body.delivery[di] || {};
-      var dItems = (dOrd.items || []).map(function (x) { return { name: String(x.name || '').trim(), qty: Math.max(0, Math.floor(Number(x.qty) || 0)) }; })
-        .filter(function (x) { return x.name && x.qty > 0; });
-      var dAdd = Math.max(0, Math.floor(Number(dOrd.addonCount) || 0));
-      var dAmt = Number(dOrd.amount) || 0;
-      if (!dItems.length && !dAdd && !(dAmt > 0)) continue;                 // แถวว่าง ข้ามไป
-      if (!dItems.length && !dAdd) return { success: false, message: 'เดลิเวอรี่ออเดอร์ที่ ' + (di + 1) + ' ยังไม่ได้ใส่จำนวน' };
-      if (dAmt < 0) return { success: false, message: 'ยอดเงินเดลิเวอรี่ต้องเป็น 0 ขึ้นไป' };
-      var dPf = String(dOrd.platform || '').trim();
-      if (DELIVERY_PLATFORMS.indexOf(dPf) === -1) dPf = 'อื่น ๆ';
-      dlv.push({ platform: dPf, amount: dAmt, items: dItems, addons: dAdd });
-    }
+  // 23/10: เงินที่ได้ + เดลิเวอรี่ (วันที่ไม่ได้ใช้ POS) — ไม่บังคับ
+  var money = null, dlv = [];
+  if (loc !== CENTRAL) {
+    var mp = countMoneyParse_(body.money);
+    if (mp.error) return { success: false, message: mp.error };
+    money = mp.money;
+    var dp = countDeliveryParse_(body.delivery);
+    if (dp.error) return { success: false, message: dp.error };
+    dlv = dp.list;
   }
 
   var sh = sheet_(SHEET_COUNT);
@@ -2568,6 +2591,11 @@ function handleStockCount_(body) {
     var ls = (typeof lateStatus_ === 'function') ? lateStatus_(loc, now.getTime()) : {};
     if (!(ls.mala && ls.mala.day === forDay)) {
       return { success: false, message: 'ลงเป็นปิดร้านของวันที่เลือกไม่ได้แล้ว (นับปิดร้านวันนั้นไปแล้ว หรือมีรอบนับหลังจากนั้นแล้ว) — รีเฟรชหน้าแล้วนับเป็นของวันนี้' };
+    }
+    // 23/10e: วันที่ไม่มีบิลใน POS — นับเป็นปิดร้านของวันนั้น = ขายแต่ไม่ได้ใช้ POS ต้องกรอกเงินด้วย (หยุดร้านกดหยุดร้านแทน)
+    if (ls.mala.sold === false && !money && !dlv.length) {
+      var fdm = Number(forDay.slice(8, 10)) + '/' + Number(forDay.slice(5, 7));
+      return { success: false, message: 'วันที่ ' + fdm + ' ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ของวันนั้นด้วย · ถ้าหยุดร้าน กดปุ่ม "หยุดร้าน" แทน' };
     }
     tagNote = closeTagNote_(forDay) + ' · ';
   }
