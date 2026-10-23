@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-23a';
+const PAGE_BUILD = '2026-10-23b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-23a', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-22a', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-23b', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
+                     'stock-audit.gs': '2026-10-23a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -572,12 +572,19 @@ function lateBanner() {
         btn('ไปนับ', `C_FOR='late';C_FOR_LOC='${esc(loc)}';go('count')`)
       : `📋 <b>เช็คสต็อกของวันที่ ${s.mala.dm}</b> ก่อนขายวันที่ ${s.mala.today || 'วันนี้'}
         — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${s.mala.dm}` + btn('ไปนับ', "go('count')"));
+    // 23/10: ลืมหลายวัน — วันก่อนหน้า (วันถัดไปขายต่อไปแล้ว) นับย้อนหลังไม่ได้ รวมไปเทียบกับปิดร้านวันถัดไป
+    (s.malaMerged || []).forEach(m => rows.push(`📋 <b>${esc(m.dm)}</b> ไม่ได้นับปิดร้าน — นับย้อนหลังไม่ได้แล้ว
+        (${esc(m.intoDm)} ขายต่อไปแล้ว ของบนชั้นเปลี่ยนแล้ว) · ระบบรวมไปเทียบกับปิดร้าน ${esc(m.intoDm)} ให้`));
     // ค่าใช้จ่าย + เงินสดคงเหลือ เจ้าของร้านแจ้งในไลน์ — พนักงานไม่ต้องเห็น
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
         — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้` + expDoneUi(loc, s.exp, btn));
-    if (s.bakery) rows.push(`🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${s.bakery.dm}` +
-        (s.bakery.counted ? ' — เช้านี้นับเบเกอรี่แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
-        btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}')`));
+    // 23/10: ลืมนับเบเกอรี่หลายวัน — ขึ้นทุกวัน (หลังบ้านรุ่นเก่าส่งมาวันเดียว)
+    (s.bakeryDays || (s.bakery ? [s.bakery] : [])).forEach(b => rows.push(b.into
+      ? `🍡 เบเกอรี่ <b>${esc(b.dm)}</b> ไม่ได้นับหลังขาย — นับย้อนหลังไม่ได้แล้ว ยอดขายรวมไปกับ ${esc(b.intoDm)} ·
+         เงินเบเกอรี่ของ ${esc(b.dm)} ให้กรอกรวมกับของ ${esc(b.intoDm)}`
+      : `🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${esc(b.dm)}` +
+        (b.counted ? ' — นับไว้แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
+        btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}','${esc(b.day)}')`)));
     if (rows.length) out.push(`<b>⏰ ${esc(loc)} — ลืมลงของวันก่อน</b><br>` + rows.join('<br>'));
   });
   return out.length ? `<div class="card" id="late-banner"><div class="warnbox" style="margin:0">${out.join('<hr>')}</div></div>` : '';
@@ -1529,9 +1536,9 @@ let BK_LATE = false;                  // หลังขายของเมื
 let BK_LATE_DAY = '';                 // วันที่ลืม (จากหลังบ้าน) — ว่าง = เมื่อวาน
 let BK_LOC = '';                      // สาขาที่เลือกในแท็บเบเกอรี่
 let BK_AUTO = false;                  // เปิดแท็บครั้งแรกแล้วเจอวันที่ลืม → เลือกโหมดลงย้อนหลังให้ครั้งเดียว
-function bkLateGo(loc) {
+function bkLateGo(loc, day) {
   const p = ((D.late || {})[loc] || {}).bakery;
-  BK_LOC = loc; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = p ? p.day : ''; BK_AUTO = true;
+  BK_LOC = loc; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = day || (p ? p.day : ''); BK_AUTO = true;
   go('bakery');
 }
 /** วันทำการ (ตี 4 ยังเป็นเมื่อวาน เหมือนหลังบ้าน) → 'yyyy-MM-dd' */
@@ -1553,7 +1560,11 @@ function viewBakery(v) {
     return;
   }
   const selLoc = locs.includes(BK_LOC) ? BK_LOC : (locs.includes(auth.branch) ? auth.branch : locs[0]);
-  const pend = ((D.late || {})[selLoc] || {}).bakery;
+  const lateL = (D.late || {})[selLoc] || {};
+  // 23/10: ลืมหลายวัน — ทุกวันที่ลงย้อนหลังได้ (วันที่รวมไปกับวันถัดไปแล้วลงไม่ได้)
+  const pendDays = (lateL.bakeryDays || (lateL.bakery ? [lateL.bakery] : [])).filter(b => !b.into);
+  const lostDays = (lateL.bakeryDays || []).filter(b => b.into);
+  let pend = pendDays.find(b => b.day === BK_LATE_DAY) || pendDays[pendDays.length - 1] || null;
   if (pend && !BK_AUTO) { BK_AUTO = true; BK_ROUND = 'หลังขาย'; BK_LATE = true; BK_LATE_DAY = pend.day; }
   // 13/10 เจ้าของ: ปุ่ม "ลืมนับ" ขึ้นเฉพาะวันที่ลืมจริง (หลังบ้านบอกมา) — เมื่อวานนับแล้วไม่ต้องขึ้น
   // หลังบ้านรุ่นเก่าไม่ส่ง D.late มา = ไม่รู้ ให้เลือกเองได้เหมือนเดิม
@@ -1579,7 +1590,11 @@ function viewBakery(v) {
     <label class="fld">รอบ</label>
     <div style="display:flex;gap:8px">${rbtn('ก่อนขาย')}${rbtn('หลังขาย')}</div>
     ${!canLate ? '' : after ? `<label class="fld">ยอดขายของ</label>
-    <div style="display:flex;gap:8px">${dbtn(false, 'วันนี้')}${dbtn(true, (BK_LATE_DAY && BK_LATE_DAY !== bkYesterday() ? 'วันที่ ' : 'เมื่อวาน ') + yd + ' (ลืมนับ)')}</div>`
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${dbtn(false, 'วันนี้')}${pendDays.length
+      ? pendDays.map(b => `<button class="key" style="flex:1;${BK_LATE && BK_LATE_DAY === b.day ? '' : 'opacity:.45'}"
+          onclick="BK_LATE=true;BK_LATE_DAY='${esc(b.day)}';render()">${esc(b.dm)} (ลืมนับ)</button>`).join('')
+      : dbtn(true, (BK_LATE_DAY && BK_LATE_DAY !== bkYesterday() ? 'วันที่ ' : 'เมื่อวาน ') + yd + ' (ลืมนับ)')}</div>
+    ${lostDays.map(b => `<p class="note">${esc(b.dm)} นับย้อนหลังไม่ได้แล้ว — ยอดขายรวมไปกับ ${esc(b.intoDm)} (เงินของ ${esc(b.dm)} กรอกรวมกับ ${esc(b.intoDm)})</p>`).join('')}`
             : `<p class="note">ลืมนับหลังขาย${pend ? 'ของ ' + yd : 'เมื่อวาน'}? กด 🌙 หลังขาย แล้วเลือก "${pend && pend.day !== bkYesterday() ? 'วันที่ ' + yd : 'เมื่อวาน'}"</p>`}
   </div>
   <div class="card">
@@ -1693,10 +1708,13 @@ function paintCountFor() {
   const box = document.getElementById('c-for');
   if (!box) return;
   const m = countLate();
-  if (!m) { box.innerHTML = ''; return; }
+  const el = document.getElementById('c-loc');
+  const merged = ((D.late || {})[el ? el.value : auth.branch] || {}).malaMerged || [];
+  const mnote = merged.map(x => `<p class="note">${esc(x.dm)} ไม่ได้นับปิดร้าน — นับย้อนหลังไม่ได้แล้ว รวมไปเทียบกับปิดร้าน ${esc(x.intoDm)}</p>`).join('');
+  if (!m) { box.innerHTML = mnote; return; }
   if (!m.afterBill) {
     box.innerHTML = `<div class="warnbox" style="margin:10px 0 0">ลืมเช็คสต็อกปิดร้านของวันที่ ${esc(m.dm)} —
-      นับตอนนี้ (ก่อนขายบิลแรก) ระบบใช้เป็นยอดปิดร้านของ ${esc(m.dm)}</div>`;
+      นับตอนนี้ (ก่อนขายบิลแรก) ระบบใช้เป็นยอดปิดร้านของ ${esc(m.dm)}</div>` + mnote;
     return;
   }
   const b = (on, label) => `<button class="key" style="flex:1;${C_FOR === on ? '' : 'opacity:.45'}"
@@ -1706,7 +1724,7 @@ function paintCountFor() {
     <p class="note">${C_FOR === 'late'
       ? `ยอดที่นับตอนนี้ = ยอดปิดร้านของ ${esc(m.dm)} · ที่ขายไปวันนี้ก่อนนับ ระบบเทียบกับบิลวันนี้ในช่วงเดียวกันให้`
       : C_FOR === 'today' ? `นับของวันนี้ตามปกติ — ${esc(m.dm)} จะรวมไปเทียบกับรอบนี้ (ไม่ได้แยกยอดของ ${esc(m.dm)})`
-      : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>`;
+      : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>` + mnote;
 }
 
 function fillCountRows() {
