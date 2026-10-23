@@ -268,7 +268,7 @@
           </select>
           <button onclick="startDemo()" class="key btn-dark" style="width:100%;padding:12px;font-size:14.5px;">เริ่มโหมดทดลอง →</button>
           <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.5;">
-            กดเล่นได้ทุกหน้า คิดเงิน · ส่วนลด · เลือกวิธีจ่าย · หน้าสรุปยอด<br>
+            กดเล่นได้ทุกหน้า คิดเงิน · เลือกวิธีจ่าย · หน้าสรุปยอด<br>
             <b>ยอดขายจะไม่ถูกบันทึกที่ไหนทั้งนั้น</b> และหน้าสรุปยอดจะเป็นข้อมูลตัวอย่าง
           </p>
         </div>
@@ -1127,8 +1127,9 @@ const MAMA_PRICES  = [];   // ไม่มีปุ่มมาม่าแล�
 // สาหร่ายแผ่นเลิกขายแล้ว — บิลเก่ายังแสดงในประวัติได้ตามปกติ
 const EXTRAS = [];
 
-// ส่วนลด: ครบทุก ๆ 10 ไม้ ลด 5 บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
-const DISCOUNT = { perSticks: 10, baht: 5 };
+// ส่วนลด: ครบทุก ๆ 10 ไม้ ลด baht บาท (นับจาก "จำนวนไม้" ไม่ใช่ยอดเงิน)
+// 23/10 เจ้าของ: เลิกโปร 10 ไม้ 95 — ไม้ละ 10 บาททั้งหมด (baht 0 = ไม่มีส่วนลด ไม่ขึ้นแถบ "อีก x ไม้ ลดเพิ่ม")
+const DISCOUNT = { perSticks: 10, baht: 0 };
 // ลูกค้าเอาแต้มมาแลกไม้ฟรี — คิดที่ราคาไม้ 10฿ ต่อไม้
 // ระบบไม่ได้เก็บแต้มคงเหลือของลูกค้า แค่บันทึกว่าบิลนี้แลกไปกี่ไม้
 const REDEEM_PRICE = 10;
@@ -1355,7 +1356,7 @@ function refresh() {
   // อีกกี่ไม้ถึงจะได้ส่วนลดเพิ่ม
   const hint = document.getElementById('discount-hint');
   const need = (DISCOUNT.perSticks - (t.stickCount % DISCOUNT.perSticks)) % DISCOUNT.perSticks;
-  if (t.stickCount > 0 && need > 0) {
+  if (DISCOUNT.baht > 0 && t.stickCount > 0 && need > 0) {
     hint.className = 'hint near';
     hint.textContent = 'อีก ' + need + ' ไม้ ลดเพิ่ม ' + DISCOUNT.baht + ' บาท';
   } else if (t.discount > 0) {
