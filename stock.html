@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-23b';
+const PAGE_BUILD = '2026-10-23c';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,8 +526,8 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-23b', 'stock-costing.gs': '2026-10-17b', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-23a', 'line-expiry-alert.gs': '2026-10-13' };
+const WANT_FILES = { 'pos-backend.gs': '2026-10-23c', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
+                     'stock-audit.gs': '2026-10-23b', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -1670,6 +1670,15 @@ function viewCount(v) {
     <div class="counthead" id="c-head"></div>
     <div id="c-rows"></div>
     <button class="key" id="c-zero" onclick="fillRestZero()">ใส่ 0 ให้ที่ยังไม่ได้นับ</button>
+    <div id="c-money" style="margin-top:14px">
+      <h2 style="font-size:16px">💵 เงินที่ได้<span id="cm-day">วันนี้</span> <small style="font-weight:400">— กรอกเฉพาะวันที่ไม่ได้ใช้ POS</small></h2>
+      ${[['cash', 'เงินสด'], ['transfer', 'เงินโอน'], ['thai', 'ไทยช่วยไทย']].map(m => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
+        <span style="flex:1">${m[1]}</span>
+        <input id="cm-${m[0]}" type="number" inputmode="decimal" min="0" placeholder="–" style="width:110px;text-align:right">
+        <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('')}
+      <p class="note">ใส่ยอดทั้งวัน (รวมที่กดใน POS ด้วย ไม่รวมเดลิเวอรี่) · เงินสดใส่ที่เหลือในลิ้นชักจริง —
+        หยิบไปจ่ายค่าอะไร เจ้าของร้านแจ้งในไลน์ ระบบบวกกลับให้ · กรอกแล้วระบบใช้ยอดนี้แทน POS ของวันนั้น · วันที่ใช้ POS ปล่อยว่าง</p>
+    </div>
     <button class="key btn-red submit" id="c-btn" onclick="submitCount()" disabled>บันทึกผลนับ</button>
     <p class="note">นับเฉพาะที่มีของ แล้วกด "ใส่ 0 ให้ที่ยังไม่ได้นับ" ทีเดียวจบ</p>
   </div>`;
@@ -1704,7 +1713,16 @@ function countLate() {
   const m = D.late && D.late[loc] && D.late[loc].mala;
   return m && m.count ? m : null;
 }
+function paintCountMoney() {
+  const mb = document.getElementById('c-money');
+  if (!mb) return;
+  const el = document.getElementById('c-loc');
+  mb.style.display = (el ? el.value : auth.branch) === D.central ? 'none' : '';
+  const m = countLate(), lbl = document.getElementById('cm-day');
+  if (lbl) lbl.textContent = m && (!m.afterBill || C_FOR === 'late') ? 'ของวันที่ ' + m.dm : 'วันนี้';
+}
 function paintCountFor() {
+  paintCountMoney();
   const box = document.getElementById('c-for');
   if (!box) return;
   const m = countLate();
@@ -1902,7 +1920,12 @@ async function submitCount() {
     const lm0 = countLate();
     if (lm0 && lm0.afterBill && !C_FOR) throw new Error('เลือกก่อนว่ารอบนี้เป็นของวันไหน');
     const forDay = lm0 && lm0.afterBill && C_FOR === 'late' ? lm0.day : '';
-    const r = await apiPost({ action: 'stockCount', location: cl, rows, forDay });
+    // เงินที่ได้ (วันที่ไม่ได้ใช้ POS) — ว่างทั้งหมด = ไม่ส่ง
+    const mv = k => { const x = document.getElementById('cm-' + k); return x ? x.value.trim() : ''; };
+    const money = cl !== D.central && (mv('cash') || mv('transfer') || mv('thai'))
+      ? { cash: mv('cash'), transfer: mv('transfer'), thai: mv('thai') } : null;
+    const r = await apiPost(Object.assign({ action: 'stockCount', location: cl, rows, forDay }, money ? { money } : {}));
+    ['cash', 'transfer', 'thai'].forEach(k => { const x = document.getElementById('cm-' + k); if (x) x.value = ''; });
     C_FOR = ''; C_FOR_LOC = '';
     // นับปิดร้านย้อนหลังแล้ว (ก่อนบิลแรก) — เอาเตือนนับออก เหลือเตือนเงินถ้ายังไม่กรอก
     const lm = D.late && D.late[cl] && D.late[cl].mala;

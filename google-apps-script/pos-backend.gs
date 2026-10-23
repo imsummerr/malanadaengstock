@@ -20,12 +20,12 @@ var SHEET_EXPENSE  = 'POS_Expenses'; // เงินสดที่จ่าย�
 
 // รุ่นของโค้ดหลังบ้าน — เปิด <url>/exec?action=version ในเบราว์เซอร์เพื่อดูว่า
 // ที่ Deploy อยู่ตอนนี้เป็นรุ่นไหน ไม่ต้องเดาว่าวางโค้ดใหม่ไปแล้วหรือยัง
-var BACKEND_VERSION = '2026-10-23b · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
+var BACKEND_VERSION = '2026-10-23c · เช็คสต็อกกรอกเงินได้ (วันที่ไม่ได้ใช้ POS) · ลืมนับหลายวันขึ้นให้เลือกครบ · สาหร่ายเสียบไม้ · เช็คสต็อกย้อนหลังเลือกวันได้ (ขายไปแล้วก็ลงได้) · กะหล่ำไม่มีของดิบ · เต้าหู้หลอดไม่มีของดิบ · หมูพันเลือกหมูสามชั้นสไลซ์ได้ · คืนของเสีย · บอกไฟล์ที่ยังเก่า · บราวนี่อัลม่อนสไลซ์ · ไดฟุกุสตอเบอร์รี่ · แพ็คของใส่ 0 ได้ (ของเหลือ) · ไลน์รับ "ค่าใช้จ่ายลงครบแล้ว" · ปุ่มค่าใช้จ่ายลงครบแล้ว · ไม่หารครึ่งค่าที่ค่าแรง · เงินสดคงเหลือแจ้งในไลน์ · สรุปยอดรายวัน';
 
 // รุ่นของแต่ละไฟล์ .gs — หน้าสต็อกเทียบกับรุ่นที่ควรเป็น แล้วบอกเจ้าของว่าไฟล์ไหนยังไม่ได้วางใหม่
 // (15/10 วางไฟล์แล้วยังเห็นของเก่า ไม่รู้ว่าไฟล์ไหนยังไม่เข้า) · แต่ละไฟล์จดรุ่นของตัวเองไว้ใน GS_FILES
 var GS_FILES = GS_FILES || {};
-GS_FILES['pos-backend.gs'] = '2026-10-23b';
+GS_FILES['pos-backend.gs'] = '2026-10-23c';
 
 var SESSION_HOURS = 26;              // token หมดอายุกี่ชั่วโมง
                                      // หน้าเว็บให้ล็อกอินวันละครั้ง (หมดอายุตี 4 ของวันถัดไป)
@@ -2499,6 +2499,16 @@ function handleStockCount_(body) {
                                       missing.slice(0, 5).join(', ') + (missing.length > 5 ? ' …' : '') };
   }
 
+  // 23/10: เงินที่ได้ (วันที่ไม่ได้ใช้ POS) — ไม่บังคับ · กรอกช่องไหนแล้ว ช่องที่เหลือว่าง = 0
+  var money = null, mb = body.money || {};
+  var filled = ['cash', 'transfer', 'thai'].filter(function (k) { return String(mb[k] == null ? '' : mb[k]).trim() !== ''; });
+  if (filled.length && loc !== CENTRAL) {
+    var bad = filled.filter(function (k) { return isNaN(Number(mb[k])) || Number(mb[k]) < 0; });
+    if (bad.length) return { success: false, message: 'เงินที่กรอกต้องเป็นตัวเลข 0 ขึ้นไป' };
+    if (typeof malaMoneySave_ !== 'function') return { success: false, message: 'หลังบ้านยังไม่ได้วาง stock-audit.gs รุ่นใหม่ — กรอกเงินตอนนับยังไม่ได้' };
+    money = { cash: Number(mb.cash) || 0, transfer: Number(mb.transfer) || 0, thai: Number(mb.thai) || 0 };
+  }
+
   var sh = sheet_(SHEET_COUNT);
   if (!sh) return { success: false, message: 'ไม่พบชีต "' + SHEET_COUNT + '"' };
   var map = ensureCols_(sh, MOVE_COLS);
@@ -2557,6 +2567,13 @@ function handleStockCount_(body) {
                                '  (ระบบ ' + fmtPack_(sys, it) + ' ต่าง ' + (diff > 0 ? '+' : '') + diff + ' ' + baseUnitOf_(it) + ')');
   });
   appendRows_(sh, map, out);          // เขียนทีเดียว ไม่ใช่แถวละครั้ง
+  // เงินที่ได้ของวันที่รอบนี้ปิดยอด (ลงย้อนหลัง = วันที่เลือก) — ก่อนสรุปยอด จะได้สรุปด้วยยอดนี้
+  var moneySaved = null;
+  if (money) {
+    var mday = forDay || (typeof closeDayOfCount_ === 'function' && closeDayOfCount_(loc, now.getTime())) ||
+               (typeof cashBizDay_ === 'function' ? cashBizDay_(now.getTime()) : Utilities.formatDate(now, TZ, 'yyyy-MM-dd'));
+    moneySaved = malaMoneySave_(loc, mday, money, session.name, now.getTime());
+  }
 
   var msg = isBase
     ? '📋 ตั้งยอดตั้งต้น — ' + loc + '\n\n' +
@@ -2571,6 +2588,8 @@ function handleStockCount_(body) {
     // ไม่ได้บอกว่าอะไรหาย (13/10 เจ้าของ) ข้อความสรุปถัดไปบอก ควรได้ / ได้จริง / หายเท่าไหร่
     ? '📋 นับสต็อกปิดร้าน' + (forDay ? ' (ลงย้อนหลังของวันที่ ' + Number(forDay.slice(8, 10)) + '/' + Number(forDay.slice(5, 7)) + ')' : '') +
       ' — ' + loc + '\n' +
+      (moneySaved ? '💵 กรอกเงินที่ได้ของวันที่ ' + Number(moneySaved.day.slice(8, 10)) + '/' + Number(moneySaved.day.slice(5, 7)) +
+                    ' (ไม่ได้ใช้ POS) — ใช้ยอดนี้แทน POS\n' : '') +
       'นับครบ ' + items.length + ' รายการ โดย ' + session.name + ' · ' + Utilities.formatDate(now, TZ, 'd/M/yyyy HH:mm') +
       (refill.length ? '\n\n🔔 ต้องเติม\n' + refill.join('\n') : '')
     : '📋 เช็คสต็อกรายสัปดาห์ — ' + loc + '\n\n' +

@@ -69,7 +69,7 @@ var CASH_CYCLE_DAYS = 30;
 
 /** ปัดเป็นสตางค์ — เงินไม่มีทศนิยมที่สาม */
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-costing.gs'] = '2026-10-17b';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-costing.gs'] = '2026-10-23a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 function costBaht_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /** ปัดจำนวนของ — กันเศษทศนิยมลอยจากการลบกันไปมา */
@@ -785,6 +785,17 @@ function costIncome_() {
     out[loc]['รวม'] = costBaht_(out[loc]['รวม'] + baht);
   }
 
+  // 23/10: วันที่กรอกเงินตอนเช็คสต็อก (ไม่ได้ใช้ POS / ใช้ไม่ครบ) — รายได้หน้าร้านวันนั้น = เงินที่กรอก แทนยอด POS
+  var manual = {};
+  if (typeof malaMoneyRows_ === 'function' && typeof malaMoneyFor_ === 'function') {
+    try {
+      malaMoneyRows_().forEach(function (x) { manual[x.loc + '|' + x.day] = true; });
+      Object.keys(manual).forEach(function (k) {
+        var p = k.split('|'), m = malaMoneyFor_(p[0], p[1]);
+        if (m && !costBefore_(new Date(p[1] + 'T23:59:00+07:00'), p[0])) add(p[0], 'หน้าร้าน', m.total);
+      });
+    } catch (e) { Logger.log('costIncome_ manual: ' + e.message); manual = {}; }
+  }
   var sh = sheet_(SHEET_ORDERS);
   if (sh && sh.getLastRow() > 1) {
     var v = sh.getDataRange().getValues();
@@ -793,7 +804,11 @@ function costIncome_() {
     var iTime = h.indexOf('เวลา');
     if (iLoc !== -1 && iNet !== -1) {
       for (var r = 1; r < v.length; r++) {
-        if (iDate !== -1 && costBefore_(costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]), v[r][iLoc])) continue;
+        var when = iDate !== -1 ? costRowTime_(v[r][iDate], iTime === -1 ? '' : v[r][iTime]) : null;
+        if (iDate !== -1 && costBefore_(when, v[r][iLoc])) continue;
+        // วันที่กรอกเงินเองแล้ว ไม่นับบิล POS ของวันนั้นซ้ำ
+        if (when && typeof cashBizDay_ === 'function' &&
+            manual[String(v[r][iLoc] || '').trim() + '|' + cashBizDay_(new Date(when).getTime())]) continue;
         add(v[r][iLoc], 'หน้าร้าน', Number(v[r][iNet]) || 0);
       }
     }
