@@ -14,6 +14,7 @@ function setup() {
   g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
   g.CASH_DAY_CUT_HOURS = (new Date(NOW).getHours() + 16) % 24;   // วันนี้เริ่ม 8 ชม.ก่อน · เมื่อวาน = 8–32 ชม.ก่อน
   g.BAKERY_START_DATE = '2000-01-01';
+  g.MALA_LATE_FROM = '2999-01-01';      // วันที่ไม่มีบิลในเรื่องนี้ = ร้านหยุด (ไม่ถามหยุดร้าน/ขาย — ดู t-1027)
   g.checkToken_ = () => staff;
   // เมื่อวาน 20 ชม.ก่อน นับก่อนขาย (แบบข้อมูลจริง 11/10) · 19 ชม.ก่อน ส่งบราวนี่นูเทลล่าเพิ่ม 10
   FL.forEach((n, i) => push(g, g.SHEET_COUNT, { 'วันที่เวลา': at(20), 'สาขา': SHOP, 'รายการ': n,

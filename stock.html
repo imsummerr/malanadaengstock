@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-24a';
+const PAGE_BUILD = '2026-10-27a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -527,7 +527,7 @@ function render() {
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
 const WANT_FILES = { 'pos-backend.gs': '2026-10-24a', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-16a',
-                     'stock-audit.gs': '2026-10-24a', 'line-expiry-alert.gs': '2026-10-13' };
+                     'stock-audit.gs': '2026-10-27a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -578,14 +578,14 @@ function lateBanner() {
             btn('ไปนับ', `C_FOR='';C_FOR_LOC='${esc(loc)}';go('count')`)
           : `📋 <b>เช็คสต็อกของวันที่ ${esc(x.dm)}</b> ก่อนขายวันที่ ${esc(s.mala.today || 'วันนี้')}
             — นับตอนนี้ก่อนขายบิลแรก ระบบใช้เป็นยอดปิดร้านของ ${esc(x.dm)}` + btn('ไปนับ', `C_FOR_LOC='${esc(loc)}';go('count')`));
-        if (x.sold === false) rows.push(`<small>${esc(x.dm)} ไม่มีบิลใน POS — ถ้าขาย ตอนนับกรอกเงินที่ได้ด้วย · ถ้าหยุดร้าน กด</small>` + closedUi(loc, x));
+        if (x.sold === false) rows.push(`<small>${esc(x.dm)} ไม่มีบิลใน POS — ถ้าขาย ตอนนับกรอกเงินที่ได้ด้วย · ถ้าหยุดร้าน กด</small>` + closedUi(loc, x) +
+          (t ? lmBtn(loc, x, 'กรอกเงินอย่างเดียว (ไม่นับ)') : ''));
       } else if (x.sold) {
         rows.push(`📋 <b>${esc(x.dm)}</b> ขายแล้วไม่ได้นับปิดร้าน — ` + (x.ifClosed
           ? `ถ้า ${esc(x.ifClosed.join(', '))} หยุดร้าน กดหยุดร้านก่อน แล้วนับเป็นของ ${esc(x.dm)} ได้ · ถ้าขาย ระบบรวม ${esc(x.dm)} ไปเทียบกับรอบนับถัดไป`
           : `นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว ของบนชั้นเปลี่ยนแล้ว) · ระบบรวมไปเทียบกับรอบนับถัดไปให้`));
       } else {
-        rows.push(`📋 <b>${esc(x.dm)}</b> ไม่มีบิลใน POS ไม่ได้นับ — หยุดร้าน หรือขายแต่ไม่ได้ใช้ POS?` + closedUi(loc, x) +
-          btn('ขาย — กรอกเงิน', `lmOpen('${esc(loc)}','${esc(x.day)}','${esc(x.dm)}')`));
+        rows.push(`📋 <b>${esc(x.dm)}</b> ไม่มีบิลใน POS ไม่ได้นับ — หยุดร้าน หรือขายแต่ไม่ได้ใช้ POS?` + closedUi(loc, x) + lmBtn(loc, x));
       }
     });
     // 24/10: วันนี้ยังไม่ได้นับ — ขึ้นด้วยตอนมีวันค้าง / เลยเที่ยงคืนแล้ว (วันทำการตัดตี 4 ยังเป็นของวันนี้)
@@ -599,9 +599,11 @@ function lateBanner() {
     if (s.exp && auth.role === 'owner') rows.push(`💬 <b>แจ้งค่าใช้จ่ายของวันที่ ${s.exp.dm}</b> ในไลน์ (+ เงินสดคงเหลือ)
         — เขียน ${s.exp.dm} ไว้บรรทัดแรก · ไม่มีจ่ายพิมพ์ "ไม่มีค่าใช้จ่าย" · ครบแล้วระบบสรุปยอดให้` + expDoneUi(loc, s.exp, btn));
     // 23/10: ลืมนับเบเกอรี่หลายวัน — ขึ้นทุกวัน (หลังบ้านรุ่นเก่าส่งมาวันเดียว)
+    // 27/10: วันที่รวมไปแล้ว กรอกเงินของวันนั้นแยกได้ (ไม่ต้องรวมกับวันถัดไป) · วันที่ไม่มีบิล ปุ่มหม่าล่าด้านบนกรอกเบเกอรี่ได้ด้วย
     (s.bakeryDays || (s.bakery ? [s.bakery] : [])).forEach(b => rows.push(b.into
-      ? `🍡 เบเกอรี่ <b>${esc(b.dm)}</b> ไม่ได้นับหลังขาย — นับย้อนหลังไม่ได้แล้ว ยอดขายรวมไปกับ ${esc(b.intoDm)} ·
-         เงินเบเกอรี่ของ ${esc(b.dm)} ให้กรอกรวมกับของ ${esc(b.intoDm)}`
+      ? `🍡 เบเกอรี่ <b>${esc(b.dm)}</b> ไม่ได้นับหลังขาย — นับย้อนหลังไม่ได้แล้ว ยอดขายรวมไปเทียบกับ ${esc(b.intoDm)}` +
+        (lmKinds(loc, b.day).mala ? ' · กรอกเงินที่ปุ่ม "ขาย — กรอกเงิน" ของวันนั้นด้านบน'
+                                  : ' · กรอกเงินของ ' + esc(b.dm) + ' แยกได้' + lmBtn(loc, b))
       : `🍡 <b>นับหลังขายเบเกอรี่</b> ของ ${esc(b.dm)}` +
         (b.counted ? ' — นับไว้แล้ว กรอกแค่เงิน' : ' — นับของที่เหลือตอนนี้ก่อนเริ่มขาย แล้วกรอกเงิน') +
         btn('ลงย้อนหลัง', `bkLateGo('${esc(loc)}','${esc(b.day)}')`)));
@@ -1614,8 +1616,12 @@ function viewBakery(v) {
       ? pendDays.map(b => `<button class="key" style="flex:1;${BK_LATE && BK_LATE_DAY === b.day ? '' : 'opacity:.45'}"
           onclick="BK_LATE=true;BK_LATE_DAY='${esc(b.day)}';render()">${esc(b.dm)} (ลืมนับ)</button>`).join('')
       : dbtn(true, (BK_LATE_DAY && BK_LATE_DAY !== bkYesterday() ? 'วันที่ ' : 'เมื่อวาน ') + yd + ' (ลืมนับ)')}</div>
-    ${lostDays.map(b => `<p class="note">${esc(b.dm)} นับย้อนหลังไม่ได้แล้ว — ยอดขายรวมไปกับ ${esc(b.intoDm)} (เงินของ ${esc(b.dm)} กรอกรวมกับ ${esc(b.intoDm)})</p>`).join('')}`
+    ${lostDays.map(b => `<p class="note">${esc(b.dm)} นับย้อนหลังไม่ได้แล้ว — ยอดขายรวมไปเทียบกับ ${esc(b.intoDm)} · กรอกเงินของ ${esc(b.dm)} แยกได้` +
+      lmBtn(selLoc, b, 'กรอกเงินของ ' + esc(b.dm)) + '</p>').join('')}
+    ${pendDays.filter(b => lmKinds(selLoc, b.day).mala).map(b => `<p class="note">${esc(b.dm)} ไม่มีบิลใน POS — ถ้าวันนี้ขายไปแล้ว
+      (นับเป็นหลังขายของ ${esc(b.dm)} ไม่ได้) กรอกแค่เงินของ ${esc(b.dm)}` + lmBtn(selLoc, b, 'กรอกเงินของ ' + esc(b.dm)) + '</p>').join('')}`
             : `<p class="note">ลืมนับหลังขาย${pend ? 'ของ ' + yd : 'เมื่อวาน'}? กด 🌙 หลังขาย แล้วเลือก "${pend && pend.day !== bkYesterday() ? 'วันที่ ' + yd : 'เมื่อวาน'}"</p>`}
+    <div id="bk-lm">${lmForm(selLoc)}</div>
   </div>
   <div class="card">
     <h2 style="font-size:16px">${late ? 'หลังขายของวันที่ ' + yd : 'นับ' + BK_ROUND}</h2>
@@ -1853,6 +1859,8 @@ function closedUi(loc, x) {
 function lateRepaint() {
   lateRefresh();
   if (document.getElementById('c-for')) { paintCountFor(); paintProgress(); }
+  const bk = document.getElementById('bk-lm'), bl = document.getElementById('bk-loc');
+  if (bk) { bk.innerHTML = lmForm(bl ? bl.value : auth.branch); paintDlv('l'); }
 }
 function shopClosedArm(k) { CL_ARM = k; lateRepaint(); }
 async function shopClosedGo(loc, day) {
@@ -1872,26 +1880,42 @@ async function shopClosedGo(loc, day) {
 }
 /* ขายแต่ไม่ได้ใช้ POS และนับย้อนหลังไม่ได้แล้ว — กรอกแค่เงิน (+ เดลิเวอรี่) ของวันนั้น */
 let LM = null, LM_BUSY = false;
+/* 27/10: วันนั้นกรอกอะไรได้บ้าง — หม่าล่า (ไม่มีบิล ยังค้าง) · เบเกอรี่ (ยังไม่ได้ลงหลังขาย) */
+function lmKinds(loc, day) {
+  const s = (D.late || {})[loc] || {};
+  return { mala: malaDaysOf(loc).some(x => x.day === day && x.sold === false),
+           bakery: (s.bakeryDays || []).some(b => b.day === day) };
+}
 function lmOpen(loc, day, dm) {
-  LM = { loc, day, dm, cash: '', transfer: '', thai: '' }; DLV.l = [];
-  if (tab === 'count') { const el = document.getElementById('c-loc'); if (el && el.value !== loc) { el.value = loc; fillCountRows(); } else lateRepaint(); }
-  else { C_FOR_LOC = loc; go('count'); }
+  const k = lmKinds(loc, day);
+  LM = { loc, day, dm, mala: k.mala, bakery: k.bakery, cash: '', transfer: '', thai: '', bcash: '', btransfer: '', bthai: '' };
+  DLV.l = [];
+  // เบเกอรี่อย่างเดียว = กรอกในแท็บเบเกอรี่ · มีหม่าล่าด้วย = แท็บเช็คสต็อก
+  if (tab === 'count' && k.mala) {
+    const el = document.getElementById('c-loc');
+    if (el && el.value !== loc) { el.value = loc; fillCountRows(); } else lateRepaint();
+  } else if (tab === 'bakery' && !k.mala) { BK_LOC = loc; render(); }
+  else if (k.mala) { C_FOR_LOC = loc; go('count'); }
+  else { BK_LOC = loc; go('bakery'); }
 }
 function lmForm(loc) {
   if (!LM || LM.loc !== loc) return '';
-  return `<div style="border:1.5px solid var(--red);border-radius:12px;padding:12px;margin-top:10px">
-    <b>💵 เงินที่ได้ของวันที่ ${esc(LM.dm)}</b> <small>— ขายแต่ไม่ได้ใช้ POS</small>
-    ${[['cash', 'เงินสด'], ['transfer', 'เงินโอน'], ['thai', 'ไทยช่วยไทย']].map(m => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
+  const rows = (pre, key) => [['cash', 'เงินสด'], ['transfer', 'เงินโอน'], ['thai', 'ไทยช่วยไทย']].map(m => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
       <span style="flex:1">${m[1]}</span>
-      <input id="lm-${m[0]}" type="number" inputmode="decimal" min="0" placeholder="–" value="${esc(LM[m[0]])}"
-        oninput="LM.${m[0]}=this.value.trim()" style="width:110px;text-align:right">
-      <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('')}
+      <input id="${pre}-${m[0]}" type="number" inputmode="decimal" min="0" placeholder="–" value="${esc(LM[key + m[0]])}"
+        oninput="LM.${key}${m[0]}=this.value.trim()" style="width:110px;text-align:right">
+      <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('');
+  return `<div style="border:1.5px solid var(--red);border-radius:12px;padding:12px;margin-top:10px">
+    <b>💵 เงินที่ได้ของวันที่ ${esc(LM.dm)}</b> <small>— ขายแต่ไม่ได้ใช้ POS · นับย้อนหลังไม่ได้แล้ว</small>
+    ${LM.mala ? `<div style="font-weight:700;margin-top:10px">🌶️ หม่าล่า</div>${rows('lm', '')}
     <div style="font-weight:700;margin-top:10px">🛵 เดลิเวอรี่ของวันที่ ${esc(LM.dm)}</div>
     <div id="ld-list"></div>
     <button class="key" style="width:100%;padding:10px;margin-top:6px;background:var(--bg);color:var(--ink)"
-      onclick="dlvAdd('l')">+ เพิ่มออเดอร์เดลิเวอรี่</button>
-    <p class="note">ใส่ยอดทั้งวัน ไม่รวมเดลิเวอรี่ · เงินสดใส่ที่เหลือในลิ้นชัก (จ่ายค่าอะไร เจ้าของแจ้งในไลน์ ระบบบวกกลับให้) ·
-      นับสต็อกของวันนั้นย้อนหลังไม่ได้แล้ว ของรวมไปเทียบกับรอบนับถัดไป</p>
+      onclick="dlvAdd('l')">+ เพิ่มออเดอร์เดลิเวอรี่</button>` : ''}
+    ${LM.bakery ? `<div style="font-weight:700;margin-top:12px">🍡 เบเกอรี่</div>${rows('lb', 'b')}` : ''}
+    <p class="note">ใส่ยอดทั้งวัน${LM.mala ? ' (หม่าล่าไม่รวมเดลิเวอรี่)' : ''} · เงินสดใส่ที่เหลือในลิ้นชัก
+      (จ่ายค่าอะไร เจ้าของแจ้งในไลน์ ระบบบวกกลับให้) · ของของวันนั้นรวมไปเทียบกับรอบนับถัดไป
+      ${LM.mala && LM.bakery ? '· ไม่ได้ขายอย่างไหน ปล่อยว่าง' : ''}</p>
     <div style="display:flex;gap:8px">
       <button class="key btn-red" style="flex:2;padding:11px" onclick="lmSave()" ${LM_BUSY ? 'disabled' : ''}>${LM_BUSY
         ? '<span class="spinner-sm"></span> กำลังบันทึก...' : 'บันทึกเงินของวันที่ ' + esc(LM.dm)}</button>
@@ -1902,12 +1926,13 @@ function lmForm(loc) {
 async function lmSave() {
   if (!LM || LM_BUSY) return;
   try {
-    const money = LM.cash || LM.transfer || LM.thai ? { cash: LM.cash, transfer: LM.transfer, thai: LM.thai } : null;
-    const delivery = dlvPayload('l');
-    if (!money && !delivery.length) throw new Error('กรอกเงินที่ได้ของวันที่ ' + LM.dm + ' ก่อน');
+    const money = LM.mala && (LM.cash || LM.transfer || LM.thai) ? { cash: LM.cash, transfer: LM.transfer, thai: LM.thai } : null;
+    const bakery = LM.bakery && (LM.bcash || LM.btransfer || LM.bthai) ? { cash: LM.bcash, transfer: LM.btransfer, thai: LM.bthai } : null;
+    const delivery = LM.mala ? dlvPayload('l') : [];
+    if (!money && !bakery && !delivery.length) throw new Error('กรอกเงินที่ได้ของวันที่ ' + LM.dm + ' ก่อน');
     LM_BUSY = true; lateRepaint();
     const r = await apiPost(Object.assign({ action: 'malaLateMoney', location: LM.loc, day: LM.day },
-                                          money ? { money } : {}, delivery.length ? { delivery } : {}));
+                                          money ? { money } : {}, bakery ? { bakery } : {}, delivery.length ? { delivery } : {}));
     if (r.late && D.late) D.late[LM.loc] = r.late;
     LM = null; DLV.l = [];
     toast('✅ ' + esc(r.message || 'บันทึกแล้ว'), 6000);
@@ -1916,7 +1941,15 @@ async function lmSave() {
     else toast('❌ ' + esc(e.message), 8000);
   } finally {
     LM_BUSY = false; lateRepaint();
+    if (tab === 'bakery') render();
   }
+}
+/* ปุ่มกรอกเงินย้อนหลัง — ชื่อบอกว่ากรอกอะไรได้ */
+function lmBtn(loc, x, label) {
+  const k = lmKinds(loc, x.day);
+  if (!k.mala && !k.bakery) return '';
+  return smallBtn(label || (k.mala && k.bakery ? 'ขาย — กรอกเงิน (หม่าล่า + เบเกอรี่)' : k.mala ? 'ขาย — กรอกเงิน' : 'กรอกเงินเบเกอรี่ของวันนั้น'),
+                  `lmOpen('${esc(loc)}','${esc(x.day)}','${esc(x.dm)}')`);
 }
 
 function paintCountFor() {
@@ -1932,7 +1965,7 @@ function paintCountFor() {
         ? `ถ้า ${esc(x.ifClosed.join(', '))} หยุดร้าน กดหยุดร้านก่อน แล้วนับเป็นของ ${esc(x.dm)} ได้ · ถ้าขาย ${esc(x.dm)} รวมไปเทียบกับรอบนับถัดไป</p>`
         : `นับย้อนหลังไม่ได้แล้ว (ขายวันถัดไปแล้ว) · รวมไปเทียบกับรอบนับถัดไป</p>`)
     : `<p class="note">📋 <b>${esc(x.dm)}</b> ไม่มีบิลใน POS ไม่ได้นับ — หยุดร้าน หรือขายแต่ไม่ได้ใช้ POS?` +
-      closedUi(loc, x) + smallBtn('ขาย — กรอกเงิน', `lmOpen('${esc(loc)}','${esc(x.day)}','${esc(x.dm)}')`) + '</p>');
+      closedUi(loc, x) + lmBtn(loc, x) + '</p>');
   // 24/10: วันนี้ยังไม่ได้นับ — ขึ้นด้วยตอนมีวันค้าง / เลยเที่ยงคืนแล้ว (ยังเป็นของวันนี้ถึงตี 4)
   if (t && (days.length || t.night)) prev.push(`<p class="note">📋 <b>${esc(t.dm)} (วันนี้)</b> ยังไม่ได้เช็คสต็อกปิดร้าน` +
     (t.night ? ` — เลยเที่ยงคืนแล้ว ยังนับเป็นของ ${esc(t.dm)} ได้ถึงตี 4` : '') +
@@ -1942,6 +1975,9 @@ function paintCountFor() {
     // ไม่มีบิลใน POS — นับเป็นปิดร้านของวันนั้น = ขาย ต้องกรอกเงินด้วย · หยุดร้านกดปุ่มแทน
     const unk = m.sold === false ? `<p class="note">${esc(m.dm)} ไม่มีบิลใน POS — ถ้าขาย กรอกเงินที่ได้ด้านล่างด้วย · ถ้าหยุดร้าน กด` +
       closedUi(loc, m) + '</p>' : '';
+    // 27/10: ไม่ได้นับวันนั้น (เช่นวันนี้ขายไปแล้ว) — กรอกแค่เงินของวันนั้นได้ แล้วนับเป็นของวันนี้
+    const unkMoney = m.sold === false ? `<p class="note">${esc(m.dm)} ขาย แต่จะนับเป็นของวันนี้แทน (นับ ${esc(m.dm)} ไม่ทันแล้ว) — กรอกเงินของ ${esc(m.dm)} ก่อน` +
+      lmBtn(loc, m, 'กรอกเงินอย่างเดียว (ไม่นับ)') + '</p>' : '';
     if (!countMustPick()) {
       html += `<div class="warnbox" style="margin:10px 0 0">ลืมเช็คสต็อกปิดร้านของวันที่ ${esc(m.dm)} —
         นับตอนนี้ (ก่อนขายบิลแรก) ระบบใช้เป็นยอดปิดร้านของ ${esc(m.dm)}</div>` + unk;
@@ -1960,7 +1996,7 @@ function paintCountFor() {
           : C_FOR === 'today' ? `นับเป็นปิดร้านของ ${esc(tdm)} — ${esc(m.dm)} รวมไปเทียบกับรอบนี้ (ไม่ได้แยกยอดของ ${esc(m.dm)})`
           : t ? `ยังไม่ได้ขายวันนี้ / วันนี้หยุด → ปิดร้าน ${esc(m.dm)} · ขายวันนี้ไปแล้ว (มีบิล หรือขายไม่ได้ใช้ POS) → ${esc(t.dm)}`
           : `วันนี้ขายไปแล้ว — เลือกก่อนว่ารอบนี้เป็นของวันไหน`}</p>` +
-        (C_FOR === 'late' ? unk : C_FOR === 'today' ? unkT : '');
+        (C_FOR === 'late' ? unk : C_FOR === 'today' ? unkT + unkMoney : '');
     }
   }
   box.innerHTML = html;

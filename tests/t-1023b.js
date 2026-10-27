@@ -18,6 +18,7 @@ function setup(withBakeryCountBetween) {
   const g = fresh();
   g.CASH_DAY_CUT_HOURS = (new Date(NOW).getHours() + 16) % 24;
   g.BAKERY_START_DATE = '2000-01-01';
+  g.MALA_LATE_FROM = '2999-01-01';      // วันที่ไม่มีบิลในเรื่องนี้ = ร้านหยุด (ไม่ถามหยุดร้าน/ขาย — ดู t-1027)
   g.__env.SHEETS[g.SHEET_EXPENSE] = { headers: g.EXPENSE_HEADERS.slice(), rows: [] };
   g.__env.PROPS.LINE_CHANNEL_ACCESS_TOKEN = 'tok';
   g.checkToken_ = () => ({ role: 'staff', branch: SHOP, branches: [SHOP], name: 'ลลิตา' });
