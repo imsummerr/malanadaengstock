@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-27a';
+const PAGE_BUILD = '2026-10-28a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -1639,6 +1639,7 @@ function viewBakery(v) {
     <button class="key btn-red submit" id="bk-btn" onclick="submitBakery()">บันทึก${BK_ROUND}</button>
     <p class="note">ไม่มีของ / ไม่มีเงินช่องไหน ใส่ 0</p>
   </div>`;
+  paintDlv('l');
 }
 
 async function submitBakery() {
@@ -1888,15 +1889,15 @@ function lmKinds(loc, day) {
 }
 function lmOpen(loc, day, dm) {
   const k = lmKinds(loc, day);
-  LM = { loc, day, dm, mala: k.mala, bakery: k.bakery, cash: '', transfer: '', thai: '', bcash: '', btransfer: '', bthai: '' };
+  // 28/10: กดจากแท็บเบเกอรี่ = กรอกในแท็บเบเกอรี่เลย (เบเกอรี่ขึ้นก่อน) ไม่เด้งไปแท็บเช็คสต็อก
+  const from = tab === 'bakery' ? 'bakery' : tab === 'count' ? 'count' : k.mala ? 'count' : 'bakery';
+  LM = { loc, day, dm, from, mala: k.mala, bakery: k.bakery, cash: '', transfer: '', thai: '', bcash: '', btransfer: '', bthai: '' };
   DLV.l = [];
-  // เบเกอรี่อย่างเดียว = กรอกในแท็บเบเกอรี่ · มีหม่าล่าด้วย = แท็บเช็คสต็อก
-  if (tab === 'count' && k.mala) {
+  if (from === 'bakery') { BK_LOC = loc; if (tab === 'bakery') render(); else go('bakery'); return; }
+  if (tab === 'count') {
     const el = document.getElementById('c-loc');
     if (el && el.value !== loc) { el.value = loc; fillCountRows(); } else lateRepaint();
-  } else if (tab === 'bakery' && !k.mala) { BK_LOC = loc; render(); }
-  else if (k.mala) { C_FOR_LOC = loc; go('count'); }
-  else { BK_LOC = loc; go('bakery'); }
+  } else { C_FOR_LOC = loc; go('count'); }
 }
 function lmForm(loc) {
   if (!LM || LM.loc !== loc) return '';
@@ -1905,14 +1906,15 @@ function lmForm(loc) {
       <input id="${pre}-${m[0]}" type="number" inputmode="decimal" min="0" placeholder="–" value="${esc(LM[key + m[0]])}"
         oninput="LM.${key}${m[0]}=this.value.trim()" style="width:110px;text-align:right">
       <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('');
-  return `<div style="border:1.5px solid var(--red);border-radius:12px;padding:12px;margin-top:10px">
-    <b>💵 เงินที่ได้ของวันที่ ${esc(LM.dm)}</b> <small>— ขายแต่ไม่ได้ใช้ POS · นับย้อนหลังไม่ได้แล้ว</small>
-    ${LM.mala ? `<div style="font-weight:700;margin-top:10px">🌶️ หม่าล่า</div>${rows('lm', '')}
+  const mala = LM.mala ? `<div style="font-weight:700;margin-top:12px">🌶️ หม่าล่า</div>${rows('lm', '')}
     <div style="font-weight:700;margin-top:10px">🛵 เดลิเวอรี่ของวันที่ ${esc(LM.dm)}</div>
     <div id="ld-list"></div>
     <button class="key" style="width:100%;padding:10px;margin-top:6px;background:var(--bg);color:var(--ink)"
-      onclick="dlvAdd('l')">+ เพิ่มออเดอร์เดลิเวอรี่</button>` : ''}
-    ${LM.bakery ? `<div style="font-weight:700;margin-top:12px">🍡 เบเกอรี่</div>${rows('lb', 'b')}` : ''}
+      onclick="dlvAdd('l')">+ เพิ่มออเดอร์เดลิเวอรี่</button>` : '';
+  const bakery = LM.bakery ? `<div style="font-weight:700;margin-top:12px">🍡 เบเกอรี่</div>${rows('lb', 'b')}` : '';
+  return `<div style="border:1.5px solid var(--red);border-radius:12px;padding:12px;margin-top:10px">
+    <b>💵 เงินที่ได้ของวันที่ ${esc(LM.dm)}</b> <small>— ขายแต่ไม่ได้ใช้ POS · นับย้อนหลังไม่ได้แล้ว</small>
+    ${LM.from === 'bakery' ? bakery + mala : mala + bakery}
     <p class="note">ใส่ยอดทั้งวัน${LM.mala ? ' (หม่าล่าไม่รวมเดลิเวอรี่)' : ''} · เงินสดใส่ที่เหลือในลิ้นชัก
       (จ่ายค่าอะไร เจ้าของแจ้งในไลน์ ระบบบวกกลับให้) · ของของวันนั้นรวมไปเทียบกับรอบนับถัดไป
       ${LM.mala && LM.bakery ? '· ไม่ได้ขายอย่างไหน ปล่อยว่าง' : ''}</p>
