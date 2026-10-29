@@ -23,7 +23,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['line-intake.gs'] = '2026-10-29b';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['line-intake.gs'] = '2026-10-29c';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 // ══════════════════════════════════════════════════════════════
 //  ตั้งค่า
@@ -628,7 +628,7 @@ var INTAKE_PERKG_RE =
  * มีคำว่าบาทตามหลัง = ราคาต่อถุง ไม่ใช่จำนวน ไม่แตะ
  */
 var INTAKE_PERBAG_RE =
-  /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(?:(อัน|ห่อ|ก้อน|ชิ้น|ซอง|ใบ|หลอด|ลูก|แผ่น)|(?!\s*(?:\d|บาท|฿|บ\.)))/;
+  /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(?:(อัน|ห่อ|ก้อน|ชิ้น|ซอง|ใบ|หลอด|ลูก|แผ่น)|(?![\d.,])(?!\s*(?:บาท|฿|บ\.|โล|กก|กิโล|กรัม)))/;
 
 /**
  * บรรทัดวันที่บนหัวข้อความค่าใช้จ่าย (13/10) — "10/10/2026" · "วันที่ 10/10" · "10/10/69" · "10/10 หม่าล่า ทรัพย์"
@@ -1337,8 +1337,9 @@ function intakeStockQty_(item, counts, gram, perBag) {
   // บอก "ถุงละ N" มาเองกับของที่ยกถุงแล้วนับย่อยได้ — ใช้ตามที่บอก (ถุงนี้อาจไม่เท่าปกติ)
   // ของพร้อมส่ง (เต้าหู้หลอด 16/10) ก็ซื้อยกถุงเหมือนกัน บางถุงมี 10 หลอด
   // ของใช้ (29/10 ถ้วย "แพ็คละ 25 ใบ") ก็เหมือนกัน — แพ็คที่ซื้อมาอาจไม่เท่าที่ตั้งไว้
+  // พิมพ์ "แพ็ค" มากับของที่ชีตตั้งเป็น "ถุง" (เต้าหู้หลอด 29/10) = ชั้นแพ็คเดียวกัน
   if (perBag > 0 && (item.kind === 'วัตถุดิบ' || item.kind === 'ของใช้' || item.ready) && item.perPack > 1 && counts && counts.length &&
-      intakeNorm_(counts[0].unit) === intakeNorm_(item.packUnit)) {
+      (intakeNorm_(counts[0].unit) === intakeNorm_(item.packUnit) || /^(ถุง|แพค|แพก|กล่อง|ลัง)$/.test(intakeNorm_(counts[0].unit)))) {
     return { base: counts[0].n * perBag, packs: counts[0].n, per: perBag,
              unitNote: counts[0].n + ' ' + item.packUnit + ' × ' + perBag + ' ' + item.subUnit };
   }
@@ -1420,11 +1421,14 @@ function intakeStockQty_(item, counts, gram, perBag) {
   // นมผงตั้ง packWords ไว้ว่าง — ถุงที่ซื้อมาไม่ใช่ 1 โลเสมอ ต้องพิมพ์น้ำหนัก
   var packWords = ((rp && rp.packWords) || ['ถุง', 'แพ็ค', 'แพ็ก', 'กล่อง', 'ลัง']).map(intakeNorm_)
     .filter(function (w) { return pieceWords.indexOf(w) === -1; });
+  // 29/10 "เต้าหู้หลอด 1 แพ็ค 10 อัน" — อัน/ชิ้น = หน่วยย่อย (หลอด) ที่ได้มาจริง ไม่ใช่ใช้ 12 ตามชีต
+  var anyPiece = !/^(กรัม|กก|กิโลกรัม|มล|ลิตร)/.test(sub) ? [intakeNorm_('อัน'), intakeNorm_('ชิ้น')] : [];
   for (i = 0; i < counts.length; i++) {
     u = intakeNorm_(counts[i].unit);
     if (u === sub  && !base)  base  = counts[i].n;
     if (u === pack && !packs) packs = counts[i].n;
     if (isRawPack && !base && pieceWords.indexOf(u) !== -1) base = counts[i].n;
+    if (isRawPack && !base && u !== pack && packWords.indexOf(u) === -1 && anyPiece.indexOf(u) !== -1) base = counts[i].n;
     if (isRawPack && !packs && u !== sub && packWords.indexOf(u) !== -1) packs = counts[i].n;
   }
 
