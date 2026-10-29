@@ -1,7 +1,7 @@
 process.env.TZ = 'Asia/Bangkok';
 const { makeCheck, formatDate } = require('./harness');
 const { fresh, push, SHOP } = require('./fixture');
-const { eq, section, done } = makeCheck('29/10 — เช็คสต็อกกรอกแถมน้ำจิ้มได้ (วันที่ไม่ได้ใช้ POS) · สรุปบอกน้ำจิ้มใช้ไป/แถมไป');
+const { eq, section, done } = makeCheck('29/10 — แถมน้ำจิ้มทุกออเดอร์ · ขายเพิ่มกระปุกละ 10 รวมในควรได้ · เช็คสต็อกกรอกแถมได้');
 
 const NOW = Date.now(), H = 3600000;
 const at = h => new Date(NOW - h * H);
@@ -29,31 +29,51 @@ const rows = g => g.countItemsAt_(SHOP).map(it => it.level ? { item: it.name, le
   : { item: it.name, packs: '', rem: it.name === 'น้ำจิ้มงา (กระปุก)' ? 4 : 0, pieces: '' });
 const said = (g, n) => g.__env.SENT.slice(n).map(x => x.messages.map(m => m.text).join('\n')).join('\n');
 
-section('ไม่ได้ใช้ POS — กรอกเงิน + แถมน้ำจิ้ม');
+section('ไม่ได้ใช้ POS — กรอกเงิน + แถมน้ำจิ้ม (ใช้ไปเท่าที่แถม)');
 let g = setup();
 let n0 = g.__env.SENT.length;
 let r = g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { cash: 500, sauceSesame: '6', sauceSuki: '' } });
 eq('บันทึกได้', r.success, true);
 const M = g.__env.SHEETS[g.SHEET_MALA_MONEY], hd = M.headers;
 const last = M.rows.slice(-1)[0];
-eq('ชีตเงินขายมีช่องแถมน้ำจิ้ม · 6 / 0', [last[hd.indexOf('แถมน้ำจิ้มงา')], last[hd.indexOf('แถมน้ำจิ้มสุกี้')]], [6, 0]);
+eq('ชีตเงินขายมีช่องแถมน้ำจิ้ม · 6 / (ว่าง)', [last[hd.indexOf('แถมน้ำจิ้มงา')], last[hd.indexOf('แถมน้ำจิ้มสุกี้')]], [6, '']);
 let t = said(g, n0);
-eq('เงินตรง (น้ำจิ้มไม่คิดเงิน)', /ได้จริง \(กรอกตอนเช็คสต็อก\) 500[\s\S]*→ ตรงกัน/.test(t), true);
-eq('สรุปบอกน้ำจิ้ม ใช้ไป 6 · แถมไป 6 (กรอก 6) → ตรง', /🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถมไป 6 \(POS 0 · กรอก 6\) → ตรง/.test(t), true);
+eq('ควรได้ 500 (น้ำจิ้มแถมหมด ไม่ได้ขายเพิ่ม) · ตรง', /ควรได้ \(ตามของที่ขายออกไป\) 500[\s\S]*→ ตรงกัน/.test(t), true);
+eq('บรรทัดน้ำจิ้ม', /🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถม 6 \(กรอก 6\) · ไม่ได้ขายเพิ่ม/.test(t), true);
 
-section('ไม่กรอกแถม → บอกว่าหาย (แต่ไม่คิดเป็นเงิน)');
+section('แถม 4 · ใช้ไป 6 → ขายเพิ่ม 2 กระปุก = 20 บาท รวมในควรได้');
+g = setup();
+n0 = g.__env.SENT.length;
+g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { cash: 520, sauceSesame: 4 } });
+t = said(g, n0);
+eq('ควรได้ 520 = ไม้ 500 + น้ำจิ้ม 20 · ได้ 520 ตรง', [/ควรได้ \(ตามของที่ขายออกไป\) 520/.test(t), /→ ตรงกัน/.test(t)], [true, true]);
+eq('บรรทัดน้ำจิ้มบอกขายเพิ่ม', /ใช้ไป 6 กระปุก · แถม 4 \(กรอก 4\) · ขายเพิ่ม 2 กระปุก = 20 บาท \(รวมในควรได้แล้ว\)/.test(t), true);
+
+section('ไม่ได้ใช้ POS ไม่กรอกแถม → นับเป็นขายหมด (เงินจะดูขาด) — ต้องกรอกแถมทุกครั้ง');
 g = setup();
 n0 = g.__env.SENT.length;
 g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { cash: 500 } });
 t = said(g, n0);
-eq('เงินยังตรง · น้ำจิ้มหาย 6', [/→ ตรงกัน/.test(t), /🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถมไป 0 → หาย 6 กระปุก \(ไม่คิดเป็นเงิน\)/.test(t)], [true, true]);
+eq('ควรได้ 560 · ขาด 60', [/ควรได้ \(ตามของที่ขายออกไป\) 560/.test(t), /🔻 ขาด 60/.test(t)], [true, true]);
+g = setup();
+n0 = g.__env.SENT.length;
+g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { cash: 500, sauceSesame: 0 } });
+eq('กรอก 0 = ไม่ได้แถมเลย (ขายหมด 6 = 60)', /ขายเพิ่ม 6 กระปุก = 60 บาท/.test(said(g, n0)), true);
 
-section('ใช้ POS — แถมตามบิล');
+section('ใช้ POS บางบิล + กรอกเงิน แต่ไม่กรอกแถม → ใช้จำนวนแถมจากบิล');
+g = setup({ bill: true });
+n0 = g.__env.SENT.length;
+g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { cash: 520 } });
+t = said(g, n0);
+eq('แถม 4 จากบิล · ขายเพิ่ม 2 = 20 · ควรได้ 520 ตรง', [/แถม 4 · ขายเพิ่ม 2 กระปุก = 20 บาท/.test(t), /→ ตรงกัน/.test(t)], [true, true]);
+
+section('ใช้ POS — แถมตามบิล (เลือกน้ำจิ้มบิลละ 1)');
 g = setup({ bill: true });
 n0 = g.__env.SENT.length;
 g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g) });
 t = said(g, n0);
-eq('POS แถม 4 · ใช้ 6 → หาย 2', /🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถมไป 4 → หาย 2 กระปุก/.test(t), true);
+eq('POS แถม 4 · ใช้ 6 → ขายเพิ่ม 2 = 20 (ไม่ได้กดใน POS = ของออกมากกว่าที่กด)',
+   [/🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถม 4 · ขายเพิ่ม 2 กระปุก = 20 บาท/.test(t), /ควรได้ \(ตามของที่ขายออกไป\) 520/.test(t)], [true, true]);
 
 section('กันผิด');
 g = setup();

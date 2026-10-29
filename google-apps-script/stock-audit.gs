@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-29a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-29b';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -925,9 +925,11 @@ function missingGoods_(loc, biz) {
       // ช่วงไม่ทับกัน — บิลที่ลงหลังรอบนับไม่เกินนาทีเดียวนับเป็นของช่วงก่อนหน้า
       var sl = auditSales_(loc, st(times[i - 1] + (i > 1 ? 60000 : 0)), st(times[i] + 60000));
       var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
-      var gap = u.value - (sl.gross - sl.untracked) - sl.dlvPieces * perStick;
       // 23/10: รอบนี้กรอกเงินตอนนับ (ไม่ได้ใช้ POS) — ได้จริง = เงินที่กรอก แทนยอด POS
       var mm = malaMoneyAtCount_(loc, times[i]);
+      // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมทุกออเดอร์) กระปุกละ 10 ก็เป็นของที่ขายออกไป
+      var sc = sauceSold_(u, mm && mm.sauce != null ? { typed: mm.sauce } : { pos: sl.sauceCups, dlv: sl.dlvOrders });
+      var gap = u.value + sc.value - (sl.gross - sl.untracked) - sl.dlvPieces * perStick;
       should += sl.revenue + gap; got += mm ? mm.total : sl.revenue;
     }
     from = times[0]; to = times[times.length - 1];
@@ -1084,6 +1086,30 @@ function cashCloseCount_(loc, day) {
 }
 
 /**
+ * 29/10 เจ้าของ: น้ำจิ้มงา/สุกี้ แถมทุกออเดอร์ (กระปุกละ 1 ฟรี) · ซื้อเพิ่มกระปุกละ 10 บาท
+ * ใช้ไป (จากเช็คสต็อก) − แถม = ขายเพิ่ม → × 10 บาท รวมใน "ควรได้"
+ *   แถม = บิล POS ที่เลือกน้ำจิ้ม + ออเดอร์เดลิเวอรี่ (แถมทุกออเดอร์) + ที่กรอกตอนเช็คสต็อก (วันที่ไม่ได้ใช้ POS)
+ * แถมเกินที่ใช้ = นับ/กรอกคลาด ไม่ติดลบเงิน
+ */
+var SAUCE_PRICE = 10;
+function sauceSold_(u, parts) {
+  var r3 = function (x) { return Math.round(x * 1000) / 1000; };
+  var used = r3((u.items || []).filter(function (x) { return /^น้ำจิ้ม.*กระปุก/.test(x.name); })
+                .reduce(function (a, x) { return a + x.qty; }, 0));
+  var free = r3((parts.pos || 0) + (parts.dlv || 0) + (parts.typed || 0));
+  var sold = Math.max(0, r3(used - free));
+  return { used: used, free: free, sold: sold, value: auditRound_(sold * SAUCE_PRICE), over: used < free ? r3(free - used) : 0,
+           pos: parts.pos || 0, dlv: parts.dlv || 0, typed: parts.typed || 0 };
+}
+function sauceText_(sc) {
+  if (!sc.used && !sc.free) return '';
+  var src = [sc.pos ? 'POS ' + sc.pos : '', sc.dlv ? 'เดลิเวอรี่ ' + sc.dlv : '', sc.typed ? 'กรอก ' + sc.typed : ''].filter(String);
+  return '🥣 น้ำจิ้ม ใช้ไป ' + sc.used + ' กระปุก · แถม ' + sc.free + (src.length > 1 || sc.typed ? ' (' + src.join(' · ') + ')' : '') +
+         (sc.sold ? ' · ขายเพิ่ม ' + sc.sold + ' กระปุก = ' + auditBaht_(sc.value) + ' บาท (รวมในควรได้แล้ว)'
+                  : sc.over ? ' · แถมเกินที่ใช้ ' + sc.over + ' (นับ/กรอกคลาด)' : ' · ไม่ได้ขายเพิ่ม');
+}
+
+/**
  * เทียบเงินสดของวันทำการหนึ่ง — ต้องมีทั้งรอบนับปิดร้านและเงินที่กรอก
  * ขาดอย่างใดอย่างหนึ่ง = คืน null เงียบ ๆ (รออีกอันเข้ามาแล้วค่อยเทียบ)
  *
@@ -1140,24 +1166,15 @@ function cashCheck_(loc, day, opt) {
   // ── สรุปสั้น (13/10 เจ้าของ: "แค่อยากรู้ว่าตรงกันมั้ย ไม่ตรง ควรได้เท่าไหร่ หายไปเท่าไหร่") ──
   // ของที่ออก (ยกมา + ของเข้า − ของเสีย − นับได้) ตีเป็นเงิน เทียบกับยอดที่กดใน POS
   // gap > 0 = ของออกมากกว่าที่ขาย (หาย / ไม่ได้กด POS) · gap < 0 = ขายมากกว่าของที่ออก (ลืมลงของเข้า)
-  var gap = auditRound_(u.value - (s.gross - s.untracked) - dlv);
-  var should = auditRound_(s.revenue + gap), tol = 10;
-  // 29/10 เจ้าของ: น้ำจิ้มที่แถมไป ไม่คิดเงิน (ราคา 0) ไม่ทำให้เงินขาด — บอกแยกว่าใช้ไปเท่ากับที่แถมไหม
-  //   แถม = บิล POS (จดทุกบิล) + ที่กรอกตอนเช็คสต็อกของวันที่ไม่ได้ใช้ POS (แทนบิลของวันนั้น)
-  var sauceLine = function (wm0) {
-    var used = u.items.filter(function (x) { return /น้ำจิ้ม/.test(x.name); }).reduce(function (a, x) { return a + x.qty; }, 0);
-    used = Math.round(used * 1000) / 1000;
-    var pos = s.sauceCups - (wm0 ? wm0.posSauce : 0), typed = wm0 ? wm0.sauce : 0, given = pos + typed;
-    if (!used && !given) return '';
-    var diff = Math.round((used - given) * 1000) / 1000;
-    return '🥣 น้ำจิ้ม ใช้ไป ' + used + ' กระปุก · แถมไป ' + given +
-           (typed ? ' (POS ' + pos + ' · กรอก ' + typed + ')' : '') +
-           (diff > 0 ? ' → หาย ' + diff + ' กระปุก' : diff < 0 ? ' → แถมเกินที่ใช้ ' + (-diff) + ' (นับ/กรอกคลาด)' : ' → ตรง') +
-           ' (ไม่คิดเป็นเงิน)';
-  };
   // 23/10: กรอกเงินตอนเช็คสต็อก (ไม่ได้ใช้ POS / ใช้ไม่ครบ) — ได้จริง = เงินที่กรอก เทียบกับของที่ออก
   // 23/10e: วันก่อนหน้าที่ไม่ได้นับ (รวมมาเทียบกับรอบนี้) กรอกเงินไว้ ก็รวมเข้ามา · วันที่ไม่ได้กรอกใช้บิล POS
   var wm = malaWindowMoney_(loc, day, prevMs, countMs);
+  // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมทุกออเดอร์) กระปุกละ 10 — เป็นของที่ขายออกไป รวมใน "ควรได้"
+  // วันที่กรอกเงิน ใช้จำนวนแถมที่กรอกแทนบิล/เดลิเวอรี่ของวันนั้น
+  var sauce = sauceSold_(u, { pos: s.sauceCups - (wm ? wm.posSauce : 0), dlv: s.dlvOrders - (wm ? wm.posDlv : 0),
+                              typed: wm ? wm.sauce : 0 });
+  var gap = auditRound_(u.value + sauce.value - (s.gross - s.untracked) - dlv);
+  var should = auditRound_(s.revenue + gap), tol = 10;
   if (wm && !opt.detail) {
     var otherOrders = s.orders - wm.posOrders, otherRev = auditRound_(s.revenue - wm.posRevenue);
     var gotAll = auditRound_(wm.total + otherRev);
@@ -1189,7 +1206,7 @@ function cashCheck_(loc, day, opt) {
     if (s.dlvOrders) M.push('(เดลิเวอรี่ ' + s.dlvOrders + ' ออเดอร์ — ไม่รวมในยอดนี้ หักของที่ออกไปกับเดลิเวอรี่ให้แล้ว)');
     M.push(mok ? '→ ตรงกัน' : (mdiff < 0 ? '🔻 ขาด ' : '🔺 เกิน ') + auditBaht_(Math.abs(mdiff)) + ' บาท');
     if (u.wasteValue) M.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
-    var sl1 = sauceLine(wm);
+    var sl1 = sauceText_(sauce);
     if (sl1) M.push(sl1);
     // ไม่เขียนผลทับแถวเงินสดในลิ้นชัก (POS_ปิดร้าน) — คนละเรื่องกับยอดที่กรอกตอนนับ
     return cashSay_(loc, { row: 0, ms: 0, cash: null, staff: '' }, { expected: should, diff: mdiff, ok: mok }, M.join('\n'), opt);
@@ -1222,7 +1239,7 @@ function cashCheck_(loc, day, opt) {
       return x.name + ' ' + x.qty + ' ' + x.unit; }).join(', ') + (oversSold.length > 4 ? ' …' : ''));
   }
   if (u.wasteValue) S.push('(หักของเสียแล้ว ' + auditBaht_(u.wasteValue) + ' บาท)');
-  var sl2 = sauceLine(null);
+  var sl2 = sauceText_(sauce);
   if (sl2) S.push(sl2);
   S.push('');
   if (noCash) {
@@ -1271,7 +1288,7 @@ function cashCheck_(loc, day, opt) {
       L.push('👉 สต็อกเพิ่มขึ้นแทนที่จะลด — มีของเข้าร้านที่ยังไม่ได้ลง เลยเทียบเงินจากสต็อกไม่ได้');
       L.push('   ลงของเข้าร้านย้อนหลังแล้วกด 💵 ดูผลเทียบเงินปิดร้าน ใหม่ หรือดูเทียบ POS ไปก่อน');
     } else {
-      var gapPos = auditRound_(u.value - (s.gross - s.untracked) - dlv);
+      var gapPos = auditRound_(u.value + sauce.value - (s.gross - s.untracked) - dlv);
       if (Math.abs(gapPos) >= 10) {
         L.push(gapPos > 0
           ? '👉 ของออกมากกว่าที่กด POS ' + auditBaht_(gapPos) + ' บาท — ขายแล้วไม่ได้กด / ลงของเสียไม่ครบ / ของหาย'
@@ -1745,15 +1762,16 @@ function malaWindowMoney_(loc, day, prevMs, countMs) {
   var st = function (ms) { return auditStamp_(new Date(ms)); };
   var first = cashBizDay_(prevMs), seen = {};
   malaMoneyRows_().forEach(function (r) { if (r.loc === loc && r.day >= first && r.day <= day) seen[r.day] = true; });
-  var out = { days: [], total: 0, posOrders: 0, posRevenue: 0, posSauce: 0, sauce: 0 };
+  var out = { days: [], total: 0, posOrders: 0, posRevenue: 0, posSauce: 0, posDlv: 0, sauce: 0 };
   Object.keys(seen).sort().forEach(function (d) {
     if (d !== day && cashCloseCount_(loc, d).mergedMs !== countMs) return;
     var mm = malaMoneyFor_(loc, d), start = cashDayStart_(d);
     var a = Math.max(prevMs, start), b = Math.min(countMs + 60000, start + 86400000 - 1000);
-    var sp = b > a ? auditSales_(loc, st(a), st(b)) : { orders: 0, revenue: 0, sauceCups: 0 };
+    var sp = b > a ? auditSales_(loc, st(a), st(b)) : { orders: 0, revenue: 0, sauceCups: 0, dlvOrders: 0 };
     out.days.push({ day: d, m: mm, posOrders: sp.orders, posRevenue: sp.revenue });
     out.total += mm.total; out.posOrders += sp.orders; out.posRevenue += sp.revenue;
-    out.posSauce += sp.sauceCups || 0; out.sauce += mm.sauce || 0;
+    // กรอกแถมน้ำจิ้มมา = ใช้แทนบิล/เดลิเวอรี่ของวันนั้น · ไม่ได้กรอก = ใช้จากบิลตามเดิม
+    if (mm.sauce != null) { out.posSauce += sp.sauceCups || 0; out.posDlv += sp.dlvOrders || 0; out.sauce += mm.sauce; }
   });
   if (!out.days.length) return null;
   out.total = auditRound_(out.total); out.posRevenue = auditRound_(out.posRevenue);
@@ -2217,6 +2235,12 @@ function malaMoneyRows_() {
   var idx = {};
   v[0].forEach(function (h, i) { idx[String(h).trim()] = i; });
   var out = [];
+  // แถมน้ำจิ้ม (29/10) — ว่างทั้งสองช่อง = ไม่ได้กรอก (null) ใช้บิล POS ของวันนั้นแทน
+  var sauceCell = function (row, a, b) {
+    var cells = [a, b].map(function (h) { return idx[h] === undefined ? '' : String(row[idx[h]] == null ? '' : row[idx[h]]).trim(); });
+    if (cells.every(function (c) { return c === ''; })) return null;
+    return cells.reduce(function (t, c) { return t + (Number(c) || 0); }, 0);
+  };
   for (var i = 1; i < v.length; i++) {
     var day = (typeof normDate_ === 'function') ? normDate_(v[i][idx['วันที่']]) : String(v[i][idx['วันที่']]).slice(0, 10);
     var loc = String(v[i][idx['สาขา']] || '').trim();
@@ -2224,8 +2248,7 @@ function malaMoneyRows_() {
     var rc = v[i][idx['รอบนับ']];
     out.push({ row: i + 1, day: day, loc: loc, cash: num_(v[i][idx['เงินสด']]), transfer: num_(v[i][idx['เงินโอน']]),
                thai: num_(v[i][idx['ไทยช่วยไทย']]), countMs: rc instanceof Date ? rc.getTime() : (Number(rc) || 0),
-               sauce: (idx['แถมน้ำจิ้มงา'] === undefined ? 0 : num_(v[i][idx['แถมน้ำจิ้มงา']])) +
-                      (idx['แถมน้ำจิ้มสุกี้'] === undefined ? 0 : num_(v[i][idx['แถมน้ำจิ้มสุกี้']])) });
+               sauce: sauceCell(v[i], 'แถมน้ำจิ้มงา', 'แถมน้ำจิ้มสุกี้') });
   }
   return out;
 }
@@ -2252,7 +2275,7 @@ function malaMoneySave_(loc, day, m, who, countMs, note) {
   var c = num_(m.cash), t = num_(m.transfer), h = num_(m.thai);
   sh.appendRow([day, Utilities.formatDate(now, auditTz_(), 'HH:mm:ss'), loc, who || '', c, t, h,
                 auditRound_(c + t + h), countMs ? new Date(countMs) : '', note || 'กรอกตอนเช็คสต็อก',
-                Number(m.sauceSesame) || 0, Number(m.sauceSuki) || 0]);
+                m.sauceSesame == null ? '' : Number(m.sauceSesame) || 0, m.sauceSuki == null ? '' : Number(m.sauceSuki) || 0]);
   SpreadsheetApp.flush();
   return { day: day, cash: c, transfer: t, thai: h, total: auditRound_(c + t + h) };
 }
