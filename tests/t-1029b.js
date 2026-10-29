@@ -115,6 +115,17 @@ section('ไม่ได้ใช้ POS + เดลิเวอรี่ 1 อ�
       /ควรได้ \(ตามของที่ขายออกไป\) 400/.test(t5), /→ ตรงกัน/.test(t5)], [true, true, true]);
 }
 {
+  // อุด้งไม่แถมน้ำจิ้ม — เดลิเวอรี่อุด้ง 1 ที่ (6 ชิ้น = 60) · น้ำจิ้ม 6 − แถม 4 = ขายเพิ่ม 2 (20) → 500 − 60 + 20 = 460
+  const g7 = setup();
+  const n7 = g7.__env.SENT.length;
+  g7.handleStockCount_({ token: 't', location: SHOP, rows: rows(g7), money: { cash: 460, sauceSesame: 4 },
+    delivery: [{ platform: 'Grab', amount: 60, items: [{ name: 'อุด้ง', qty: 1 }] }] });
+  const t7 = said(g7, n7);
+  eq('เดลิเวอรี่อุด้ง — ไม่มีน้ำจิ้มเดลิเวอรี่ · ขายเพิ่ม 2 = 20 · ควรได้ 460 ตรง',
+     [/ใช้ไป 6 กระปุก · แถมหน้าร้าน 4 \(กรอก 4\) · ขายเพิ่ม 2 กระปุก = 20 บาท/.test(t7), /ควรได้ \(ตามของที่ขายออกไป\) 460/.test(t7), /→ ตรงกัน/.test(t7)],
+     [true, true, true]);
+}
+{
   // มีชีส (ไม้ละ 15) ในรอบ — เดลิเวอรี่ยังหักชิ้นละ 10 พอดี ไม่ใช้ราคาเฉลี่ย
   const g6 = setup();
   push(g6, g6.SHEET_COUNT, { 'วันที่เวลา': at(6), 'สาขา': SHOP, 'รายการ': 'ชีส', 'จำนวน': 10, 'ประเภท': 'เช็คสต็อก' });
@@ -140,6 +151,13 @@ section('ชิ้นที่ออกไปกับเดลิเวอร�
     g4.deliveryPiecesOf_(row([{ name: 'หม่าล่าทะเล', qty: 1 }], 0, 1), idx, num),
     g4.deliveryPiecesOf_(row([{ name: 'หม่าล่ารวม', qty: 1 }], 0, 1), idx, num)], [12, 12, 13]);
   eq('ไม่มีข้อมูลเมนู = ใช้รวมจำนวนเดิม', g4.deliveryPiecesOf_(row([], 1, 4), idx, num), 5);
+  const withName = (r, t) => { r[idx['รายการ']] = t; return r; };
+  eq('น้ำจิ้มเดลิเวอรี่: อุด้งล้วน 0 · มีหม่าล่า 2 · อุด้ง+หม่าล่าทะเล 2 (ออเดอร์ละ 2) · แถวเก่า ดูชื่อรายการ', [
+    g4.deliverySauceOf_(row([{ name: 'อุด้ง', qty: 2 }], 1, 2), idx),
+    g4.deliverySauceOf_(row([{ name: 'หม่าล่ารวม', qty: 2 }], 0, 2), idx),
+    g4.deliverySauceOf_(row([{ name: 'อุด้ง', qty: 1 }, { name: 'หม่าล่าทะเล', qty: 1 }], 0, 2), idx),
+    g4.deliverySauceOf_(withName(row([], 0, 1), 'อุด้ง x1'), idx),
+    g4.deliverySauceOf_(withName(row([], 0, 1), 'หม่าล่าหน้าแดง x1'), idx)], [0, 2, 2, 0, 2]);
 }
 
 section('กันผิด');

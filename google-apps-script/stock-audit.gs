@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-29e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-29f';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -251,11 +251,23 @@ function deliveryPiecesOf_(r, idx, n) {
   if (idx['ของเพิ่ม'] !== undefined) pieces += n(r[idx['ของเพิ่ม']]) * DELIVERY_ADDON_PIECES;
   return pieces;
 }
+// เจ้าของ 29/10: เดลิเวอรี่แถมน้ำจิ้ม 2 กระปุก/ออเดอร์ (อยู่ในชิ้นเดลิเวอรี่แล้ว) · อุด้งไม่แถม
+// ออเดอร์ที่มีเมนูอื่นนอกจากอุด้ง = 2 · อุด้งล้วน = 0 · แถวเก่าไม่มีรายละเอียด ดูจากชื่อรายการ
+var DELIVERY_SAUCE = 2;
+var DELIVERY_NO_SAUCE = ['อุด้ง'];
+function deliverySauceOf_(r, idx) {
+  var items = [];
+  try { items = JSON.parse(String(r[idx['ข้อมูล']] || '[]')) || []; } catch (e) { items = []; }
+  var withSauce = items.length
+    ? items.some(function (x) { return (Number(x.qty) || 0) > 0 && DELIVERY_NO_SAUCE.indexOf(String(x.name || '').trim()) === -1; })
+    : /หม่าล่า/.test(String(r[idx['รายการ']] || ''));
+  return withSauce ? DELIVERY_SAUCE : 0;
+}
 
 function auditSales_(loc, fromStamp, toStamp) {
   var out = { revenue: 0, gross: 0, discount: 0, orders: 0,
               pieces: 0, sticks: 0, mama: 0, other: 0,
-              sauceCups: 0, dlvPieces: 0, dlvOrders: 0 };
+              sauceCups: 0, dlvPieces: 0, dlvOrders: 0, dlvSauce: 0 };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   /**
@@ -341,6 +353,7 @@ function auditSales_(loc, fromStamp, toStamp) {
   scan((typeof SHEET_DELIVERY === 'string') ? SHEET_DELIVERY : 'POS_Delivery', function (r, idx) {
     out.dlvOrders++;
     out.dlvPieces += deliveryPiecesOf_(r, idx, n);
+    out.dlvSauce += deliverySauceOf_(r, idx);
   });
 
   out.revenue  = auditRound_(out.revenue);
@@ -952,8 +965,8 @@ function missingGoods_(loc, biz) {
       // 23/10: รอบนี้กรอกเงินตอนนับ (ไม่ได้ใช้ POS) — ได้จริง = เงินที่กรอก แทนยอด POS
       var mm = malaMoneyAtCount_(loc, times[i]);
       // 29/10: น้ำจิ้มที่ออกเกินที่แถมหน้าร้าน (ขายเพิ่ม + เดลิเวอรี่ออเดอร์ละ 2) กระปุกละ 10 · ชิ้นเดลิเวอรี่ (มีน้ำจิ้มอยู่ในนั้น) หักชิ้นละ 10
-      var sc = sauceSold_(u, mm && mm.sauce != null ? { typed: mm.sauce, dlvOrders: sl.dlvOrders }
-                                                   : { pos: sl.sauceCups, dlvOrders: sl.dlvOrders });
+      var sc = sauceSold_(u, mm && mm.sauce != null ? { typed: mm.sauce, dlv: sl.dlvSauce }
+                                                   : { pos: sl.sauceCups, dlv: sl.dlvSauce });
       var gap = u.value + sc.goods - (sl.gross - sl.untracked) - sl.dlvPieces * DELIVERY_PIECE_BAHT;
       should += sl.revenue + gap; got += mm ? mm.total : sl.revenue;
     }
@@ -1113,20 +1126,19 @@ function cashCloseCount_(loc, day) {
 /**
  * 29/10 เจ้าของ: น้ำจิ้มงา/สุกี้ แถมทุกออเดอร์หน้าร้าน (กระปุกละ 1 ฟรี) · ซื้อเพิ่มกระปุกละ 10 บาท
  * ใช้ไป (จากเช็คสต็อก) − แถมหน้าร้าน − เดลิเวอรี่ = ขายเพิ่ม → × 10 บาท รวมใน "ควรได้"
- *   เดลิเวอรี่ = ออเดอร์ละ 2 กระปุก อยู่ใน 13 ชิ้นของเดลิเวอรี่แล้ว (หักชิ้นเดลิเวอรี่ทีเดียว ไม่หักซ้ำ)
+ *   เดลิเวอรี่ = ออเดอร์ละ 2 กระปุก (อุด้งไม่แถม) อยู่ในชิ้นเดลิเวอรี่แล้ว (หักชิ้นเดลิเวอรี่ทีเดียว ไม่หักซ้ำ)
  *   goods = น้ำจิ้มที่ออกไปเกินที่แถมหน้าร้าน (ขาย + เดลิเวอรี่) — ใช้คิดควรได้ คู่กับหักชิ้นเดลิเวอรี่ × 10
  *   แถมหน้าร้าน = บิล POS ที่เลือกน้ำจิ้ม · วันที่ไม่ได้ใช้ POS = ที่กรอกตอนเช็คสต็อก (แทนบิลของวันนั้น)
  * ใช้น้อยกว่าที่แถม = นับ/กรอกคลาด ไม่ติดลบเงิน
  */
 var SAUCE_PRICE = 10;
-var DELIVERY_SAUCE = 2;            // เจ้าของ 29/10: น้ำจิ้มแถมเดลิเวอรี่ 2 กระปุก/ออเดอร์ (รวมใน 13 ชิ้นแล้ว)
 function sauceSold_(u, parts) {
   var r3 = function (x) { return Math.round(x * 1000) / 1000; };
   var used = r3((u.items || []).filter(function (x) { return /^น้ำจิ้ม.*กระปุก/.test(x.name); })
                 .reduce(function (a, x) { return a + x.qty; }, 0));
   var free = r3((parts.pos || 0) + (parts.typed || 0));
   var left = Math.max(0, r3(used - free));
-  var dlv = Math.min(left, r3((parts.dlvOrders || 0) * DELIVERY_SAUCE));
+  var dlv = Math.min(left, r3(parts.dlv || 0));                 // น้ำจิ้มเดลิเวอรี่ (deliverySauceOf_)
   var sold = r3(left - dlv);
   return { used: used, free: free, dlv: dlv, sold: sold, value: auditRound_(sold * SAUCE_PRICE),
            goods: auditRound_(left * SAUCE_PRICE),
@@ -1203,7 +1215,7 @@ function cashCheck_(loc, day, opt) {
   // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมหน้าร้าน − เดลิเวอรี่ออเดอร์ละ 2) กระปุกละ 10 — รวมใน "ควรได้"
   // น้ำจิ้มเดลิเวอรี่อยู่ใน 13 ชิ้นที่หักไปแล้ว (goods นับเข้า + dlv หักออก = ไม่ซ้ำ)
   // วันที่กรอกแถมหน้าร้านมา ใช้ที่กรอกแทนบิลของวันนั้น
-  var sauce = sauceSold_(u, { pos: s.sauceCups - (wm ? wm.posSauce : 0), typed: wm ? wm.sauce : 0, dlvOrders: s.dlvOrders });
+  var sauce = sauceSold_(u, { pos: s.sauceCups - (wm ? wm.posSauce : 0), typed: wm ? wm.sauce : 0, dlv: s.dlvSauce });
   var gap = auditRound_(u.value + sauce.goods - (s.gross - s.untracked) - dlv);
   var should = auditRound_(s.revenue + gap), tol = 10;
   if (wm && !opt.detail) {
