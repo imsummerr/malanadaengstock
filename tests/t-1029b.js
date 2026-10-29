@@ -75,6 +75,20 @@ t = said(g, n0);
 eq('POS แถม 4 · ใช้ 6 → ขายเพิ่ม 2 = 20 (ไม่ได้กดใน POS = ของออกมากกว่าที่กด)',
    [/🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถม 4 · ขายเพิ่ม 2 กระปุก = 20 บาท/.test(t), /ควรได้ \(ตามของที่ขายออกไป\) 520/.test(t)], [true, true]);
 
+section('ตัวอย่างเจ้าของ: น้ำจิ้มงาเข้า 6 · เช็คสต็อกเหลือ 0 · แถม 5 → ขาย 1 = ต้องได้ 10 บาท');
+{
+  const g2 = setup();
+  // ฐานเช้านี้น้ำจิ้มงา 0 (ตั้งใหม่) แล้วส่งเข้าร้าน 6 กระปุก
+  push(g2, g2.SHEET_COUNT, { 'วันที่เวลา': at(5.9), 'สาขา': SHOP, 'รายการ': 'น้ำจิ้มงา (กระปุก)', 'จำนวน': 0, 'ประเภท': 'เช็คสต็อก' });
+  push(g2, g2.SHEET_INCOMING, { 'วันที่เวลา': at(5), 'สาขา': SHOP, 'รายการ': 'น้ำจิ้มงา (กระปุก)', 'จำนวน': 6, 'ประเภท': 'ของเข้าร้าน' });
+  const rows0 = g2.countItemsAt_(SHOP).map(it => it.level ? { item: it.name, level: g2.LEVELS[0] } : { item: it.name, packs: '', rem: 0, pieces: '' });
+  const n1 = g2.__env.SENT.length;
+  g2.handleStockCount_({ token: 't', location: SHOP, rows: rows0, money: { cash: 510, sauceSesame: 5 } });
+  const t2 = said(g2, n1);
+  eq('ใช้ไป 6 · แถม 5 · ขายเพิ่ม 1 = 10 บาท', /🥣 น้ำจิ้ม ใช้ไป 6 กระปุก · แถม 5 \(กรอก 5\) · ขายเพิ่ม 1 กระปุก = 10 บาท/.test(t2), true);
+  eq('ควรได้ = ไม้ 500 + น้ำจิ้ม 10 = 510 · ได้ 510 ตรง', [/ควรได้ \(ตามของที่ขายออกไป\) 510/.test(t2), /→ ตรงกัน/.test(t2)], [true, true]);
+}
+
 section('กันผิด');
 g = setup();
 r = g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g), money: { sauceSesame: 3 } });
