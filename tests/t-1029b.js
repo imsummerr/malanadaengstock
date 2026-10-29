@@ -89,15 +89,33 @@ section('ตัวอย่างเจ้าของ: น้ำจิ้มง
   eq('ควรได้ = ไม้ 500 + น้ำจิ้ม 10 = 510 · ได้ 510 ตรง', [/ควรได้ \(ตามของที่ขายออกไป\) 510/.test(t2), /→ ตรงกัน/.test(t2)], [true, true]);
 }
 
-section('ไม่ได้ใช้ POS + เดลิเวอรี่ 1 ออเดอร์ — กรอกแถมหน้าร้าน 4 · ระบบนับเดลิเวอรี่ให้เอง');
+section('ไม่ได้ใช้ POS + เดลิเวอรี่ 1 ออเดอร์ — น้ำจิ้มไม่ยุ่งกับเดลิเวอรี่ · ของหักตามเมนู (หม่าล่าหน้าแดง 13 ชิ้น)');
 {
   const g3 = setup();
   const n3 = g3.__env.SENT.length;
-  g3.handleStockCount_({ token: 't', location: SHOP, rows: rows(g3), money: { cash: 510, sauceSesame: 4 },
+  // ไม้ออก 50 = 500 − เดลิเวอรี่หม่าล่าหน้าแดง 1 ที่ 13 ชิ้น (130) + น้ำจิ้มขายเพิ่ม 6 − 4 = 2 (20) = ควรได้ 390
+  g3.handleStockCount_({ token: 't', location: SHOP, rows: rows(g3), money: { cash: 390, sauceSesame: 4 },
     delivery: [{ platform: 'Grab', amount: 100, items: [{ name: 'หม่าล่าหน้าแดง', qty: 1 }] }] });
   const t3 = said(g3, n3);
-  eq('ใช้ 6 = แถมหน้าร้าน 4 + เดลิเวอรี่ 1 + ขายเพิ่ม 1 (10 บาท)',
-     /ใช้ไป 6 กระปุก · แถมหน้าร้าน 4 \(กรอก 4\) · ไปกับเดลิเวอรี่ 1 · ขายเพิ่ม 1 กระปุก = 10 บาท/.test(t3), true);
+  eq('ใช้ 6 − แถมหน้าร้าน 4 = ขายเพิ่ม 2 (20 บาท) ไม่พูดถึงเดลิเวอรี่',
+     [/ใช้ไป 6 กระปุก · แถมหน้าร้าน 4 \(กรอก 4\) · ขายเพิ่ม 2 กระปุก = 20 บาท/.test(t3), /🥣[^\n]*เดลิเวอรี่/.test(t3)], [true, false]);
+  eq('หักเดลิเวอรี่ 13 ชิ้น · ควรได้ 390 ตรง', [/ควรได้ \(ตามของที่ขายออกไป\) 390/.test(t3), /→ ตรงกัน/.test(t3)], [true, true]);
+}
+
+section('ชิ้นที่ออกไปกับเดลิเวอรี่ — ตามตารางเมนู + ของเพิ่มอย่างละ 1');
+{
+  const g4 = fresh();
+  const D = g4.__env.SHEETS[g4.SHEET_DELIVERY] || (g4.__env.SHEETS[g4.SHEET_DELIVERY] = { headers: g4.DELIVERY_HEADERS.slice(), rows: [] });
+  const idx = {}; D.headers.forEach((h, i) => { idx[h] = i; });
+  const row = (items, addon, total) => { const r = D.headers.map(() => ''); r[idx['ข้อมูล']] = JSON.stringify(items);
+    if (idx['ของเพิ่ม'] !== undefined) r[idx['ของเพิ่ม']] = addon; r[idx['รวมจำนวน']] = total; return r; };
+  const num = v => Number(v) || 0;
+  eq('หม่าล่าหน้าแดง 1 + ของเพิ่ม 2 = 15', g4.deliveryPiecesOf_(row([{ name: 'หม่าล่าหน้าแดง', qty: 1 }], 2, 3), idx, num), 15);
+  eq('อุด้ง 2 = 12 · หม่าล่าทะเล 1 = 12 · หม่าล่ารวม 1 = 13', [
+    g4.deliveryPiecesOf_(row([{ name: 'อุด้ง', qty: 2 }], 0, 2), idx, num),
+    g4.deliveryPiecesOf_(row([{ name: 'หม่าล่าทะเล', qty: 1 }], 0, 1), idx, num),
+    g4.deliveryPiecesOf_(row([{ name: 'หม่าล่ารวม', qty: 1 }], 0, 1), idx, num)], [12, 12, 13]);
+  eq('ไม่มีข้อมูลเมนู = ใช้รวมจำนวนเดิม', g4.deliveryPiecesOf_(row([], 1, 4), idx, num), 5);
 }
 
 section('กันผิด');

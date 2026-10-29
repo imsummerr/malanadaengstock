@@ -104,23 +104,23 @@ eq('D2 ไม่มีบิล · D1 ขาย นับได้', view(g), [d
 r = g.handleMalaLateMoney_({ token: 't', location: SHOP, day: e2, money: {} });
 eq('ไม่กรอกอะไร = ไม่รับ', r.success, false);
 n0 = g.__env.SENT.length;
-r = g.handleMalaLateMoney_({ token: 't', location: SHOP, day: e2, money: { cash: 290 },
+r = g.handleMalaLateMoney_({ token: 't', location: SHOP, day: e2, money: { cash: 240 },
   delivery: [{ platform: 'Grab', amount: 120, items: [{ name: 'อุด้ง', qty: 1 }] }] });
 eq('บันทึกได้', r.success, true);
 eq('ชีตเงินขาย: ของ D2 ไม่มีรอบนับ · หมายเหตุลงย้อนหลัง', (() => { const x = g.__env.SHEETS[g.SHEET_MALA_MONEY].rows.slice(-1)[0];
-  return [x[0], x[4], x[8], x[9]]; })(), [e2, 290, '', 'ลงย้อนหลัง (ไม่ได้นับวันนั้น)']);
+  return [x[0], x[4], x[8], x[9]]; })(), [e2, 240, '', 'ลงย้อนหลัง (ไม่ได้นับวันนั้น)']);
 eq('เดลิเวอรี่ลงเป็นของ D2', g.cashBizDay_(new Date(g.__env.SHEETS[g.SHEET_DELIVERY].rows[0][0] + 'T' + g.__env.SHEETS[g.SHEET_DELIVERY].rows[0][1] + '+07:00').getTime()), e2);
 eq('แจ้งกลุ่ม', /ลงเงินขายย้อนหลัง[\s\S]*🛵 เดลิเวอรี่ 1 ออเดอร์/.test(said(g, n0)), true);
 eq('D2 = ขาย (รวมไปกับรอบนับถัดไป) · D1 นับได้', view(g), [dm(e2) + ' ขาย', dm(e1) + ' ขาย นับได้']);
 eq('ลงซ้ำไม่ได้', g.handleMalaLateMoney_({ token: 't', location: SHOP, day: e2, money: { cash: 1 } }).success, false);
-// นับปิดร้าน D1 เหลือ 30 → ของออก 40 ไม้ = 400 − ไปกับเดลิเวอรี่ 1 ที่ (10) = ควรได้ 390 · D2 กรอก 290 + D1 POS 100 = 390 ตรง
+// นับปิดร้าน D1 เหลือ 30 → ของออก 40 ไม้ = 400 − ไปกับเดลิเวอรี่อุด้ง 1 ที่ (6 ชิ้น = 60) = ควรได้ 340 · D2 กรอก 240 + D1 POS 100 = 340 ตรง
 n0 = g.__env.SENT.length;
 g.handleStockCount_({ token: 't', location: SHOP, rows: rows(g).map(x => x.item === 'ดอลลี่' ? Object.assign({}, x, { rem: 30 }) : x), forDay: e1 });
 g.cacheClear_();
 let t = said(g, n0);
 eq('D2 รวมไปกับรอบนี้', g.cashCloseCount_(SHOP, e2).mergedMs, g.cashCloseCount_(SHOP, e1).countMs);
-eq('สรุปปิดร้าน D1: ได้จริงรวมเงิน D2 + POS D1 = 390 ตรง',
-   [/ได้จริง 390/.test(t), new RegExp('• ' + dm(e2) + ' กรอกเอง 290').test(t), /POS วันอื่นในช่วงนี้ 1 บิล 100/.test(t), /→ ตรงกัน/.test(t)],
+eq('สรุปปิดร้าน D1: ได้จริงรวมเงิน D2 + POS D1 = 340 ตรง',
+   [/ได้จริง 340/.test(t), new RegExp('• ' + dm(e2) + ' กรอกเอง 240').test(t), /POS วันอื่นในช่วงนี้ 1 บิล 100/.test(t), /→ ตรงกัน/.test(t)],
    [true, true, true, true]);
 eq('สรุปของ D2 บอกว่ารวมไปเทียบกับรอบนับ', new RegExp('ไม่ได้นับปิดร้านวันที่ ' + dm(e2) + ' · รวมไปเทียบกับรอบนับ').test(t), true);
 eq('ไม่ค้างแล้ว', view(g), []);
