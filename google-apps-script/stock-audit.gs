@@ -25,7 +25,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['stock-audit.gs'] = '2026-10-29d';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['stock-audit.gs'] = '2026-10-29e';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 /** เตือนตอนกี่โมง (19 = 1 ทุ่ม) */
 var AUDIT_REMIND_HOUR = 19;
@@ -234,6 +234,8 @@ function auditPrevCountTime_(loc, now) {
  */
 var DELIVERY_PIECES = { 'อุด้ง': 6, 'หม่าล่าหน้าแดง': 13, 'หม่าล่าทะเล': 12, 'หม่าล่ารวม': 13 };
 var DELIVERY_ADDON_PIECES = 1;     // ของเพิ่ม 1 อย่าง = ของ 1 ชิ้น
+// เจ้าของ 29/10: ชิ้นเดลิเวอรี่ไม่มีชีส — หักชิ้นละ 10 พอดี ไม่ใช้ราคาเฉลี่ยของรอบ (ชีส 15 ทำให้เพี้ยนเป็นเศษสตางค์)
+var DELIVERY_PIECE_BAHT = 10;
 function deliveryPiecesOf_(r, idx, n) {
   var items = [];
   try { items = JSON.parse(String(r[idx['ข้อมูล']] || '[]')) || []; } catch (e) { items = []; }
@@ -947,12 +949,12 @@ function missingGoods_(loc, biz) {
       var u = cashUsage_(loc, times[i]);
       // ช่วงไม่ทับกัน — บิลที่ลงหลังรอบนับไม่เกินนาทีเดียวนับเป็นของช่วงก่อนหน้า
       var sl = auditSales_(loc, st(times[i - 1] + (i > 1 ? 60000 : 0)), st(times[i] + 60000));
-      var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
       // 23/10: รอบนี้กรอกเงินตอนนับ (ไม่ได้ใช้ POS) — ได้จริง = เงินที่กรอก แทนยอด POS
       var mm = malaMoneyAtCount_(loc, times[i]);
-      // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมหน้าร้าน) กระปุกละ 10 ก็เป็นของที่ขายออกไป
-      var sc = sauceSold_(u, mm && mm.sauce != null ? { typed: mm.sauce } : { pos: sl.sauceCups });
-      var gap = u.value + sc.value - (sl.gross - sl.untracked) - sl.dlvPieces * perStick;
+      // 29/10: น้ำจิ้มที่ออกเกินที่แถมหน้าร้าน (ขายเพิ่ม + เดลิเวอรี่ออเดอร์ละ 2) กระปุกละ 10 · ชิ้นเดลิเวอรี่ (มีน้ำจิ้มอยู่ในนั้น) หักชิ้นละ 10
+      var sc = sauceSold_(u, mm && mm.sauce != null ? { typed: mm.sauce, dlvOrders: sl.dlvOrders }
+                                                   : { pos: sl.sauceCups, dlvOrders: sl.dlvOrders });
+      var gap = u.value + sc.goods - (sl.gross - sl.untracked) - sl.dlvPieces * DELIVERY_PIECE_BAHT;
       should += sl.revenue + gap; got += mm ? mm.total : sl.revenue;
     }
     from = times[0]; to = times[times.length - 1];
@@ -1110,24 +1112,31 @@ function cashCloseCount_(loc, day) {
 
 /**
  * 29/10 เจ้าของ: น้ำจิ้มงา/สุกี้ แถมทุกออเดอร์หน้าร้าน (กระปุกละ 1 ฟรี) · ซื้อเพิ่มกระปุกละ 10 บาท
- * ใช้ไป (จากเช็คสต็อก) − แถมหน้าร้าน = ขายเพิ่ม → × 10 บาท รวมใน "ควรได้" · ไม่ยุ่งกับเดลิเวอรี่
+ * ใช้ไป (จากเช็คสต็อก) − แถมหน้าร้าน − เดลิเวอรี่ = ขายเพิ่ม → × 10 บาท รวมใน "ควรได้"
+ *   เดลิเวอรี่ = ออเดอร์ละ 2 กระปุก อยู่ใน 13 ชิ้นของเดลิเวอรี่แล้ว (หักชิ้นเดลิเวอรี่ทีเดียว ไม่หักซ้ำ)
+ *   goods = น้ำจิ้มที่ออกไปเกินที่แถมหน้าร้าน (ขาย + เดลิเวอรี่) — ใช้คิดควรได้ คู่กับหักชิ้นเดลิเวอรี่ × 10
  *   แถมหน้าร้าน = บิล POS ที่เลือกน้ำจิ้ม · วันที่ไม่ได้ใช้ POS = ที่กรอกตอนเช็คสต็อก (แทนบิลของวันนั้น)
  * ใช้น้อยกว่าที่แถม = นับ/กรอกคลาด ไม่ติดลบเงิน
  */
 var SAUCE_PRICE = 10;
+var DELIVERY_SAUCE = 2;            // เจ้าของ 29/10: น้ำจิ้มแถมเดลิเวอรี่ 2 กระปุก/ออเดอร์ (รวมใน 13 ชิ้นแล้ว)
 function sauceSold_(u, parts) {
   var r3 = function (x) { return Math.round(x * 1000) / 1000; };
   var used = r3((u.items || []).filter(function (x) { return /^น้ำจิ้ม.*กระปุก/.test(x.name); })
                 .reduce(function (a, x) { return a + x.qty; }, 0));
   var free = r3((parts.pos || 0) + (parts.typed || 0));
-  var sold = Math.max(0, r3(used - free));
-  return { used: used, free: free, sold: sold, value: auditRound_(sold * SAUCE_PRICE),
+  var left = Math.max(0, r3(used - free));
+  var dlv = Math.min(left, r3((parts.dlvOrders || 0) * DELIVERY_SAUCE));
+  var sold = r3(left - dlv);
+  return { used: used, free: free, dlv: dlv, sold: sold, value: auditRound_(sold * SAUCE_PRICE),
+           goods: auditRound_(left * SAUCE_PRICE),
            over: used < free ? r3(free - used) : 0, pos: parts.pos || 0, typed: parts.typed || 0 };
 }
 function sauceText_(sc) {
   if (!sc.used && !sc.free) return '';
   return '🥣 น้ำจิ้ม ใช้ไป ' + sc.used + ' กระปุก · แถมหน้าร้าน ' + sc.free +
          (sc.typed ? ' (' + (sc.pos ? 'POS ' + sc.pos + ' · ' : '') + 'กรอก ' + sc.typed + ')' : '') +
+         (sc.dlv ? ' · เดลิเวอรี่ ' + sc.dlv + ' (อยู่ในชิ้นเดลิเวอรี่แล้ว)' : '') +
          (sc.sold ? ' · ขายเพิ่ม ' + sc.sold + ' กระปุก = ' + auditBaht_(sc.value) + ' บาท (รวมในควรได้แล้ว)'
                   : sc.over ? ' · ใช้น้อยกว่าที่แถม ' + sc.over + ' (นับ/กรอกคลาด)' : ' · ไม่ได้ขายเพิ่ม');
 }
@@ -1169,8 +1178,7 @@ function cashCheck_(loc, day, opt) {
   var sDay = auditSales_(loc, st(dayStart - 1000), st(drawerEnd));                         // ทั้งวัน
   var pre = prevMs > dayStart ? auditSales_(loc, st(dayStart - 1000), st(prevMs)).cashSales : 0;
   var old = prevMs < dayStart ? auditSales_(loc, st(prevMs), st(dayStart - 1000)).cashSales : 0;
-  var perStick = u.sticks > 0 ? u.value / u.sticks : 10;
-  var dlv = auditRound_(s.dlvPieces * perStick);
+  var dlv = auditRound_(s.dlvPieces * DELIVERY_PIECE_BAHT);
   var flt = cashProp_('CASH_FLOAT', 0);
   // เงินสดควรมีตามของที่ออกจากร้าน — เหลือไว้ในรายละเอียด (เมนูดูย้อนหลัง)
   var stockExpected = auditRound_(u.value + s.untracked - dlv - s.discount - s.redeem -
@@ -1192,10 +1200,11 @@ function cashCheck_(loc, day, opt) {
   // 23/10: กรอกเงินตอนเช็คสต็อก (ไม่ได้ใช้ POS / ใช้ไม่ครบ) — ได้จริง = เงินที่กรอก เทียบกับของที่ออก
   // 23/10e: วันก่อนหน้าที่ไม่ได้นับ (รวมมาเทียบกับรอบนี้) กรอกเงินไว้ ก็รวมเข้ามา · วันที่ไม่ได้กรอกใช้บิล POS
   var wm = malaWindowMoney_(loc, day, prevMs, countMs);
-  // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมหน้าร้าน) กระปุกละ 10 — เป็นของที่ขายออกไป รวมใน "ควรได้"
-  // วันที่กรอกแถมหน้าร้านมา ใช้ที่กรอกแทนบิลของวันนั้น · ไม่ยุ่งกับเดลิเวอรี่
-  var sauce = sauceSold_(u, { pos: s.sauceCups - (wm ? wm.posSauce : 0), typed: wm ? wm.sauce : 0 });
-  var gap = auditRound_(u.value + sauce.value - (s.gross - s.untracked) - dlv);
+  // 29/10: น้ำจิ้มที่ขายเพิ่ม (ใช้ไป − แถมหน้าร้าน − เดลิเวอรี่ออเดอร์ละ 2) กระปุกละ 10 — รวมใน "ควรได้"
+  // น้ำจิ้มเดลิเวอรี่อยู่ใน 13 ชิ้นที่หักไปแล้ว (goods นับเข้า + dlv หักออก = ไม่ซ้ำ)
+  // วันที่กรอกแถมหน้าร้านมา ใช้ที่กรอกแทนบิลของวันนั้น
+  var sauce = sauceSold_(u, { pos: s.sauceCups - (wm ? wm.posSauce : 0), typed: wm ? wm.sauce : 0, dlvOrders: s.dlvOrders });
+  var gap = auditRound_(u.value + sauce.goods - (s.gross - s.untracked) - dlv);
   var should = auditRound_(s.revenue + gap), tol = 10;
   if (wm && !opt.detail) {
     var otherOrders = s.orders - wm.posOrders, otherRev = auditRound_(s.revenue - wm.posRevenue);
@@ -1310,7 +1319,7 @@ function cashCheck_(loc, day, opt) {
       L.push('👉 สต็อกเพิ่มขึ้นแทนที่จะลด — มีของเข้าร้านที่ยังไม่ได้ลง เลยเทียบเงินจากสต็อกไม่ได้');
       L.push('   ลงของเข้าร้านย้อนหลังแล้วกด 💵 ดูผลเทียบเงินปิดร้าน ใหม่ หรือดูเทียบ POS ไปก่อน');
     } else {
-      var gapPos = auditRound_(u.value + sauce.value - (s.gross - s.untracked) - dlv);
+      var gapPos = auditRound_(u.value + sauce.goods - (s.gross - s.untracked) - dlv);
       if (Math.abs(gapPos) >= 10) {
         L.push(gapPos > 0
           ? '👉 ของออกมากกว่าที่กด POS ' + auditBaht_(gapPos) + ' บาท — ขายแล้วไม่ได้กด / ลงของเสียไม่ครบ / ของหาย'
