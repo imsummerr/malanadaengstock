@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-29f';
+const PAGE_BUILD = '2026-10-29g';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -527,7 +527,7 @@ function render() {
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
 const WANT_FILES = { 'pos-backend.gs': '2026-10-29c', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-29c',
-                     'stock-audit.gs': '2026-10-29b', 'line-expiry-alert.gs': '2026-10-13' };
+                     'stock-audit.gs': '2026-10-29c', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้
     const ver = D.version ? String(D.version).split('·')[0].trim() : '';
@@ -1707,14 +1707,15 @@ function viewCount(v) {
         <span style="flex:1">${m[1]}</span>
         <input id="cm-${m[0]}" type="number" inputmode="decimal" min="0" placeholder="–" style="width:110px;text-align:right">
         <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('')}
-      <div style="font-weight:700;margin-top:10px">🥣 แถมน้ำจิ้มไป <small style="font-weight:400">(ฟรี ออเดอร์ละ 1 กระปุก)</small></div>
+      <div style="font-weight:700;margin-top:10px">🥣 แถมน้ำจิ้มหน้าร้าน <small style="font-weight:400">(ฟรี ออเดอร์ละ 1 กระปุก · ไม่รวมเดลิเวอรี่)</small></div>
       ${SAUCE_FIELDS.map(m => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
         <span style="flex:1">${m[1]}</span>
         <input id="cm-${m[0]}" type="number" inputmode="numeric" min="0" step="1" placeholder="–" style="width:110px;text-align:right">
         <span class="note" style="width:42px;margin:0">กระปุก</span></div>`).join('')}
       <p class="note">ใส่ยอดทั้งวัน (รวมที่กดใน POS ด้วย ไม่รวมเดลิเวอรี่) · เงินสดใส่ที่เหลือในลิ้นชักจริง —
         หยิบไปจ่ายค่าอะไร เจ้าของร้านแจ้งในไลน์ ระบบบวกกลับให้ · กรอกแล้วระบบใช้ยอดนี้แทน POS ของวันนั้น · วันที่ใช้ POS ปล่อยว่าง ·
-        น้ำจิ้มที่แถมไปต้องกรอกทุกครั้ง — น้ำจิ้มที่ขายเพิ่ม (กระปุกละ 10) ไม่ต้องกรอก ระบบคิดจาก ใช้ไป − แถม แล้วรวมในยอดที่ควรได้ให้</p>
+        แถมน้ำจิ้มหน้าร้านต้องกรอกทุกครั้ง · เดลิเวอรี่ระบบนับให้ออเดอร์ละ 1 ไม่ต้องกรอก ·
+        น้ำจิ้มที่ขายเพิ่ม (กระปุกละ 10) ไม่ต้องกรอก ระบบคิดจาก ใช้ไป − แถม − เดลิเวอรี่ แล้วรวมในยอดที่ควรได้ให้</p>
     </div>
     <div id="c-dlv" style="margin-top:14px">
       <h2 style="font-size:16px">🛵 เดลิเวอรี่<span id="cd-day">วันนี้</span> <small style="font-weight:400">— กรอกเฉพาะวันที่ไม่ได้ใช้ POS</small></h2>
@@ -1919,7 +1920,7 @@ function lmForm(loc, kind) {
         oninput="LM.${key}${m[0]}=this.value.trim()" style="width:110px;text-align:right">
       <span class="note" style="width:28px;margin:0">บาท</span></div>`).join('');
   const sauce = SAUCE_FIELDS.map(m => `<div style="display:flex;align-items:center;gap:10px;margin:8px 0">
-      <span style="flex:1">แถม${m[1]}</span>
+      <span style="flex:1">แถม${m[1]} (หน้าร้าน)</span>
       <input id="lm-${m[0]}" type="number" inputmode="numeric" min="0" step="1" placeholder="–" value="${esc(LM[m[0]] || '')}"
         oninput="LM.${m[0]}=this.value.trim()" style="width:110px;text-align:right">
       <span class="note" style="width:42px;margin:0">กระปุก</span></div>`).join('');
