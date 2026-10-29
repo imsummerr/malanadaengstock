@@ -228,7 +228,7 @@ function apiUrl() {
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-29a';
+const PAGE_BUILD = '2026-10-29b';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -526,7 +526,7 @@ function render() {
  * ไฟล์ .gs ที่ควรเป็นรุ่นล่าสุด — หลังบ้านบอกรุ่นที่วางอยู่จริง (D.files) ไฟล์ไหนเก่ากว่านี้ขึ้นเตือนเจ้าของ
  * แก้ไฟล์ไหนใน repo เปลี่ยนรุ่นของไฟล์นั้นตรงนี้ด้วย (และใน GS_FILES ของไฟล์นั้น)
  */
-const WANT_FILES = { 'pos-backend.gs': '2026-10-24a', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-29a',
+const WANT_FILES = { 'pos-backend.gs': '2026-10-24a', 'stock-costing.gs': '2026-10-23a', 'line-intake.gs': '2026-10-29b',
                      'stock-audit.gs': '2026-10-27a', 'line-expiry-alert.gs': '2026-10-13' };
 function staleFiles() {
   if (!D.files) {   // หลังบ้านเก่ากว่าตัวที่บอกรุ่นไฟล์ได้

@@ -23,7 +23,7 @@
  ************************************************************/
 
 var GS_FILES = GS_FILES || {};
-GS_FILES['line-intake.gs'] = '2026-10-29a';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
+GS_FILES['line-intake.gs'] = '2026-10-29b';   // รุ่นของไฟล์นี้ — หน้าสต็อกบอกเจ้าของถ้ายังไม่ได้วางใหม่
 
 // ══════════════════════════════════════════════════════════════
 //  ตั้งค่า
@@ -628,7 +628,7 @@ var INTAKE_PERKG_RE =
  * มีคำว่าบาทตามหลัง = ราคาต่อถุง ไม่ใช่จำนวน ไม่แตะ
  */
 var INTAKE_PERBAG_RE =
-  /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(อัน|ห่อ|ก้อน|ชิ้น|ซอง)?(?!\s*(?:\d|บาท|฿|บ\.))/;
+  /(?:ถุงละ|แพ็คละ|แพคละ|แพ็กละ|ห่อละ|กล่องละ|ลังละ)\s*(\d+)\s*(?:(อัน|ห่อ|ก้อน|ชิ้น|ซอง|ใบ|หลอด|ลูก|แผ่น)|(?!\s*(?:\d|บาท|฿|บ\.)))/;
 
 /**
  * บรรทัดวันที่บนหัวข้อความค่าใช้จ่าย (13/10) — "10/10/2026" · "วันที่ 10/10" · "10/10/69" · "10/10 หม่าล่า ทรัพย์"
@@ -976,6 +976,8 @@ function intakeParseLine_(line) {
   var stripped = intakeStripPrefix_(text);
   if (stripped !== null) text = stripped;
   if (!text) return null;
+  // 29/10: "ถ้วย 1000 มล 3 แพ็ค" — ขนาดเป็นส่วนของชื่อ (ชีตชื่อ "ถ้วย1000 มล") ไม่ใช่จำนวน
+  text = text.replace(/(ถ้วย|แก้ว|ฝา|ชาม)\s*(\d+)\s*(มล\.?|ml|ออน|oz|ซีซี|cc)(?=\s|$)/i, '$1$2 $3');
 
   // ตัดคำว่า "บัตร" / "โอน" ออกก่อน ไม่งั้นมันจะไปติดอยู่ในชื่อของ
   var pay = intakePayOf_(text);
@@ -1334,7 +1336,8 @@ function intakeStockQty_(item, counts, gram, perBag) {
 
   // บอก "ถุงละ N" มาเองกับของที่ยกถุงแล้วนับย่อยได้ — ใช้ตามที่บอก (ถุงนี้อาจไม่เท่าปกติ)
   // ของพร้อมส่ง (เต้าหู้หลอด 16/10) ก็ซื้อยกถุงเหมือนกัน บางถุงมี 10 หลอด
-  if (perBag > 0 && (item.kind === 'วัตถุดิบ' || item.ready) && item.perPack > 1 && counts && counts.length &&
+  // ของใช้ (29/10 ถ้วย "แพ็คละ 25 ใบ") ก็เหมือนกัน — แพ็คที่ซื้อมาอาจไม่เท่าที่ตั้งไว้
+  if (perBag > 0 && (item.kind === 'วัตถุดิบ' || item.kind === 'ของใช้' || item.ready) && item.perPack > 1 && counts && counts.length &&
       intakeNorm_(counts[0].unit) === intakeNorm_(item.packUnit)) {
     return { base: counts[0].n * perBag, packs: counts[0].n, per: perBag,
              unitNote: counts[0].n + ' ' + item.packUnit + ' × ' + perBag + ' ' + item.subUnit };
@@ -1549,9 +1552,11 @@ function intakeMatchItem_(rawName, names) {
   }
 
   // ชื่อเล่นโผล่อยู่ในคำที่พิมพ์ เช่น "สลีปดอลลี่" มีคำว่า "ดอลลี่" — ยาวสุดชนะ
+  // ชื่อเล่นสั้น ๆ (2 ตัว เช่น "อก") ต้องขึ้นต้นคำ — 29/10 "ไส้กรอกแดง" มี "อก" อยู่กลางคำ เลยไปลงไก่
   var pick = '', pickLen = 0;
   for (i = 0; i < aliasKeys.length; i++) {
     n = intakeNorm_(aliasKeys[i]);
+    if (n && n.length <= 2 && norm.indexOf(n) !== 0) continue;
     if (n && norm.indexOf(n) !== -1 && n.length > pickLen) {
       pick = INTAKE_ALIAS[aliasKeys[i]]; pickLen = n.length;
     }
@@ -1581,6 +1586,11 @@ function intakeMatchItem_(rawName, names) {
   for (i = 0; i < names.length; i++) {
     n = intakeNorm_(names[i]);
     if (!n) continue;
+    // ขึ้นต้นเหมือนกันแต่ท้ายคนละคำเลย = คนละอย่าง ไม่ใช่สะกดผิด (29/10 "ไส้กรอกแดง" ≠ "ไส้กรอกชีส")
+    var pre = 0;
+    while (pre < norm.length && pre < n.length && norm[pre] === n[pre]) pre++;
+    var ta = norm.slice(pre), tb = n.slice(pre);
+    if (pre >= 3 && Math.min(ta.length, tb.length) >= 2 && intakeLev_(ta, tb) >= Math.max(ta.length, tb.length)) continue;
     var score = 1 - intakeLev_(norm, n) / Math.max(norm.length, n.length);
     if (score > bestScore) { bestScore = score; best = names[i]; }
   }
@@ -2192,7 +2202,7 @@ function intakeSaveAndSummarize_(items, ctx, source, rawText, skipped) {
             var it0 = byName[hit.name];
             var baseU = (it0.bakery && typeof bakeryUnits_ === 'function') ? bakeryUnits_(hit.name).piece : it0.subUnit;
             stockLines.push('• ' + hit.name + ' ' + q.base + ' ' + baseU +
-                            (q.packs ? '  (' + q.packs + ' ' + it0.packUnit + ')' : '') +
+                            (q.packs && !q.unitNote ? '  (' + q.packs + ' ' + it0.packUnit + ')' : '') +
                             (it.start && it0.bakery ? '  วันเข้า ' + intakeDM_(it.start) : '') +
                             (q.unitNote ? '  (' + q.unitNote + ')' : '') +
                             (link ? '  (ต้นทุนจากที่ซื้อไว้ ' + intakeMoney_(link.baht) + ' บาท)' : '') +
