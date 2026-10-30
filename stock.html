@@ -224,11 +224,18 @@ function apiUrl() {
   // ตั้งเองค้างอยู่ใน localStorage จะทับตัวใหม่เงียบ ๆ แล้วยิงไป deployment ที่ตายแล้ว
   return (DEFAULT_API_URL || s.apiUrl || '').trim();
 }
+// 30/10: สองตัวนี้ถูกเรียกตอนขึ้น error แต่ไม่เคยมีในหน้านี้ — error ไหนผ่านมาทางนี้ หน้าค้าง "กำลังโหลด..." เงียบ ๆ
+// ไฟล์มี URL มาเสมอ (ค่าที่ตั้งเองไม่ถูกใช้) จึงไม่ต้องโชว์ปุ่มรีเซ็ต · resetApiUrl เหลือไว้ล้างค่าเก่าในเครื่อง
+function usingSavedUrl() { return !DEFAULT_API_URL; }
+function resetApiUrl() {
+  try { const s = JSON.parse(localStorage.getItem('pos_settings') || '{}'); delete s.apiUrl; localStorage.setItem('pos_settings', JSON.stringify(s)); } catch (e) {}
+  location.reload();
+}
 
 /* รุ่นของหน้าเว็บ — โชว์ไว้บนหัวจอ เวลาเจอ "ทำไมไม่ขึ้น" จะได้รู้ทันที
    ว่าเครื่องนั้นเปิดไฟล์เก่าค้างอยู่ หรือได้ตัวใหม่แล้วจริง
    แก้เลขนี้ทุกครั้งที่แก้หน้านี้ */
-const PAGE_BUILD = '2026-10-29j';
+const PAGE_BUILD = '2026-10-30a';
 
 const auth = { token: '', name: '', branch: '', branches: [], role: 'staff' };
 
@@ -286,12 +293,36 @@ function toast(html, ms) {
 }
 
 /* ── เรียก API ── */
+/**
+ * อ่านคำตอบจาก Apps Script — โค้ดหลังบ้านพัง / วางไฟล์ .gs ไม่ครบ / Deploy ผิด
+ * Google ตอบกลับเป็นหน้า HTML ไม่ใช่ JSON · เดิม res.json() ขึ้น error งง ๆ (Unexpected token '<')
+ * 30/10: บอกสาเหตุ + ข้อความ error จากหน้านั้น (มักบอกชื่อไฟล์กับบรรทัดที่พัง) แบบเดียวกับ pos.html
+ */
+async function readApiJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const head = text.slice(0, 400);
+    const said = text.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (/<html|<!doctype/i.test(head)) {
+      if (/accounts\.google\.com|ลงชื่อเข้าใช้|Sign in/i.test(head)) {
+        throw new Error('Apps Script ไม่เปิดให้คนอื่นเรียกใช้ — ตอน Deploy ต้องตั้ง "Who has access" เป็น Anyone แล้ว Deploy ใหม่');
+      }
+      throw new Error('Apps Script ตอบกลับมาเป็นหน้าเว็บ ไม่ใช่ข้อมูล (HTTP ' + res.status + ') — ' +
+                      'มักเกิดจากไฟล์ .gs ที่เพิ่งวางไม่ครบหรือมีจุดผิด ให้วางไฟล์นั้นใหม่ทั้งไฟล์ → Ctrl+S → Deploy เวอร์ชันใหม่' +
+                      (said ? '\nGoogle บอกว่า: ' + said : ''));
+    }
+    throw new Error('อ่านคำตอบจาก Server ไม่ได้: ' + (said || head.slice(0, 120)));
+  }
+}
 async function apiPost(body) {
   const res = await fetch(apiUrl(), {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify(Object.assign({ token: auth.token }, body))
   });
-  return handle(await res.json());
+  return handle(await readApiJson(res));
 }
 /**
  * รหัสบันทึก — ข้อมูลชุดเดิมได้รหัสเดิม (เน็ตหลุดตอนรอคำตอบแล้วกดบันทึกซ้ำ หลังบ้านไม่ลงซ้ำ)
@@ -311,7 +342,7 @@ const dupNote = r => r.duplicated ? '<br><b>รายการนี้บัน
 async function apiGet(params) {
   const q = new URLSearchParams(Object.assign({ token: auth.token, _: Date.now() }, params));
   const res = await fetch(apiUrl() + '?' + q, { cache: 'no-store' });
-  return handle(await res.json());
+  return handle(await readApiJson(res));
 }
 function handle(json) {
   if (json.code === 401) { doLogout(); throw new Error('Session หมดอายุ กรุณา Login ใหม่'); }
@@ -342,7 +373,7 @@ async function doLogin() {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'login', username, password })
     });
-    const data = await res.json();
+    const data = await readApiJson(res);
     if (data.success) {
       sessionStorage.setItem('pos_token', data.token);
       sessionStorage.setItem('pos_name', data.name);
@@ -356,7 +387,7 @@ async function doLogin() {
       document.getElementById('login-password').value = '';
     }
   } catch (e) {
-    errEl.textContent = 'เชื่อมต่อ Server ไม่ได้';
+    errEl.textContent = /Apps Script|Server/.test(e.message || '') ? e.message : 'เชื่อมต่อ Server ไม่ได้';
     errEl.classList.remove('hidden');
   }
   btn.disabled = false;
@@ -2275,7 +2306,10 @@ function refreshInBackground(after) {
     if (tab === 'stock' || itemSig(D) !== before) render();
     syncFilesBanner();
     if (after) after();
-  }).catch(() => {});
+  }).catch(e => {
+    // 30/10: เดิมเงียบ — ข้อมูลรอบก่อนค้างอยู่โดยไม่รู้ว่าโหลดใหม่ไม่ได้ เพราะอะไร
+    toastApiError('โหลดข้อมูลใหม่ไม่ได้ — ที่เห็นอยู่เป็นข้อมูลรอบก่อน\n' + ((e && e.message) || e));
+  });
 }
 
 async function loadData() {
